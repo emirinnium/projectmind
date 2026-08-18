@@ -1,0 +1,14 @@
+export { CoherenceEngine, CoherenceResult, CoherenceCheckOptions, LLMProvider } from './core/coherence-engine.js';
+export { DebtTracker, DebtReport, DebtItem, DebtType, Severity } from './core/debt-tracker.js';
+export { ScaleManager, ScaleReport, ModuleInfo, AgentProfile } from './core/scale-manager.js';
+export { createLLMProvider, DEFAULT_TIMEOUT_MS, LLMConfig, LLMProvider as LLMProviderInterface, LLMResponse as LLMResponseInterface } from './core/llm-providers.js';
+export { AnthropicProvider } from './core/llm/anthropic.js';
+export { OpenAIProvider } from './core/llm/openai.js';
+export { OllamaProvider } from './core/llm/ollama.js';
+export { KnowledgeGraph, FileInfo, AgentSession } from './storage/knowledge-graph.js';
+export { PatternLibrary, Pattern, PatternViolation } from './parser/pattern-extractor.js';
+export { parseFile, detectLanguage, FileStructure, FunctionInfo, ClassInfo, ParameterInfo, Language } from './parser/ast-parser.js';
+export { cosineSimilarity, codeToEmbedding, textToEmbedding, findSimilar, EmbeddingVector, clearEmbeddingCache } from './parser/embeddings.js';
+export { loadConfig, ProjectMindConfig } from './utils/config.js';
+export { initDatabase, getDatabase, setDatabase, closeDatabase, runInTransaction, getStatement } from './storage/database.js';
+export { SCHEMA_SQL } from './storage/schema.js';

@@ -1,0 +1,42 @@
+{
+  "projectRoot": ".",
+  "databasePath": ".projectmind/pm-knowledge.db",
+  "embeddingsDir": ".projectmind/embeddings",
+  "maxDepth": 10,
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "dist-tests/**",
+    ".git/**",
+    ".kilo/**",
+    "*.min.js",
+    "*.map",
+    "package-lock.json",
+    "yarn.lock",
+    "coverage/**",
+    ".turbo/**"
+  ],
+  "llm": {
+    "provider": "kilo",
+    "model": "anthropic/claude-sonnet-4",
+    "apiKey": "${KILO_API_KEY}",
+    "deepModel": "anthropic/claude-opus-4",
+    "confidenceThreshold": 0.7,
+    "maxCacheSize": 10000
+  },
+  "features": {
+    "coherenceEngine": true,
+    "debtTracker": true,
+    "scaleManager": true,
+    "memoryBridge": true
+  },
+  "kiloIntegration": {
+    "autoScanOnSessionStart": true,
+    "syncOnEdit": true,
+    "coherenceCheckOnEdit": true,
+    "preCommitGate": true,
+    "genomeThreshold": 60,
+    "maxHighDebt": 0,
+    "maxMediumDebt": 10
+  }
+}

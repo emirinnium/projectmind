@@ -1,0 +1,31 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "mcp": {
+    "projectmind": {
+      "type": "local",
+      "command": ["node", "dist/mcp-server.js"],
+      "environment": {
+        "PROJECTMIND_ROOT": "${workspaceFolder}",
+        "NODE_ENV": "production"
+      },
+      "enabled": true,
+      "timeout": 30000
+    }
+  },
+  "permission": {
+    "projectmind_*": "allow",
+    "bash": "allow",
+    "edit": "allow",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "task": "allow"
+  },
+  "default_agent": "code",
+  "model": "kilo/anthropic/claude-sonnet-4",
+  "small_model": "kilo/anthropic/claude-haiku-3",
+  "instructions": [
+    ".kilo/instructions/projectmind-auto.md"
+  ],
+  "autoupdate": "notify"
+}

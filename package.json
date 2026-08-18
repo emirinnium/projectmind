@@ -1,0 +1,73 @@
+{
+  "name": "projectmind",
+  "version": "0.1.0",
+  "description": "Living Codebase Intelligence Layer for AI Agents — persistent memory, real-time coherence, and Opus-level reasoning",
+  "bin": {
+    "projectmind": "./dist/cli.js",
+    "pm": "./dist/cli.js"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./mcp-server": "./dist/mcp-server.js"
+  },
+  "files": [
+    "dist/**/*",
+    "src/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && node dist/cli.js",
+    "test": "tsc -p tsconfig.test.json && node dist-tests/tests/integration.test.js",
+    "start:mcp": "tsc && node dist/mcp-server.js",
+    "pm:scan": "node dist/cli.js scan",
+    "pm:genome": "node dist/cli.js genome",
+    "pm:debt": "node dist/cli.js debt",
+    "pm:check": "node dist/cli.js check",
+    "pm:context": "node dist/cli.js context",
+    "pm:scale": "node dist/cli.js scale",
+    "pm:session": "node dist/cli.js session",
+    "pm:memory": "node dist/cli.js memory",
+    "pm:resolve": "node dist/cli.js resolve",
+    "pm:report": "node dist/cli.js report",
+    "pm:ci": "npm run build && npm run pm:scan && npm run pm:genome && npm run pm:debt",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "code-intelligence",
+    "coherence",
+    "agent",
+    "mcp",
+    "codebase-analysis"
+  ],
+  "author": "emirinnium",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/emirinnium/projectmind.git"
+  },
+  "bugs": {
+    "url": "https://github.com/emirinnium/projectmind/issues"
+  },
+  "homepage": "https://github.com/emirinnium/projectmind#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.4.0",
+    "commander": "^12.1.0",
+    "fast-glob": "^3.3.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

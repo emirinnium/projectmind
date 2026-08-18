@@ -1,0 +1,33 @@
+{
+  "projectRoot": ".",
+  "databasePath": ".projectmind/pm-knowledge.db",
+  "embeddingsDir": ".projectmind/embeddings",
+  "maxDepth": 10,
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    ".git/**",
+    "*.min.js",
+    "*.map",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "coverage/**",
+    ".nyc_output/**"
+  ],
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-3-5-sonnet-20241022",
+    "apiKey": "",
+    "deepModel": "claude-3-opus-20240229",
+    "confidenceThreshold": 0.7,
+    "maxCacheSize": 10000
+  },
+  "features": {
+    "coherenceEngine": true,
+    "debtTracker": true,
+    "scaleManager": true,
+    "memoryBridge": true
+  },
+  "scanOnStartup": true
+}

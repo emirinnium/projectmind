@@ -1,0 +1,11 @@
+export { registerAllTools } from './registry/index.js';
+export type { McpDependencies } from './types.js';
+export { registerCheckCoherenceTool } from './coherence.js';
+export { registerGetContextTool } from './context.js';
+export { registerStoreMemoryTool, registerGetMemoryTool } from './memory.js';
+export { registerDebtReportTool, registerScaleReportTool, registerGenomeScoreTool } from './reports.js';
+export { registerScanProjectTool, registerStartSessionTool, registerEndSessionTool, registerGetAgentSessionsTool } from './project.js';
+export { registerTraceImportsTool, registerFindCircularDepsTool, registerResolveImportTool, registerGetDependentsTool, registerGetDependencyGraphTool } from './imports.js';
+export { registerResolvePathTool, registerFindFileByImportTool } from './paths.js';
+export { registerCheckArchitectureTool, registerAnalyzeImpactTool, registerSuggestRefactorTool } from './architecture.js';
+export { registerFileWatchTool, registerGetFileStatusTool, registerSyncContextTool, registerUnregisterFileWatchTool } from './sync.js';
