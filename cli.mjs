@@ -35,4 +35,6 @@ if (!cliPath) {
   process.exit(1);
 }
 
-await import(cliPath);
+// Convert Windows path to file:// URL for ESM dynamic import
+const cliUrl = cliPath.replace(/\\/g, '/').replace(/^([A-Z]:)/i, 'file:///$1');
+await import(cliUrl);
