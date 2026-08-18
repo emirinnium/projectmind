@@ -129,7 +129,12 @@ async function testDatabase(): Promise<void> {
   assert(sessions.length > 0, 'Session persisted in history');
 
   console.log('\n=== Test: Debt Tracker ===');
-  const genome = debt.computeGenome();
+  // Use Promise.race with timeout to prevent CI hangs
+  const genomePromise = debt.computeGenome();
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('computeGenome timeout after 30s')), 30_000)
+  );
+  const genome = await Promise.race([genomePromise, timeoutPromise]);
   assert(genome.coherenceScore > 0, `Genome score: ${genome.coherenceScore.toFixed(3)}`);
   assert(genome.coherenceScore <= 1.0, `Genome score <= 1.0`);
 
