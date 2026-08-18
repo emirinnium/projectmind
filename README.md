@@ -3,7 +3,7 @@
 **Living Codebase Intelligence Layer for AI Agents** — persistent memory, real-time coherence checking, and architectural guardrails.
 
 [![CI](https://github.com/emirinnium/projectmind/workflows/CI/badge.svg)](https://github.com/emirinnium/projectmind/actions)
-[![npm version](https://img.shields.io/npm/v/projectmind.svg)](https://www.npmjs.com/package/projectmind)
+[![npm version](https://img.shields.io/npm/v/@emirhanturker/projectmind.svg)](https://www.npmjs.com/package/@emirhanturker/projectmind)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
 
@@ -25,7 +25,7 @@ ProjectMind gives AI coding agents (like Kilo, Cursor, Copilot) a **persistent, 
 
 ### Install globally (CLI)
 ```bash
-npm install -g projectmind
+npm install -g @emirhanturker/projectmind
 ```
 
 ### Initialize in your project
@@ -240,4 +240,4 @@ MIT © [emirinnium](https://github.com/emirinnium)
 
 - **Repository**: https://github.com/emirinnium/projectmind
 - **Issues**: https://github.com/emirinnium/projectmind/issues
-- **NPM**: https://www.npmjs.com/package/projectmind
+- **NPM**: https://www.npmjs.com/package/@emirhanturker/projectmind
