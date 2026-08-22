@@ -59,7 +59,10 @@ export class ProjectScanner {
       '**/vendor/**',
     ];
 
-    const files = await fg(['**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,rb,php,c,cpp,h,hpp}'], {
+    // Note: only extensions with a registered parser in multilang-parser
+    // LANGUAGE_MAP are included; unsupported ones (e.g. php) would otherwise
+    // be counted as scan errors.
+    const files = await fg(['**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,rb,c,cpp,h,hpp}'], {
       cwd: root,
       ignore: ignorePatterns,
       absolute: true,

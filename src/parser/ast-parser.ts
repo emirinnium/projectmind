@@ -1,50 +1,18 @@
 import { extname } from 'node:path';
 import { parseTypeScriptFile } from './ast/parser.js';
 import { parseFileMultilang } from './multilang-parser.js';
+import type { FileStructure, Language } from './types.js';
 
-export type Language = 'typescript' | 'javascript' | 'python' | 'go' | 'rust' | 'java' | 'csharp' | 'cpp' | 'ruby' | 'unknown';
-
-export interface ParameterInfo {
-  name: string;
-  type: string;
-}
-
-export interface FunctionInfo {
-  name: string;
-  signature: string;
-  returnType: string;
-  startLine: number;
-  endLine: number;
-  complexity: number;
-  kind: 'function' | 'method' | 'arrow' | 'function-expression';
-  parameters: ParameterInfo[];
-  isExported: boolean;
-  isAsync: boolean;
-  cyclomaticComplexity: number;
-}
-
-export interface ClassInfo {
-  name: string;
-  signature: string;
-  startLine: number;
-  endLine: number;
-  methodsCount: number;
-  propertiesCount: number;
-  extends: string | null;
-  implements: string[];
-}
-
-export interface FileStructure {
-  filePath: string;
-  language: Language;
-  sizeBytes: number;
-  functions: FunctionInfo[];
-  classes: ClassInfo[];
-  imports: { source: string; named: string[]; kind: string }[];
-  exports: string[];
-  hash: string;
-  lines: number;
-}
+// Types live in ./types.ts (breaks the ast-parser <-> ast/parser and
+// ast-parser <-> multilang-parser import cycles); re-exported here for
+// backwards compatibility with existing consumers.
+export type {
+  Language,
+  ParameterInfo,
+  FunctionInfo,
+  ClassInfo,
+  FileStructure,
+} from './types.js';
 
 export function detectLanguage(filePath: string): Language {
   const ext = extname(filePath);

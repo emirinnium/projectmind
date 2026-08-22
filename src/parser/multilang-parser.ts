@@ -9,7 +9,7 @@ import CSharp from 'tree-sitter-c-sharp';
 import CPP from 'tree-sitter-cpp';
 import Ruby from 'tree-sitter-ruby';
 import { logger } from '../utils/logger.js';
-import type { Language, FileStructure, FunctionInfo, ClassInfo } from './ast-parser.js';
+import type { Language, FileStructure, FunctionInfo, ClassInfo } from './types.js';
 
 const LANGUAGE_MAP: Record<string, { language: Parser.Language; name: Language }> = {
   '.ts': { language: TypeScript.typescript, name: 'typescript' },
@@ -24,6 +24,7 @@ const LANGUAGE_MAP: Record<string, { language: Parser.Language; name: Language }
   '.java': { language: Java, name: 'java' },
   '.cs': { language: CSharp, name: 'csharp' },
   '.csx': { language: CSharp, name: 'csharp' },
+  '.c': { language: CPP, name: 'cpp' }, // tree-sitter-cpp grammar covers plain C
   '.cpp': { language: CPP, name: 'cpp' },
   '.cc': { language: CPP, name: 'cpp' },
   '.cxx': { language: CPP, name: 'cpp' },

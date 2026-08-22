@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import type { Language, FileStructure, FunctionInfo, ClassInfo } from '../ast-parser.js';
+import type { Language, FileStructure, FunctionInfo, ClassInfo } from '../types.js';
 
 function getModifiers(node: ts.Node): ts.Modifier[] {
   if (ts.canHaveModifiers(node)) {
