@@ -1,0 +1,49 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "projectmind": {
+      "type": "local",
+      "command": ["node", "dist/mcp-server.js"],
+      "cwd": ".",
+      "environment": {
+        "NODE_ENV": "production"
+      },
+      "enabled": true,
+      "timeout": 30000
+    }
+  },
+  "provider": {
+    "openai": {
+      "options": {
+        "apiKey": "YOUR_GEMINI_API_KEY_HERE",
+        "baseURL": "https://generativelanguage.googleapis.com/v1beta/openai"
+      },
+      "models": {
+        "gemini-2.5-flash": { "name": "Gemini 2.5 Flash" }
+      }
+    },
+    "groq": {
+      "options": {
+        "apiKey": "YOUR_GROQ_API_KEY_HERE"
+      },
+      "models": {
+        "llama-3.3-70b-versatile": { "name": "Llama 3.3 70B Versatile" }
+      }
+    }
+  },
+  "permission": {
+    "projectmind_*": "allow",
+    "bash": "allow",
+    "edit": "allow",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "task": "allow"
+  },
+  "model": "openai/gemini-2.5-flash",
+  "small_model": "groq/llama-3.3-70b-versatile",
+  "instructions": [
+    ".kilo/instructions/projectmind-auto.md"
+  ],
+  "autoupdate": "notify"
+}

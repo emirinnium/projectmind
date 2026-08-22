@@ -275,6 +275,6 @@ CREATE INDEX IF NOT EXISTS idx_imports_source ON imports(source);
 CREATE INDEX IF NOT EXISTS idx_calls_workload_dynamic ON calls(workload_id, dynamic);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_session ON agent_memory(session_id);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_scope ON agent_memory(scope, key);
-CREATE INDEX IF NOT EXISTS idx_coherence_decisions_hash ON coherence_decisions(code_hash);
+-- idx_coherence_decisions_hash removed: duplicated idx_coherence_hash (line above)
 CREATE INDEX IF NOT EXISTS idx_debt_items_type ON debt_items(type, severity);
 `;

@@ -1,6 +1,6 @@
 {
   "name": "@emirhanturker/projectmind",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Living Codebase Intelligence Layer for AI Agents — persistent memory, real-time coherence, and Opus-level reasoning",
   "bin": {
     "projectmind": "./cli.mjs",
@@ -104,6 +104,9 @@
   "overrides": {
     "tree-sitter-cpp": {
       "tree-sitter": "^0.25.1"
-    }
+    },
+    "adm-zip": "^0.6.0",
+    "protobufjs": "^8.7.2",
+    "sharp": "^0.35.3"
   }
 }

@@ -235,6 +235,32 @@ const fileRepo = new FileRepository(manager.getDb());
 - `DataFlowRepository` — Taint analysis data flows
 - `DynamicCallRepository` — Runtime call tracing
 
+## Installation Notes (Dependency Overrides & Peer Deps)
+
+This project pins security overrides and tolerates a known tree-sitter peer
+conflict. Install with:
+
+```bash
+npm install --legacy-peer-deps
+```
+
+**Why:** the tree-sitter grammar packages (`tree-sitter-java`, etc.) still
+declare `peerOptional tree-sitter@^0.21.1` while this project uses
+`tree-sitter@^0.25.1`. Plain `npm install` / `npm audit fix` therefore fails
+with ERESOLVE until grammars publish updated peers.
+
+**Security overrides** (see `package.json > overrides`) keep transitive CVEs
+at zero without breaking downgrades:
+
+| Override | Reason |
+|---|---|
+| `adm-zip@^0.6.0` | GHSA-xcpc-8h2w-3j85 (4GB ZIP allocation) via onnxruntime-node |
+| `protobufjs@^8.7.2` | Critical code-injection set via onnx-proto / transformers |
+| `sharp@^0.35.3` | libvips CVEs via @xenova/transformers |
+
+All three were verified compatible: `onnxruntime-node` and
+`@xenova/transformers` load correctly on protobufjs 8 + sharp 0.35.
+
 ## License
 
 MIT
