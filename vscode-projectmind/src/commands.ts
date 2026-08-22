@@ -84,10 +84,27 @@ export function registerCommands(
     vscode.commands.registerCommand('projectmind.findSimilar', async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
-      const code = editor.document.getText();
+      const filePath = editor.document.uri.fsPath;
       try {
-        const result = await mcpClient.callTool('find_similar', { code });
-        vscode.window.showInformationMessage('ProjectMind: Similar code search complete');
+        // The server exposes embedding-based similarity via get_context's
+        // includeSimilar flag ('find_similar' is not a registered tool).
+        const result = await mcpClient.callTool('get_context', {
+          filePath,
+          includeImports: false,
+          includeDependents: false,
+          includeSimilar: true,
+          limit: 5,
+        });
+        const report = JSON.parse(result.content[0]?.text || '{}');
+        const similar: Array<{ path?: string; cognitiveLoad?: number }> = report.similarFiles ?? [];
+        if (similar.length === 0) {
+          vscode.window.showInformationMessage('ProjectMind: No similar files found. Run a scan first.');
+        } else {
+          const preview = similar.slice(0, 3).map((f) => f.path).join(', ');
+          vscode.window.showInformationMessage(
+            `ProjectMind: ${similar.length} similar file(s) — ${preview}${similar.length > 3 ? '…' : ''}`
+          );
+        }
       } catch (e) {
         vscode.window.showErrorMessage(`Find similar failed: ${e}`);
       }

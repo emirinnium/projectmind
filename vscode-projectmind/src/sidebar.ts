@@ -1,6 +1,32 @@
 import * as vscode from 'vscode';
 import { MCPClient } from './mcpClient';
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function listPage(title: string, summary: string[], bodyHtml: string): string {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 16px; color: var(--vscode-foreground); }
+    h2 { margin-top: 0; }
+    .summary { opacity: 0.85; font-size: 12px; margin-bottom: 10px; }
+    ul.list { padding-left: 18px; }
+    li { margin-bottom: 8px; }
+    code { color: var(--vscode-textPreformat-foreground); }
+  </style>
+</head>
+<body>
+  <h2>${escapeHtml(title)}</h2>
+  ${summary.map((s) => `<div class="summary">${escapeHtml(s)}</div>`).join('')}
+  ${bodyHtml}
+</body>
+</html>`;
+}
+
 /**
  * Manages the ProjectMind sidebar panel.
  */
@@ -32,7 +58,62 @@ export class SidebarPanel {
     this.panel = panel;
     this.mcpClient = mcpClient;
     this.update();
+    this.wireMessages();
     this.panel.onDidDispose(() => this.dispose());
+  }
+
+  /**
+   * Wire webview button messages to real actions. Without this listener the
+   * sidebar buttons post into the void.
+   */
+  private wireMessages(): void {
+    this.panel.webview.onDidReceiveMessage(async (msg: { command: string }) => {
+      try {
+        if (msg.command === 'scan') {
+          await vscode.commands.executeCommand('projectmind.scanProject');
+          await this.update();
+        } else if (msg.command === 'debt') {
+          await this.renderList('debt_report', {}, 'Cognitive Debt');
+        } else if (msg.command === 'hotspots') {
+          await this.renderHotspots();
+        }
+      } catch (e) {
+        vscode.window.showErrorMessage(`ProjectMind: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }, undefined, []);
+  }
+
+  /** Render a simple list view from a tool that returns {items:[{description,severity,filePath}]} or {topHotspots}. */
+  private async renderList(toolName: 'debt_report', args: Record<string, unknown>, title: string): Promise<void> {
+    const result = await this.mcpClient.callTool(toolName, args);
+    const report = JSON.parse(result.content[0]?.text || '{}') as {
+      totalItems?: number;
+      bySeverity?: Record<string, number>;
+      items?: Array<{ description?: string; type?: string; severity?: string; filePath?: string | null }>;
+    };
+    const rows = (report.items ?? []).slice(0, 15).map((it) =>
+      `<li><b>[${(it.severity ?? '?').toUpperCase()}]</b> ${escapeHtml(it.type ?? '')}: ${escapeHtml(it.description ?? '')}<br/><small>${escapeHtml(it.filePath || 'project-wide')}</small></li>`
+    ).join('');
+    this.panel.webview.html = listPage(title, [
+      `Total items: ${report.totalItems ?? 0}`,
+      `High: ${report.bySeverity?.high ?? 0} · Medium: ${report.bySeverity?.medium ?? 0} · Low: ${report.bySeverity?.low ?? 0}`,
+    ], `<ul class="list">${rows}</ul>`);
+  }
+
+  /** Hotspots = files with highest cognitive load from scale report modules. */
+  private async renderHotspots(): Promise<void> {
+    const result = await this.mcpClient.callTool('scale_report', {});
+    const report = JSON.parse(result.content[0]?.text || '{}') as {
+      topHotspots?: Array<{ path?: string; cognitiveLoad?: number; agentTouched?: boolean }>;
+      avgCognitiveLoad?: number;
+    };
+    const spots = (report.topHotspots ?? []).slice(0, 10);
+    const rows = spots.map((h) =>
+      `<li><code>${escapeHtml(h.path ?? '')}</code> — load ${(h.cognitiveLoad ?? 0).toFixed(3)}${h.agentTouched ? ' · agent-touched' : ''}</li>`
+    ).join('');
+    this.panel.webview.html = listPage('Top Hotspots', [
+      `Avg cognitive load: ${(report.avgCognitiveLoad ?? 0).toFixed(3)}`,
+    ], `<ul class="list">${rows}</ul>`);
   }
 
   /**

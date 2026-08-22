@@ -2,7 +2,7 @@
   "name": "projectmind-lcil",
   "displayName": "ProjectMind",
   "description": "AI-powered codebase intelligence: coherence, security, embeddings",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "publisher": "emirinnium",
   "icon": "images/vscode-icon-128x128.png",
   "repository": {
@@ -92,7 +92,11 @@
         },
         "projectmind.embeddings.provider": {
           "type": "string",
-          "enum": ["simple", "openai", "transformers"],
+          "enum": [
+            "simple",
+            "openai",
+            "transformers"
+          ],
           "default": "transformers",
           "description": "Embedding provider"
         },

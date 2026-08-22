@@ -51,6 +51,31 @@ AI-powered codebase intelligence directly in your editor.
 }
 ```
 
+## Pre-Publish E2E Checklist
+
+Run through this list inside a real VS Code host before publishing a VSIX:
+
+1. **Server handshake** — `ProjectMind: Scan Project` completes within seconds
+   (not 30s timeout). This validates the MCP `initialize` handshake against
+   the installed CLI's server.
+2. **Status bar metrics** — file count / coverage / load update after scan.
+3. **Inline diagnostics** — open a saved `.ts` file; check for
+   `ProjectMind`-sourced diagnostics when fast-tier verdict is warn/fail.
+4. **Sidebar** — `ProjectMind: Open Sidebar` renders metrics; all three
+   buttons (Scan / View Debt / View Hotspots) produce live data lists.
+5. **Find Similar** — returns similar-file paths (embedding-based via
+   `get_context includeSimilar`).
+6. **Impact analysis** — returns non-zero dependents after a full scan
+   (requires imports resolved in the knowledge graph).
+7. **Missing CLI path** — temporarily break `mcpServerPath`; confirm a clean
+   error message instead of an extension-host crash.
+8. **Dispose hygiene** — close/reopen the sidebar and reload the window;
+   confirm no orphaned MCP server processes remain (check Task Manager).
+
+> The client performs the mandatory MCP initialize handshake
+> (`protocolVersion 2024-11-05`) followed by `notifications/initialized`,
+> mirroring `tests/mcp-test.mjs`.
+
 ## License
 
 MIT
