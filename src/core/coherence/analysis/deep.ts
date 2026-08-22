@@ -2,6 +2,10 @@ import type { LLMProvider, LLMResponse, CoherenceResult, CoherenceCheckOptions }
 import { DatabaseSync } from 'node:sqlite';
 import { CoherenceCache } from '../../cache/index.js';
 import { runWithRetry } from '../../../storage/database.js';
+import { logger } from '../../../utils/logger.js';
+
+// Warning tracking to avoid spamming user
+let cloudLLMWarningShown = false;
 
 /**
  * Handles deep LLM-based coherence analysis
@@ -10,6 +14,7 @@ export class DeepCoherenceAnalyzer {
   private llmProvider: LLMProvider | null = null;
   private cache: CoherenceCache;
   private db: DatabaseSync;
+  private allowCloudLLM: boolean = false;
 
   constructor(db: DatabaseSync, cache: CoherenceCache) {
     this.db = db;
@@ -20,8 +25,37 @@ export class DeepCoherenceAnalyzer {
     this.llmProvider = provider;
   }
 
+  /**
+   * Set whether cloud LLM usage is allowed.
+   * When false (default), a warning is shown before sending code to cloud LLM.
+   */
+  setAllowCloudLLM(allow: boolean): void {
+    this.allowCloudLLM = allow;
+  }
+
+  /**
+   * Show a one-time warning about code being sent to cloud LLM.
+   */
+  private showCloudLLMWarning(): void {
+    if (cloudLLMWarningShown || this.allowCloudLLM) {
+      return;
+    }
+    cloudLLMWarningShown = true;
+    logger.warn(`SECURITY WARNING: Code will be sent to cloud LLM API`);
+    logger.warn(`Provider: ${this.llmProvider?.name || 'unknown'}`);
+    logger.warn(`Set PROJECTMIND_ALLOW_CLOUD_LLM=true to suppress.`);
+  }
+
   async analyze(options: CoherenceCheckOptions, cacheKey: string): Promise<CoherenceResult> {
     const startTime = Date.now();
+
+    // Show warning before sending code to cloud
+    this.showCloudLLMWarning();
+
+    // Check environment variable as fallback
+    if (process.env.PROJECTMIND_ALLOW_CLOUD_LLM === 'true') {
+      this.allowCloudLLM = true;
+    }
 
     const contextSummary = options.contextFiles
       ?.slice(0, 5)

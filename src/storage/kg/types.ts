@@ -10,6 +10,7 @@ export interface FileInfo {
   agentTouchedAt: string | null;
   cognitiveLoad: number;
   lastScanned: string;
+  patterns: string[];
 }
 
 export interface MemoryEntry {
@@ -27,6 +28,26 @@ export interface AgentSession {
   startedAt: string;
   endedAt: string | null;
   contextHash: string;
-  decisions: any;
-  fingerprint: any;
+  decisions: CoherenceDecision[];
+  fingerprint: AgentFingerprint;
+}
+
+export interface CoherenceDecision {
+  id: number;
+  fileId: number | null;
+  codeHash: string;
+  verdict: 'pass' | 'warn' | 'fail';
+  confidence: number;
+  reasoningTrace: string[];
+  suggestions: string[];
+  llmProvider: string;
+  responseTimeMs: number;
+  analyzedAt: string;
+}
+
+export interface AgentFingerprint {
+  asyncPreference: number;
+  typeAssertionUsage: number;
+  errorHandlingStyle: string;
+  namingConvention: string;
 }

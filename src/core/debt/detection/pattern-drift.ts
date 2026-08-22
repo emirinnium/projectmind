@@ -1,5 +1,5 @@
 import { FileInfo } from '../../../storage/knowledge-graph.js';
-import { CoherenceEngine } from '../../coherence-engine.js';
+import { CoherenceEngine } from '../../coherence/engine.js';
 
 export type DebtType = 'pattern_drift' | 'architectural_drift' | 'redundancy' | 'agent_conflict';
 export type Severity = 'high' | 'medium' | 'low';

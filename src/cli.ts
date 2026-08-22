@@ -1,60 +1,144 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { createInitCommand } from './cli/commands/init.js';
-import { createScanCommand } from './cli/commands/scan.js';
-import { createCheckCommand } from './cli/commands/check.js';
-import { createReportCommand } from './cli/commands/report.js';
-import { createContextCommand } from './cli/commands/context.js';
-import { createSessionCommands } from './cli/commands/session.js';
-import { createMemoryCommand } from './cli/commands/memory.js';
-import { createScaleCommand } from './cli/commands/scale.js';
-import { createDebtCommand } from './cli/commands/debt.js';
-import { createGenomeCommand } from './cli/commands/genome.js';
-import { createResolveCommand } from './cli/commands/resolve.js';
-import { createMcpCommand } from './cli/commands/mcp.js';
-import { createHealthCommand } from './cli/commands/health.js';
-import { createDebugCommand } from './cli/commands/debug.js';
-import { createDoctorCommand } from './cli/commands/doctor.js';
-import { createAgentCommand } from './cli/commands/agent.js';
+import { logger } from './utils/logger.js';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Read version from package.json - search up from current directory
+function getVersion(): string {
+  let dir = __dirname;
+  for (let i = 0; i < 5; i++) {
+    try {
+      const pkgPath = join(dir, 'package.json');
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+      if (pkg.name === '@emirhanturker/projectmind') {
+        return pkg.version;
+      }
+    } catch {
+      // Continue searching upward
+    }
+    dir = dirname(dir);
+  }
+  return '0.0.0';
+}
+
+const pkgVersion = getVersion();
+
+// Display ASCII banner on startup
+try {
+  const logoPath = join(__dirname, '..', 'assets', 'cli-logo.txt');
+  const logo = readFileSync(logoPath, 'utf-8');
+  console.log(logo);
+  console.log('');
+} catch {
+  // Logo file not found, skip banner
+}
+
+const commandFactories: Array<{ createCommand: () => Command }> = [];
+
+async function loadCommands(): Promise<void> {
+  const modules: Array<{ path: string; name: string }> = [
+    { path: './cli/commands/init.js', name: 'createInitCommand' },
+    { path: './cli/commands/scan.js', name: 'createScanCommand' },
+    { path: './cli/commands/check.js', name: 'createCheckCommand' },
+    { path: './cli/commands/report.js', name: 'createReportCommand' },
+    { path: './cli/commands/context.js', name: 'createContextCommand' },
+    { path: './cli/commands/session.js', name: 'createSessionCommands' },
+    { path: './cli/commands/memory.js', name: 'createMemoryCommand' },
+    { path: './cli/commands/scale.js', name: 'createScaleCommand' },
+    { path: './cli/commands/debt.js', name: 'createDebtCommand' },
+    { path: './cli/commands/genome.js', name: 'createGenomeCommand' },
+    { path: './cli/commands/resolve.js', name: 'createResolveCommand' },
+    { path: './cli/commands/mcp.js', name: 'createMcpCommand' },
+    { path: './cli/commands/health.js', name: 'createHealthCommand' },
+    { path: './cli/commands/debug.js', name: 'createDebugCommand' },
+    { path: './cli/commands/doctor.js', name: 'createDoctorCommand' },
+    { path: './cli/commands/agent.js', name: 'createAgentCommand' },
+    { path: './cli/commands/search.js', name: 'createSearchCommand' },
+    { path: './cli/commands/impact.js', name: 'createImpactCommand' },
+    { path: './cli/commands/debt-prioritize.js', name: 'createDebtPrioritizeCommand' },
+    { path: './cli/commands/audit.js', name: 'createAuditCommand' },
+    { path: './cli/commands/license.js', name: 'createLicenseCommand' },
+    { path: './cli/commands/graph.js', name: 'createGraphCommand' },
+    { path: './cli/commands/heatmap.js', name: 'createHeatmapCommand' },
+    { path: './cli/commands/ownership.js', name: 'createOwnershipCommand' },
+    { path: './cli/commands/adr.js', name: 'createAdrCommand' },
+    { path: './cli/commands/dedup.js', name: 'createDedupCommand' },
+    { path: './cli/commands/churn.js', name: 'createChurnCommand' },
+    { path: './cli/commands/api-surface.js', name: 'createApiSurfaceCommand' },
+    { path: './cli/commands/layers.js', name: 'createLayersCommand' },
+    { path: './cli/commands/coupling.js', name: 'createCouplingCommand' },
+    { path: './cli/commands/pr-preview.js', name: 'createPrPreviewCommand' },
+    { path: './cli/commands/onboard.js', name: 'createOnboardCommand' },
+    { path: './cli/commands/test-quality.js', name: 'createTestQualityCommand' },
+    { path: './cli/commands/deps-fresh.js', name: 'createDepsFreshCommand' },
+    { path: './cli/commands/refactor-roi.js', name: 'createRefactorRoiCommand' },
+    { path: './cli/commands/flags.js', name: 'createFlagsCommand' },
+    { path: './cli/commands/secrets-life.js', name: 'createSecretsLifeCommand' },
+    { path: './cli/commands/sbom.js', name: 'createSbomCommand' },
+    { path: './cli/commands/refactor.js', name: 'createRefactorCommand' },
+    { path: './cli/commands/testgen.js', name: 'createTestgenCommand' },
+    { path: './cli/commands/docgen.js', name: 'createDocgenCommand' },
+    { path: './cli/commands/migrate.js', name: 'createMigrateCommand' },
+    { path: './cli/commands/skill-recommend.js', name: 'createSkillRecommendCommand' },
+    { path: './cli/commands/context-budget.js', name: 'createContextBudgetCommand' },
+    { path: './cli/commands/contract-test.js', name: 'createContractTestCommand' },
+    { path: './cli/commands/trace.js', name: 'createTraceCommand' },
+    { path: './cli/commands/project.js', name: 'createProjectCommand' },
+    { path: './cli/commands/data-flow.js', name: 'createDataFlowCommand' },
+    { path: './cli/commands/structural-search.js', name: 'createStructuralSearchCommand' },
+    { path: './cli/commands/embed.js', name: 'createEmbedCommand' },
+    { path: './cli/commands/taint.js', name: 'createTaintCommand' },
+  ];
+
+  for (const { path, name } of modules) {
+    const mod = await import(path) as Record<string, () => Command>;
+    const factory = mod[name];
+    if (typeof factory !== 'function') {
+      throw new Error(`Module ${path} does not export ${name}`);
+    }
+    commandFactories.push({ createCommand: factory });
+  }
+}
+
+function registerCommands(program: Command): void {
+  for (const { createCommand } of commandFactories) {
+    program.addCommand(createCommand());
+  }
+}
 
 const program = new Command();
 
 program
   .name('projectmind')
   .description('Living Codebase Intelligence Layer for AI Agents')
-  .version('1.0.0');
+  .version(pkgVersion);
 
-program.addCommand(createInitCommand());
-program.addCommand(createScanCommand());
-program.addCommand(createCheckCommand());
-program.addCommand(createReportCommand());
-program.addCommand(createContextCommand());
-program.addCommand(createSessionCommands());
-program.addCommand(createMemoryCommand());
-program.addCommand(createScaleCommand());
-program.addCommand(createDebtCommand());
-program.addCommand(createGenomeCommand());
-program.addCommand(createResolveCommand());
-program.addCommand(createMcpCommand());
-program.addCommand(createHealthCommand());
-program.addCommand(createDebugCommand());
-program.addCommand(createDoctorCommand());
-program.addCommand(createAgentCommand());
+loadCommands()
+  .then(() => {
+    registerCommands(program);
+    program.exitOverride();
 
-// Ensure process exits after command completes
-program.exitOverride();
-
-try {
-  program.parse();
-} catch (err: unknown) {
-  if (err && typeof err === 'object' && 'code' in err) {
-    const code = (err as { code: string }).code;
-    if (code !== 'commander.help' && code !== 'commander.version') {
-      console.error(err);
-      process.exit(1);
+    try {
+      program.parse();
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'code' in err) {
+        const code = (err as { code: string }).code;
+        if (code !== 'commander.help' && code !== 'commander.version') {
+          logger.error(`CLI error: ${err instanceof Error ? err.message : String(err)}`);
+          process.exit(1);
+        }
+      } else {
+        logger.error(`CLI error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
     }
-  } else {
-    console.error(err);
+  })
+  .catch((err: unknown) => {
+    logger.error(`Failed to initialize CLI: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
-  }
-}
+  });

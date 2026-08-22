@@ -1,4 +1,5 @@
 import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS } from './types.js';
+import { validateApiUrl } from './url-validator.js';
 
 export class OpenAIProvider implements LLMProvider {
   name = 'openai';
@@ -10,7 +11,7 @@ export class OpenAIProvider implements LLMProvider {
   constructor(config: LLMConfig) {
     this.model = config.model;
     this.apiKey = config.apiKey || '';
-    this.apiUrl = config.apiUrl || 'https://api.openai.com/v1';
+    this.apiUrl = validateApiUrl(config.apiUrl || 'https://api.openai.com/v1', 'openai');
     this.timeoutMs = config.timeoutMs || DEFAULT_TIMEOUT_MS;
   }
 

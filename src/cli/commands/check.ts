@@ -1,18 +1,28 @@
 import { Command } from 'commander';
-import { withCoherence, asyncHandler, getFilesToCheck, output } from '../utils/shared.js';
+import { withService, asyncHandler, getFilesToCheck, output } from '@/cli/utils/shared.js';
+import { readFileSync } from 'node:fs';
 
 export function createCheckCommand(): Command {
   return new Command('check')
     .description('Check coherence of files')
     .argument('[path]', 'File or directory path', '.')
     .option('-d, --deep', 'Use deep LLM analysis')
-    .action(asyncHandler(async (path: string, opts: { deep: boolean }) => {
-      await withCoherence(async (ctx, coherence) => {
-        const hasLLM = coherence.hasLLMProvider();
-        if (hasLLM) {
-          output.info('Using LLM provider for deep analysis');
+    .option('--offline', 'Offline mode — no code sent to cloud LLM')
+    .action(asyncHandler(async (path: string, opts: { deep: boolean; offline: boolean }) => {
+      await withService(['coherence'], async (_ctx, services) => {
+        const coherence = services.coherence!;
+        
+        // Set offline mode if requested
+        if (opts.offline) {
+          coherence.setOffline(true);
+          output.info('Offline mode — using fast-tier analysis only (no cloud LLM)');
         } else {
-          output.info('No LLM provider available — using fast-tier analysis only');
+          const hasLLM = coherence.hasLLMProvider();
+          if (hasLLM) {
+            output.info('Using LLM provider for deep analysis');
+          } else {
+            output.info('No LLM provider available — using fast-tier analysis only');
+          }
         }
 
         const files = await getFilesToCheck(path);
@@ -21,17 +31,16 @@ export function createCheckCommand(): Command {
         let warnCount = 0;
         let failCount = 0;
 
-        const contextFiles = ctx.kg.getAgentTouchedFiles().slice(0, 5);
+        const contextFiles = _ctx.kg.getAgentTouchedFiles().slice(0, 5);
 
         for (const filePath of files) {
-          const { readFileSync } = await import('node:fs');
           const content = readFileSync(filePath, 'utf-8');
           const result = await coherence.checkCoherence({
             code: content,
             filePath: filePath,
             contextFiles,
             deepAnalysis: opts.deep,
-            fastOnly: !hasLLM || !opts.deep,
+            fastOnly: opts.offline || !opts.deep,
           });
 
           if (result.verdict === 'pass') passCount++;

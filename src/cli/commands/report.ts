@@ -1,14 +1,47 @@
 import { Command } from 'commander';
-import { withServices, asyncHandler, output, formatGenomeScore } from '../utils/shared.js';
+import { withService, asyncHandler, output, formatGenomeScore } from '@/cli/utils/shared.js';
 
 export function createReportCommand(): Command {
   return new Command('report')
     .description('Generate full coherence + debt report')
-    .action(asyncHandler(async () => {
-      await withServices(['scale', 'debt', 'coherence'], async (_ctx, services) => {
-        const scaleReport = services.scale.getScaleReport();
-        const debtReport = services.debt.getReport();
-        const genome = services.debt.computeGenome();
+    .option('-j, --json', 'Output as JSON')
+    .action(asyncHandler(async (opts: { json?: boolean }) => {
+      await withService(['scale', 'debt'], async (_ctx, services) => {
+        const scale = services.scale!;
+        const debt = services.debt!;
+        const genome = debt.computeGenome();
+        const scaleReport = scale.getScaleReport();
+        const debtReport = debt.getReport();
+
+        if (opts.json) {
+          console.log(JSON.stringify({
+            totalFiles: scaleReport.totalFiles,
+            totalLines: scaleReport.totalLines,
+            totalBytes: scaleReport.totalBytes,
+            agentCoverage: scaleReport.agentCoverage,
+            avgCognitiveLoad: scaleReport.avgCognitiveLoad,
+            languages: scaleReport.languages,
+            modules: scaleReport.modules.map(m => ({
+              path: m.path,
+              fileCount: m.fileCount,
+              cognitiveLoad: m.cognitiveLoad,
+              agentCoverage: m.agentCoverage,
+            })),
+            topHotspots: scaleReport.topHotspots.map(f => ({
+              path: f.relativePath,
+              cognitiveLoad: f.cognitiveLoad,
+              agentTouched: f.agentTouched,
+            })),
+            debtItems: [
+              { severity: 'high', count: debtReport.bySeverity.high },
+              { severity: 'medium', count: debtReport.bySeverity.medium },
+              { severity: 'low', count: debtReport.bySeverity.low },
+            ],
+            debtTotal: debtReport.totalItems,
+            genomeScore: genome.coherenceScore,
+          }, null, 2));
+          return;
+        }
 
         output.section('ProjectMind Report');
 

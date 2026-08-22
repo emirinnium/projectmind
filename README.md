@@ -1,243 +1,240 @@
 # ProjectMind
 
-**Living Codebase Intelligence Layer for AI Agents** — persistent memory, real-time coherence checking, and architectural guardrails.
+Living Codebase Intelligence Layer for AI Agents.
 
-[![CI](https://github.com/emirinnium/projectmind/workflows/CI/badge.svg)](https://github.com/emirinnium/projectmind/actions)
-[![npm version](https://img.shields.io/npm/v/@emirhanturker/projectmind.svg)](https://www.npmjs.com/package/@emirhanturker/projectmind)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
-
----
-
-## What is ProjectMind?
-
-ProjectMind gives AI coding agents (like Kilo, Cursor, Copilot) a **persistent, queryable understanding of your codebase** that survives across sessions. It acts as a "second brain" for agents:
-
-- **🧠 Persistent Memory** — Agents store/retrieve decisions, patterns, and context across sessions
-- **🔍 Real-time Coherence** — Fast pattern matching + optional LLM deep analysis on every edit
-- **🏗 Architectural Guardrails** — Detect drift, circular deps, redundancy, and cognitive debt
-- **📊 Codebase Intelligence** — Scale reports, hotspot detection, agent coverage heatmaps
-- **🔌 MCP Server** — 38 tools exposed via Model Context Protocol for any compatible client
-
----
+ProjectMind scans your codebase, builds a knowledge graph, and exposes it through a CLI and an MCP server so agents can reason about architecture, debt, dependencies, embeddings, taint, and runtime traces.
 
 ## Quick Start
 
-### Install globally (CLI)
 ```bash
-npm install -g @emirhanturker/projectmind
-```
-
-### Initialize in your project
-```bash
-cd your-project
-projectmind init
-```
-
-This creates a `.projectmindrc.json` config and `.projectmind/` directory for the SQLite knowledge graph.
-
-### Scan your codebase
-```bash
+npm install
+npm run build
 projectmind scan
+projectmind health
 ```
-
-### Check coherence of a file
-```bash
-projectmind check src/auth.ts
-```
-
-### View project health
-```bash
-projectmind genome    # Coherence genome score (0-100%)
-projectmind scale     # Scale report, hotspots, coverage
-projectmind debt      # Cognitive debt report
-```
-
-### Run as MCP Server (for AI agents)
-```bash
-projectmind mcp
-```
-
-Configure your AI client (Kilo, Cursor, etc.) to connect via stdio transport.
-
----
 
 ## CLI Commands
 
-| Command | Description |
-|---------|-------------|
-| `init` | Initialize ProjectMind in current project |
-| `scan [options]` | Scan project, build/update knowledge graph |
-| `check [options] <path>` | Check coherence of file(s) |
-| `report` | Generate full coherence + debt report |
-| `context <file>` | Get relevant context for a file (imports, dependents, patterns) |
-| `session` | Manage agent sessions (start, end, list) |
-| `memory [scope] [key]` | Read/write agent memory |
-| `scale` | Show project scale, modules, coverage heatmap |
-| `debt` | Show cognitive debt report |
-| `genome` | Compute project coherence genome score |
-| `resolve <id>` | Mark debt item as resolved |
-| `mcp` | Start ProjectMind as MCP server (stdio) |
-| `health` | System health check |
-| `debug` | Diagnostic commands |
-| `doctor` | Automated fixes & remediation |
-| `agent` | Inspect agent sessions & coverage |
+### Core
+- `projectmind init` — Initialize ProjectMind in the current project
+- `projectmind scan [-r <root>]` — Scan project and build/update the knowledge graph
+- `projectmind check [<path>]` — Check coherence of files
+- `projectmind report` — Generate full coherence + debt report
+- `projectmind context <file>` — Get relevant context for a file
+- `projectmind mcp` — Start ProjectMind as an MCP server (stdio mode)
 
----
+### Intelligence
+- `projectmind search <query>` — Search code by pattern
+- `projectmind impact <file>` — Analyze change impact using dependency data
+- `projectmind debt-prioritize` — Show debt items sorted by severity and frequency
+- `projectmind genome` — Compute and display project coherence genome
 
-## MCP Tools (38 tools)
+### Architecture
+- `projectmind graph` — Show module dependency graph (Mermaid format)
+- `projectmind layers` — Enforce architectural layer boundaries
+- `projectmind coupling` — Analyze module coupling metrics
+- `projectmind api-surface` — Track public API surface changes
+- `projectmind dedup` — Find duplicate code using redundancy detection
+- `projectmind churn` — Analyze code churn and risk hotspots
 
-When running as MCP server, these tools are available to AI agents:
+### Security & Quality
+- `projectmind audit` — Security audit: secrets, crypto patterns, OWASP checks
+- `projectmind license` — License compliance (basic check)
+- `projectmind sbom` — Generate Software Bill of Materials
+- `projectmind flags` — Audit feature flags: usage, staleness, coverage, cleanup
+- `projectmind secrets-life` — Secrets lifecycle management
+- `projectmind test-quality` — Analyze test effectiveness
+- `projectmind contract-test` — Generate tests for architectural contracts
 
-**Core**
-- `check_coherence` — Real-time coherence check (fast/deep)
-- `get_context` — File context: imports, dependents, similar files, patterns
-- `store_memory` / `get_memory` — Persistent cross-session memory
-- `scan_project` — Full project scan with import analysis
-- `genome_score` — Project coherence genome
-- `debt_report` — Cognitive debt with severity breakdown
-- `scale_report` — Scale, modules, hotspots, coverage
+### Refactoring & Docs
+- `projectmind refactor` — Code refactoring helpers
+- `projectmind refactor-roi` — Calculate refactoring ROI
+- `projectmind testgen [<file>]` — Generate test scaffolding for source files
+- `projectmind docgen` — Generate documentation from code
+- `projectmind migrate` — Migration helpers for common upgrades
 
-**Import/Dependency Analysis**
-- `trace_imports` — Transitive dependency tree
-- `find_circular_deps` — Detect circular dependencies
-- `resolve_import` — Resolve import to actual file
-- `get_dependents` — Reverse dependencies (who imports this)
-- `get_dependency_graph` — Module dependency graph
-- `resolve_path` — TS/JS path resolution with aliases
-- `find_file_by_import` — Find files matching import pattern
+### Agent & Memory
+- `projectmind session` — Manage agent sessions
+- `projectmind memory [<scope> [<key>]]` — Read or write agent memory
+- `projectmind skill-recommend` — Recommend skill improvements for agents
+- `projectmind context-budget [<task>]` — Optimize context window usage
+- `projectmind onboard` — Generate personalized onboarding path
+- `projectmind agent` — Manage and inspect agent sessions and coverage
 
-**Architecture & Impact**
-- `check_architecture` — Validate against project patterns
-- `analyze_impact` — Impact radius of a change
-- `suggest_refactor` — Refactoring suggestions
+### Advanced Intelligence
+- `projectmind trace` — Runtime call tracing: ingest test traces and dynamic call data
+  - `trace ingest <file>` — Ingest a trace JSON file
+  - `trace convert` — Convert another trace format into ProjectMind trace JSON
+  - `trace show` — Show dynamic call trace data
+  - `trace clear` — Clear dynamic call trace data
+- `projectmind project` — Multi-project management
+  - `project list` — List all projects
+  - `project create <name> <rootPath>` — Create a new project
+  - `project switch <id>` — Switch to a different project
+  - `project current` — Show the current project
+  - `project delete <id>` — Delete a project and all its files
+- `projectmind data-flow` — Data-flow and taint analysis
+  - `data-flow record` — Record a data-flow edge between resources
+  - `data-flow list` — List all data flows for the current project
+  - `data-flow resource <qualifiedName>` — Show all flows for a specific resource
+  - `data-flow clear` — Clear all data flows for the current project
+- `projectmind structural-search` — AST-based structural search/replace
+  - `structural-search search` — Search for AST nodes matching a pattern
+  - `structural-search replace` — Replace AST nodes matching a pattern
+- `projectmind embed` — Embedding generation and code similarity search
+  - `embed init` — Initialize the embedding provider
+  - `embed generate` — Generate embedding for a text or code snippet
+  - `embed similar` — Find similar code snippets in the codebase
+  - `embed provider` — Show the current embedding provider
 
-**Continuous Sync**
-- `register_file_watch` / `unregister_file_watch` — Watch files for changes
-- `get_file_status` — Real-time file status
-- `sync_context` — Push/pull agent context
+### Diagnostics
+- `projectmind health` — Check ProjectMind system health
+- `projectmind debug` — Debug and diagnostic commands
+- `projectmind doctor` — Automated fixes and health remediation
+- `projectmind heatmap` — Show coverage heatmap
+- `projectmind ownership` — Show agent file ownership from session data
+- `projectmind pr-preview` — Preview PR impact
+- `projectmind deps-fresh` — Monitor dependency freshness
+- `projectmind adr` — Architecture Decision Records management
 
----
+## MCP Tools
 
-## Configuration
+ProjectMind can run as an MCP server (`projectmind mcp`). The server exposes tools organized by domain:
 
-Create `.projectmindrc.json` in project root:
+### Core Tools
+- `check_coherence` — Check code coherence against project patterns
+- `get_context` — Get relevant context for a file
+- `store_memory` — Store agent memory
+- `get_memory` — Retrieve agent memory
+- `debt_report` — Generate cognitive debt report
+- `scale_report` — Get project scale and coverage report
+- `genome_score` — Compute project coherence genome score
+- `scan_project` — Scan project and build/update knowledge graph
+- `start_session` — Start a new agent session
+- `end_session` — End an agent session
+- `get_agent_sessions` — Get agent sessions
 
-```json
-{
-  "projectRoot": ".",
-  "databasePath": ".projectmind/pm-knowledge.db",
-  "embeddingsDir": ".projectmind/embeddings",
-  "maxDepth": 10,
-  "ignorePatterns": [
-    "node_modules/**",
-    "dist/**",
-    ".git/**",
-    "*.min.js",
-    "*.map"
-  ],
-  "llm": {
-    "provider": "anthropic",
-    "model": "claude-3-5-sonnet-20241022",
-    "apiKey": "sk-ant-...",
-    "deepModel": "claude-3-opus-20240229",
-    "confidenceThreshold": 0.7,
-    "maxCacheSize": 10000
-  },
-  "features": {
-    "coherenceEngine": true,
-    "debtTracker": true,
-    "scaleManager": true,
-    "memoryBridge": true
-  },
-  "scanOnStartup": true
-}
+### Import / Dependency Tools
+- `trace_imports` — Trace all transitive imports for a file
+- `find_circular_deps` — Find all circular dependencies in the project
+- `resolve_import` — Resolve an import path to the actual file
+- `get_dependents` — Find all files that import/depend on a given file
+- `get_dependency_graph` — Get the dependency graph for a module/directory
+
+### Path Tools
+- `resolve_path` — Resolve a file path with TypeScript/JS module resolution rules
+- `find_file_by_import` — Find all files that match an import pattern
+
+### Architecture Tools
+- `check_architecture` — Check if a file complies with project architectural patterns
+- `analyze_impact` — Analyze the impact of changing a file
+- `suggest_refactor` — Get refactoring suggestions based on code patterns
+
+### Sync / Watch Tools
+- `file_watch` — Register interest in a file for continuous synchronization
+- `get_file_status` — Get real-time status of a file
+- `sync_context` — Synchronize context between coding agent and ProjectMind
+- `unregister_file_watch` — Stop watching a file for continuous synchronization
+
+### Dynamic Tracing Tools
+- `ingest_trace` — Ingest runtime call trace data into the knowledge graph
+
+### Structural Search / Replace Tools
+- `structural_search` — Find code by AST pattern
+- `structural_replace` — Rewrite code by AST pattern
+
+### Project Management Tools
+- `list_projects` — List all projects in the knowledge graph
+- `create_project` — Create a new project
+- `switch_project` — Switch the current project context
+
+### Data-Flow / Taint Tools
+- `record_data_flow` — Record a data-flow edge between resources or functions
+- `get_data_flows` — Get all recorded data flows for the current project
+- `get_resource_flows` — Get all data flows for a specific resource
+- `clear_data_flows` — Clear all recorded data flows for the current project
+
+### Embedding Tools
+- `init_embedding_provider` — Initialize the embedding provider
+- `generate_embedding` — Generate an embedding vector for text or code
+- `get_embedding_provider` — Get the current embedding provider
+
+## Database
+
+ProjectMind uses SQLite for persistence. The default database path is `.projectmind/pm-knowledge.db`.
+
+Schema migrations are versioned and run automatically on startup:
+- v1: initial schema
+- v2: dynamic tracing (`calls` table)
+- v3: multi-project graph + data-flow (`projects`, `resources`, `data_flows` tables)
+- v4: settings table
+- v5: team memories table
+
+### Migration Rollback
+
+Migrations support down operations for rollback:
+
+```typescript
+import { rollbackMigrations, rollbackLast } from './src/storage/migrations.js';
+
+// Rollback to a specific version
+rollbackMigrations(db, 3);
+
+// Rollback the last N migrations
+rollbackLast(db, 1);
 ```
-
-**Environment variables** (alternative to config file):
-- `PROJECTMIND_ROOT` — Project root path
-- `ANTHROPIC_API_KEY` / `CLAUDE_API_KEY` — LLM API key
-- `OPENAI_API_KEY` — For OpenAI provider
-- `OLLAMA_BASE_URL` — For local Ollama provider
-
----
 
 ## Architecture
 
-```
-src/
-├── cli/                    # CLI commands (16 commands)
-├── core/
-│   ├── coherence-engine.ts    # Fast + deep coherence checking
-│   ├── debt-tracker.ts        # Cognitive debt detection
-│   ├── scale-manager.ts       # Scale reports, heatmaps
-│   └── llm/                   # LLM providers (Anthropic, OpenAI, Ollama)
-├── mcp/
-│   ├── tools/                 # 38 MCP tool registrations
-│   └── index.ts               # Tool registry
-├── parser/
-│   ├── ast-parser.ts          # Multi-language AST parsing
-│   ├── pattern-extractor.ts   # Pattern detection library
-│   └── embeddings.ts          # 128-dim code embeddings
-├── storage/
-│   ├── database.ts            # SQLite (better-sqlite3)
-│   ├── kg/                    # Knowledge graph (modular)
-│   └── schema.ts              # SQL schema
-└── utils/config.ts            # Configuration loader
-```
-
----
-
-## How It Works
-
-1. **Scan** — `projectmind scan` parses all source files, extracts AST, functions, classes, imports, embeddings
-2. **Store** — Knowledge persisted in SQLite (`.projectmind/pm-knowledge.db`)
-3. **Analyze** — Coherence engine checks patterns (fast) or calls LLM (deep)
-4. **Track** — Debt tracker computes genome score, finds redundancy/drift/circular deps
-5. **Serve** — MCP server exposes 38 tools for AI agents to query in real-time
-
----
-
-## Requirements
-
-- **Node.js ≥ 22** (ESM, `sqlite3` native bindings)
-- **npm ≥ 10**
-
----
+- `src/storage` — SQLite schema, migrations, knowledge graph, queries
+- `src/core` — Coherence engine, debt tracker, scale manager, LLM providers
+- `src/parser` — AST parsing, pattern extraction, embeddings, taint analysis, structural search
+- `src/mcp` — MCP server and tool registrations
+- `src/cli` — Commander-based CLI commands and shared utilities
+- `src/tracer` — Runtime trace utilities
+- `src/types` — Shared TypeScript types and declarations
+- `src/utils` — Configuration and shared utilities
 
 ## Development
 
 ```bash
-# Clone
-git clone https://github.com/emirinnium/projectmind.git
-cd projectmind
-
-# Install
-npm install
-
-# Build
-npm run build
-
-# Test
-npm test
-
-# Dev CLI
-npm run dev -- scan
-
-# Start MCP server
-npm run start:mcp
+npm run build          # TypeScript compile + tsc-alias
+npm run lint           # ESLint check
+npm run lint:fix       # ESLint auto-fix
+npm run format         # Prettier format
+npm run format:check   # Prettier check
+npm run typecheck      # TypeScript type checking
+npm test               # Integration tests
+npm run test:vitest    # Unit tests
+npm run test:coverage  # Unit tests with coverage report
+npm run test:watch     # Watch mode for unit tests
+npm run start:mcp      # Start MCP server
+npm run ci             # Full CI pipeline (lint + typecheck + test + coverage)
 ```
 
----
+## Repository Pattern
+
+ProjectMind uses a repository pattern for data access with full dependency injection support:
+
+```typescript
+// Using default singleton database
+const fileRepo = new FileRepository();
+
+// Using custom database (for testing)
+const db = new DatabaseSync(':memory:');
+const manager = new DatabaseManager();
+manager.init();
+const fileRepo = new FileRepository(manager.getDb());
+```
+
+### Available Repositories
+- `ProjectRepository` — Project CRUD operations
+- `FileRepository` — File tracking and metadata
+- `ImportRepository` — Import/dependency analysis
+- `MemoryRepository` — Agent sessions and memory
+- `DataFlowRepository` — Taint analysis data flows
+- `DynamicCallRepository` — Runtime call tracing
 
 ## License
 
-MIT © [emirinnium](https://github.com/emirinnium)
-
----
-
-## Links
-
-- **Repository**: https://github.com/emirinnium/projectmind
-- **Issues**: https://github.com/emirinnium/projectmind/issues
-- **NPM**: https://www.npmjs.com/package/@emirhanturker/projectmind
+MIT

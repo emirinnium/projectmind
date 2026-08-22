@@ -1,4 +1,5 @@
 import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS } from './types.js';
+import { validateApiUrl } from './url-validator.js';
 
 export class OllamaProvider implements LLMProvider {
   name = 'ollama';
@@ -8,7 +9,8 @@ export class OllamaProvider implements LLMProvider {
 
   constructor(config: LLMConfig) {
     this.model = config.model;
-    this.apiUrl = config.apiUrl || 'http://localhost:11434/api';
+    // Ollama is self-hosted, so it uses HTTP and localhost/private IPs
+    this.apiUrl = validateApiUrl(config.apiUrl || 'http://localhost:11434/api', 'ollama');
     this.timeoutMs = config.timeoutMs || DEFAULT_TIMEOUT_MS;
   }
 

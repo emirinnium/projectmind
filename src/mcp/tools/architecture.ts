@@ -37,9 +37,18 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
         warnings.push(`${externalImports.length} external/unresolved imports detected`);
       }
 
-      // Check for circular imports (simplified)
-      const importSources = imports.map((i) => i.source);
-      const circularCandidates = importSources.filter((src, idx) => importSources.indexOf(src) !== idx);
+      // Check for circular imports (actual circular dependency detection)
+      const circularCandidates: string[] = [];
+      for (const imp of imports) {
+        if (imp.resolvedFile) {
+          // Check if the resolved file imports back to this file
+          const resolvedImports = deps.kg.getImports(imp.resolvedFile.id);
+          const hasBackRef = resolvedImports.some((ri) => ri.source.includes(file.relativePath) || file.relativePath.includes(ri.source));
+          if (hasBackRef && !circularCandidates.includes(imp.source)) {
+            circularCandidates.push(imp.source);
+          }
+        }
+      }
       if (circularCandidates.length > 0) {
         warnings.push(`Potential circular imports: ${circularCandidates.join(', ')}`);
       }
@@ -52,7 +61,7 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
       }
 
       // Check function complexity
-      const complexFunctions = (functions as any[]).filter((f: any) => f.complexity > 10);
+      const complexFunctions = functions.filter(f => (f.complexity ?? 0) > 10);
       if (complexFunctions.length > 0) {
         warnings.push(`${complexFunctions.length} functions with high cyclomatic complexity (>10)`);
       }
@@ -219,13 +228,13 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
 
       // Complexity-based suggestions
       if (args.focus === 'complexity' || args.focus === 'all') {
-        const complexFuncs = (functions as any[]).filter((f: any) => f.complexity > 10);
+        const complexFuncs = functions.filter(f => (f.complexity ?? 0) > 10);
         for (const fn of complexFuncs) {
           suggestions.push({
             type: 'complexity',
-            priority: fn.complexity > 20 ? 'high' : 'medium',
+            priority: (fn.complexity ?? 0) > 20 ? 'high' : 'medium',
             message: `Function "${fn.name}" has high cyclomatic complexity (${fn.complexity})`,
-            details: `Consider extracting logic into smaller functions. File: ${file.relativePath}, Line: ${fn.startLine}-${fn.endLine}`,
+            details: `Consider extracting logic into smaller functions. File: ${file.relativePath}`,
           });
         }
 
@@ -242,10 +251,10 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
       // Duplication-based suggestions (check for similar functions)
       if (args.focus === 'duplication' || args.focus === 'all') {
         // Check within file
-        const funcSignatures = (functions as any[]).map((f: any) => f.signature);
+        const funcSignatures = functions.map(f => f.signature);
         const seen = new Set<string>();
         for (const sig of funcSignatures) {
-          const simplified = sig.replace(/\s+/g, ' ').trim();
+          const simplified = sig?.replace(/\s+/g, ' ').trim() ?? '';
           if (seen.has(simplified)) {
             suggestions.push({
               type: 'duplication',
@@ -260,31 +269,28 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
         // Check across project for similar function signatures
         if (args.focus === 'all' || args.focus === 'duplication') {
           const allFiles = deps.kg.getAllFiles();
-          const currentFileFuncs = (functions as any[]).map((f: any) => ({
+          const currentFileFuncs = functions.map(f => ({
             name: f.name,
-            signature: f.signature.replace(/\s+/g, ' ').trim(),
+            signature: f.signature?.replace(/\s+/g, ' ').trim() ?? '',
             file: file.relativePath,
-            startLine: f.startLine,
-            endLine: f.endLine,
           }));
 
           for (const otherFile of allFiles) {
             if (otherFile.id === file.id) continue;
-            const otherFuncs = deps.kg.getFunctions(otherFile.id) as any[];
-            for (const otherFn of otherFuncs) {
-              const otherSig = otherFn.signature.replace(/\s+/g, ' ').trim();
-              for (const currentFn of currentFileFuncs) {
-                // Check for similar signatures (same name, similar params)
-                if (currentFn.name === otherFn.name && currentFn.signature !== otherSig) {
-                  suggestions.push({
-                    type: 'duplication',
-                    priority: 'low',
-                    message: `Function "${currentFn.name}" has similar signature in ${otherFile.relativePath}`,
-                    details: `Current: ${currentFn.signature} (${file.relativePath}:${currentFn.startLine}-${currentFn.endLine})\nOther: ${otherSig} (${otherFile.relativePath}:${otherFn.startLine}-${otherFn.endLine})`,
-                  });
-                }
-              }
-            }
+            const otherFuncs = deps.kg.getFunctions(otherFile.id);
+             for (const otherFn of otherFuncs) {
+               const otherSig = otherFn.signature?.replace(/\s+/g, ' ').trim() ?? '';
+               for (const currentFn of currentFileFuncs) {
+                 if (currentFn.name === otherFn.name && currentFn.signature !== otherSig) {
+                   suggestions.push({
+                     type: 'duplication',
+                     priority: 'low',
+                     message: `Function "${currentFn.name}" has similar signature in ${otherFile.relativePath}`,
+                     details: `Current: ${currentFn.signature} (${file.relativePath})\nOther: ${otherSig} (${otherFile.relativePath})`,
+                   });
+                 }
+               }
+             }
           }
         }
       }
@@ -314,7 +320,7 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
 
       // Performance suggestions
       if (args.focus === 'performance' || args.focus === 'all') {
-        const largeClasses = (classes as any[]).filter((c: any) => c.methodsCount > 15);
+        const largeClasses = classes.filter(c => (c.methodsCount ?? 0) > 15);
         for (const cls of largeClasses) {
           suggestions.push({
             type: 'performance',

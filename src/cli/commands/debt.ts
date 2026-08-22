@@ -1,11 +1,12 @@
 import { Command } from 'commander';
-import { withDebt, asyncHandler, formatDebtReport, output } from '../utils/shared.js';
+import { withService, asyncHandler, formatDebtReport, output } from '@/cli/utils/shared.js';
 
 export function createDebtCommand(): Command {
   const cmd = new Command('debt')
     .description('Show cognitive debt report')
     .action(asyncHandler(async () => {
-      await withDebt(async (_ctx, debt) => {
+      await withService(['debt'], async (_ctx, services) => {
+        const debt = services.debt!;
         const report = debt.getReport();
         output.info(formatDebtReport(report));
       });
@@ -15,7 +16,8 @@ export function createDebtCommand(): Command {
     .command('clear')
     .description('Clear all debt items from database')
     .action(asyncHandler(async () => {
-      await withDebt(async (_ctx, debt) => {
+      await withService(['debt'], async (_ctx, services) => {
+        const debt = services.debt!;
         debt.clearAllDebt();
         output.success('All debt items cleared.');
       });
@@ -25,7 +27,8 @@ export function createDebtCommand(): Command {
     .command('detect')
     .description('Run debt detection on current codebase')
     .action(asyncHandler(async () => {
-      await withDebt(async (_ctx, debt) => {
+      await withService(['debt'], async (_ctx, services) => {
+        const debt = services.debt!;
         output.info('Running debt detection...');
         const items = await debt.detectDebt();
         output.success(`Detected ${items.length} debt items.`);
@@ -36,7 +39,8 @@ export function createDebtCommand(): Command {
     .command('clear-patterns')
     .description('Clear all extracted patterns from database')
     .action(asyncHandler(async () => {
-      await withDebt(async (_ctx, debt) => {
+      await withService(['debt'], async (_ctx, services) => {
+        const debt = services.debt!;
         debt.clearPatterns();
         output.success('All patterns cleared.');
       });

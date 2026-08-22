@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { getDatabase, getStatement } from '../../storage/database.js';
 import { SCHEMA_SQL } from '../../storage/schema.js';
 import { FileStructure } from '../ast-parser.js';
-import { codeToEmbedding, cosineSimilarity } from '../embeddings.js';
+import { codeToEmbedding, cosineSimilarity } from '../legacy-embeddings.js';
 
 export interface Pattern {
   id: number;

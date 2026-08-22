@@ -1,4 +1,5 @@
 import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS } from './types.js';
+import { validateApiUrl } from './url-validator.js';
 
 export class AnthropicProvider implements LLMProvider {
   name = 'anthropic';
@@ -12,7 +13,8 @@ export class AnthropicProvider implements LLMProvider {
     this.model = config.model;
     this.deepModel = config.deepModel || config.model;
     this.apiKey = config.apiKey || '';
-    this.apiUrl = config.apiUrl || 'https://api.anthropic.com/v1';
+    // Validate API URL to prevent MITM attacks
+    this.apiUrl = validateApiUrl(config.apiUrl || 'https://api.anthropic.com/v1', 'anthropic');
     this.timeoutMs = config.timeoutMs || DEFAULT_TIMEOUT_MS;
   }
 

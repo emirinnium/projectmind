@@ -31,7 +31,7 @@ export class ArchitecturalDriftDetector {
       importGraph.set(file.relativePath, new Set(imports.map((i: { source: string }) => i.source)));
     }
 
-    const cyclicDeps = this.findCyclicDependencies(importGraph);
+    const cyclicDeps = this.findCyclicDependencies(importGraph, files);
     for (const cycle of cyclicDeps) {
       items.push(this.createDebtItem({
         type: 'architectural_drift',
@@ -46,11 +46,46 @@ export class ArchitecturalDriftDetector {
     return items;
   }
 
-  private findCyclicDependencies(graph: Map<string, Set<string>>): string[][] {
+  private findCyclicDependencies(graph: Map<string, Set<string>>, files: FileInfo[]): string[][] {
     const cycles: string[][] = [];
     const visited = new Set<string>();
     const recStack = new Set<string>();
     const path: string[] = [];
+
+    // Build a map of resolved imports (relative + absolute) to file paths
+    const resolvedImportMap = new Map<string, string>();
+    for (const file of files) {
+      resolvedImportMap.set(file.relativePath, file.relativePath);
+    }
+
+    const resolveImport = (source: string, currentFile: string): string | null => {
+      // Relative import
+      if (source.startsWith('.')) {
+        // Resolve relative path
+        const parts = currentFile.split('/');
+        parts.pop(); // Remove filename
+        const sourceParts = source.split('/');
+        for (const part of sourceParts) {
+          if (part === '..') parts.pop();
+          else if (part !== '.') parts.push(part);
+        }
+        return parts.join('/');
+      }
+
+      // Absolute import (path alias like @/utils/config)
+      if (source.startsWith('@/')) {
+        const resolved = source.slice(2); // Remove @/ prefix
+        // Check if this resolves to a known file
+        for (const file of files) {
+          if (file.relativePath.startsWith(resolved) || file.relativePath === resolved + '.ts' || file.relativePath === resolved + '.tsx') {
+            return file.relativePath;
+          }
+        }
+      }
+
+      // Package import - skip (external dependency)
+      return null;
+    };
 
     const dfs = (node: string) => {
       if (!graph.has(node)) return;
@@ -59,7 +94,7 @@ export class ArchitecturalDriftDetector {
       path.push(node);
 
       for (const dep of graph.get(node)!) {
-        const depPath = dep.startsWith('.') ? dep : null;
+        const depPath = resolveImport(dep, node);
         if (depPath && !visited.has(depPath)) {
           dfs(depPath);
         } else if (depPath && recStack.has(depPath)) {

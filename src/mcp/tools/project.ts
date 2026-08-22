@@ -20,7 +20,7 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
         const report = deps.scale.getScaleReport();
 
         let circularDeps: string[][] = [];
-        let importStats = {
+        const importStats = {
           totalImports: 0,
           resolvedImports: 0,
           unresolvedImports: 0,

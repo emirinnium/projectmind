@@ -16,22 +16,29 @@ export function registerStoreMemoryTool(server: McpServer, deps: McpDependencies
       },
     },
     async (args) => {
-      let sid: number | undefined = args.sessionId;
-      if (!sid) {
-        const sessions = deps.kg.getAgentSessions();
-        const latest = sessions[0];
-        if (latest) {
-          sid = latest.id;
-        } else {
-          sid = deps.kg.startAgentSession('mcp-agent');
+      try {
+        let sid: number | undefined = args.sessionId;
+        if (!sid) {
+          // Only look for sessions from 'mcp-agent', not all agents
+          const sessions = deps.kg.getAgentSessions('mcp-agent');
+          const latest = sessions[0];
+          if (latest) {
+            sid = latest.id;
+          } else {
+            sid = deps.kg.startAgentSession('mcp-agent');
+          }
         }
+
+        deps.kg.storeMemory(sid!, args.scope, args.key, args.value);
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ status: 'stored', sessionId: sid, scope: args.scope, key: args.key }) }],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Store memory failed' }) }],
+        };
       }
-
-      deps.kg.storeMemory(sid!, args.scope, args.key, args.value);
-
-      return {
-        content: [{ type: 'text', text: JSON.stringify({ status: 'stored', scope: args.scope, key: args.key }) }],
-      };
     }
   );
 }
@@ -48,10 +55,16 @@ export function registerGetMemoryTool(server: McpServer, deps: McpDependencies):
       },
     },
     async (args) => {
-      const memories = deps.kg.getMemory(args.scope, args.key);
-      return {
-        content: [{ type: 'text', text: JSON.stringify(memories, null, 2) }],
-      };
+      try {
+        const memories = deps.kg.getMemory(args.scope, args.key);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(memories, null, 2) }],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Get memory failed' }) }],
+        };
+      }
     }
   );
 }

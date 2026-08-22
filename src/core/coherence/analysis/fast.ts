@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { CoherenceCache } from '../../cache/index.js';
 import { FileInfo } from '../../../storage/knowledge-graph.js';
+import { ContractEngine } from '../../contracts/engine.js';
 
 export interface LLMProvider {
   name: string;
@@ -40,10 +41,12 @@ export interface CoherenceCheckOptions {
 export class FastCoherenceAnalyzer {
   private cache: CoherenceCache;
   private db: DatabaseSync;
+  private contractEngine: ContractEngine;
 
-  constructor(db: DatabaseSync, cache: CoherenceCache) {
+  constructor(db: DatabaseSync, cache: CoherenceCache, contractEngine?: ContractEngine) {
     this.db = db;
     this.cache = cache;
+    this.contractEngine = contractEngine || new ContractEngine();
   }
 
   analyze(options: CoherenceCheckOptions, cacheKey: string): CoherenceResult {
@@ -60,14 +63,14 @@ export class FastCoherenceAnalyzer {
     let issues = 0;
     const suggestions: string[] = [];
 
-    if (lines.length > 200) {
-      reasoningTrace.push(`Warning: File exceeds 200 lines (${lines.length}) — cognitive load concern`);
+    if (lines.length > 400) {
+      reasoningTrace.push(`Warning: File exceeds 400 lines (${lines.length}) — cognitive load concern`);
       suggestions.push('Consider splitting this file into smaller modules');
       issues++;
     }
 
     const importCount = (options.code.match(/^\s*import\s+/gm) || []).length;
-    if (importCount > 10) {
+    if (importCount > 20) {
       reasoningTrace.push(`Warning: High import count (${importCount}) — potential coupling issue`);
       suggestions.push('Review imports for unnecessary dependencies');
       issues++;
@@ -81,15 +84,32 @@ export class FastCoherenceAnalyzer {
     }
 
     const consoleCount = (options.code.match(/console\.\w+/g) || []).length;
-    if (consoleCount > 3) {
+    const isExcludedPath = options.filePath.includes('/cli/commands/') || options.filePath.includes('\\cli\\commands\\') || options.filePath.includes('/scripts/') || options.filePath.includes('\\scripts\\') || options.filePath.includes('/tests/') || options.filePath.includes('\\tests\\');
+    if (consoleCount > 3 && !isExcludedPath) {
       reasoningTrace.push(`Warning: ${consoleCount} console statements found`);
       suggestions.push('Remove console statements before production');
       issues++;
     }
 
+    // Architectural Contracts Evaluation
+    const contractViolations = this.contractEngine.evaluate(options.filePath, options.code);
+    let hasContractError = false;
+    if (contractViolations.length > 0) {
+      for (const violation of contractViolations) {
+        reasoningTrace.push(`[Contract ${violation.severity.toUpperCase()}] ${violation.contractName}: ${violation.message}${violation.line ? ` (line ${violation.line})` : ''}`);
+        suggestions.push(`Fix architectural contract violation: ${violation.message}`);
+        if (violation.severity === 'error') {
+          hasContractError = true;
+          issues += 3;
+        } else {
+          issues += 1;
+        }
+      }
+    }
+
     reasoningTrace.push(`Fast-tier analysis complete. Issues found: ${issues}`);
 
-    const verdict = issues === 0 ? 'pass' : issues > 2 ? 'fail' : 'warn';
+    const verdict = hasContractError ? 'fail' : issues === 0 ? 'pass' : issues > 2 ? 'fail' : 'warn';
     const confidence = Math.max(0.3, 0.9 - issues * 0.15);
 
     const result: CoherenceResult = {

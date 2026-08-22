@@ -2,8 +2,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { getDatabase } from '../../storage/database.js';
 import { SCHEMA_SQL } from '../../storage/schema.js';
 import { KnowledgeGraph } from '../../storage/knowledge-graph.js';
-import { CoherenceEngine } from '../coherence-engine.js';
+import { CoherenceEngine } from '../coherence/engine.js';
 import { readFileSync } from 'node:fs';
+import { logger } from '../../utils/logger.js';
 import { RedundancyDetector } from './detection/redundancy.js';
 import { PatternDriftDetector } from './detection/pattern-drift.js';
 import { ArchitecturalDriftDetector } from './detection/architectural-drift.js';
@@ -71,8 +72,9 @@ export class DebtTracker {
         const debtItems = await this.patternDriftDetector.detect(file, content);
         items.push(...debtItems);
 
-      } catch {
+      } catch (e) {
         // Skip files that can't be read
+        logger.debug(`Skipping file in debt detection: ${file.relativePath} - ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 

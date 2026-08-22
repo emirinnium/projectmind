@@ -71,8 +71,8 @@ export function registerFileWatchTool(server: McpServer, deps: McpDependencies):
               },
               context: {
                 imports: imports.map((i) => ({ source: i.source, kind: i.kind, resolved: !!i.resolvedFile })),
-                functions: (functions as any[]).map((f: any) => ({ name: f.name, complexity: f.complexity })),
-                classes: (classes as any[]).map((c: any) => ({ name: c.name, methods: c.methodsCount })),
+                functions: functions.map(f => ({ name: f.name, complexity: f.complexity })),
+                classes: classes.map(c => ({ name: c.name, methods: c.methodsCount })),
               },
               events: args.events,
             }, null, 2),
@@ -145,12 +145,12 @@ export function registerGetFileStatusTool(server: McpServer, deps: McpDependenci
                 })),
               },
               structure: {
-                functions: (functions as any[]).map((f: any) => ({
+                functions: functions.map(f => ({
                   name: f.name,
                   complexity: f.complexity,
-                  lines: f.endLine - f.startLine,
+                  lines: (f.endLine ?? 0) - (f.startLine ?? 0),
                 })),
-                classes: (classes as any[]).map((c: any) => ({
+                classes: classes.map(c => ({
                   name: c.name,
                   methods: c.methodsCount,
                   properties: c.propertiesCount,
@@ -196,64 +196,73 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
       },
     },
     async (args) => {
-      const sessionId = deps.kg.startAgentSession(args.agentId);
-      
-      let pushed = false;
-      let pulled: any = null;
+      try {
+        // Reuse existing session for this agent instead of creating new one
+        const sessions = deps.kg.getAgentSessions(args.agentId);
+        const session = sessions[0];
+        const sessionId = session ? session.id : deps.kg.startAgentSession(args.agentId);
+        
+        let pushed = false;
+        let pulled: { decisions: Array<{ key: string; value: unknown }>; patterns: Array<{ key: string; value: unknown }>; issues: Array<{ key: string; value: unknown }>; sync: Array<{ key: string; value: unknown }> } | null = null;
 
-      if (args.action === 'push' || args.action === 'both') {
-        if (args.context) {
-          // Store context in agent memory
-          if (args.context.currentFile) {
-            deps.kg.storeMemory(sessionId, 'sync', 'current_file', args.context.currentFile);
-          }
-          if (args.context.recentDecisions) {
-            for (const decision of args.context.recentDecisions) {
-              deps.kg.storeMemory(sessionId, 'decisions', decision.file, JSON.stringify(decision));
+        if (args.action === 'push' || args.action === 'both') {
+          if (args.context) {
+            // Store context in agent memory
+            if (args.context.currentFile) {
+              deps.kg.storeMemory(sessionId, 'sync', 'current_file', args.context.currentFile);
             }
-          }
-          if (args.context.patternsUsed) {
-            deps.kg.storeMemory(sessionId, 'patterns', 'used', JSON.stringify(args.context.patternsUsed));
-          }
-          if (args.context.issuesFound) {
-            for (const issue of args.context.issuesFound) {
-              deps.kg.storeMemory(sessionId, 'issues', issue.file, JSON.stringify(issue));
+            if (args.context.recentDecisions) {
+              for (const decision of args.context.recentDecisions) {
+                deps.kg.storeMemory(sessionId, 'decisions', decision.file, JSON.stringify(decision));
+              }
             }
+            if (args.context.patternsUsed) {
+              deps.kg.storeMemory(sessionId, 'patterns', 'used', JSON.stringify(args.context.patternsUsed));
+            }
+            if (args.context.issuesFound) {
+              for (const issue of args.context.issuesFound) {
+                deps.kg.storeMemory(sessionId, 'issues', issue.file, JSON.stringify(issue));
+              }
+            }
+            pushed = true;
           }
-          pushed = true;
         }
-      }
 
-      if (args.action === 'pull' || args.action === 'both') {
-        // Pull relevant context from ProjectMind
-        const decisions = deps.kg.getMemory('decisions');
-        const patterns = deps.kg.getMemory('patterns');
-        const issues = deps.kg.getMemory('issues');
-        const syncData = deps.kg.getMemory('sync');
+        if (args.action === 'pull' || args.action === 'both') {
+          // Pull relevant context from ProjectMind
+          const decisions = deps.kg.getMemory('decisions');
+          const patterns = deps.kg.getMemory('patterns');
+          const issues = deps.kg.getMemory('issues');
+          const syncData = deps.kg.getMemory('sync');
 
-        pulled = {
-          decisions: decisions.map((d) => ({ key: d.key, value: d.value })),
-          patterns: patterns.map((p) => ({ key: p.key, value: p.value })),
-          issues: issues.map((i) => ({ key: i.key, value: i.value })),
-          sync: syncData.map((s) => ({ key: s.key, value: s.value })),
+          pulled = {
+            decisions: decisions.map((d) => ({ key: d.key, value: d.value })),
+            patterns: patterns.map((p) => ({ key: p.key, value: p.value })),
+            issues: issues.map((i) => ({ key: i.key, value: i.value })),
+            sync: syncData.map((s) => ({ key: s.key, value: s.value })),
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                sessionId,
+                agentId: args.agentId,
+                action: args.action,
+                pushed,
+                pulled,
+                message: 'Context synchronized successfully',
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error instanceof Error ? error.message : 'Sync failed' }) }],
         };
       }
-
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              sessionId,
-              agentId: args.agentId,
-              action: args.action,
-              pushed,
-              pulled,
-              message: 'Context synchronized successfully',
-            }, null, 2),
-          },
-        ],
-      };
     }
   );
 }

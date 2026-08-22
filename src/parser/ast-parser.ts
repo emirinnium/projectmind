@@ -1,7 +1,8 @@
 import { extname } from 'node:path';
 import { parseTypeScriptFile } from './ast/parser.js';
+import { parseFileMultilang } from './multilang-parser.js';
 
-export type Language = 'typescript' | 'javascript' | 'python' | 'go' | 'rust' | 'unknown';
+export type Language = 'typescript' | 'javascript' | 'python' | 'go' | 'rust' | 'java' | 'csharp' | 'cpp' | 'ruby' | 'unknown';
 
 export interface ParameterInfo {
   name: string;
@@ -53,6 +54,8 @@ export function detectLanguage(filePath: string): Language {
       return 'typescript';
     case '.js':
     case '.jsx':
+    case '.mjs':
+    case '.cjs':
       return 'javascript';
     case '.py':
       return 'python';
@@ -60,6 +63,20 @@ export function detectLanguage(filePath: string): Language {
       return 'go';
     case '.rs':
       return 'rust';
+    case '.java':
+      return 'java';
+    case '.cs':
+    case '.csx':
+      return 'csharp';
+    case '.cpp':
+    case '.cc':
+    case '.cxx':
+    case '.hpp':
+    case '.h':
+      return 'cpp';
+    case '.rb':
+    case '.rake':
+      return 'ruby';
     default:
       return 'unknown';
   }
@@ -70,8 +87,10 @@ export function parseFile(filePath: string, content?: string): FileStructure | n
   if (lang === 'typescript' || lang === 'javascript') {
     return parseTypeScriptFile(filePath, content, lang);
   }
-  return null;
+  // Use multi-language parser for Python, Go, Rust
+  return parseFileMultilang(filePath, content);
 }
 
 // Re-export the implementation
 export { parseTypeScriptFile } from './ast/parser.js';
+export { parseFileMultilang } from './multilang-parser.js';

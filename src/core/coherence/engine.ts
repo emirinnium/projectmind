@@ -13,6 +13,7 @@ export class CoherenceEngine {
   private cache: CoherenceCache;
   private fastAnalyzer: FastCoherenceAnalyzer;
   private deepAnalyzer: DeepCoherenceAnalyzer;
+  private offline: boolean = false;
 
   constructor(db?: DatabaseSync, maxCacheSize: number = 10_000, ttlMs: number = 300_000) {
     this.db = db ?? getDatabase();
@@ -30,6 +31,19 @@ export class CoherenceEngine {
     return this.deepAnalyzer['llmProvider']?.isAvailable() ?? false;
   }
 
+  /**
+   * Set offline mode. When true, only fast-tier (local) analysis is used.
+   * No code is sent to cloud LLM APIs.
+   */
+  setOffline(offline: boolean): void {
+    this.offline = offline;
+    this.deepAnalyzer.setAllowCloudLLM(!offline);
+  }
+
+  isOffline(): boolean {
+    return this.offline;
+  }
+
   async checkCoherence(options: CoherenceCheckOptions): Promise<CoherenceResult> {
     const cacheKey = this.cache.makeKey(options.code, options.filePath, options.deepAnalysis ?? false);
 
@@ -38,11 +52,12 @@ export class CoherenceEngine {
       return cached;
     }
 
-    if (!options.fastOnly && this.deepAnalyzer['llmProvider']?.isAvailable()) {
-      return this.deepAnalyzer.analyze(options, cacheKey);
+    // Force fast-only when offline or when deep analysis not requested
+    if (this.offline || options.fastOnly || !this.deepAnalyzer['llmProvider']?.isAvailable()) {
+      return this.fastAnalyzer.analyze(options, cacheKey);
     }
 
-    return this.fastAnalyzer.analyze(options, cacheKey);
+    return this.deepAnalyzer.analyze(options, cacheKey);
   }
 
   clearCache(): void {

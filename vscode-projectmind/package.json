@@ -1,0 +1,128 @@
+{
+  "name": "projectmind",
+  "displayName": "ProjectMind",
+  "description": "AI-powered codebase intelligence: coherence, security, embeddings",
+  "version": "0.1.0",
+  "publisher": "emirinnium",
+  "icon": "images/vscode-icon-128x128.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Testing",
+    "Machine Learning",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "code-intelligence",
+    "coherence",
+    "security",
+    "embeddings",
+    "mcp"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "projectmind.scanProject",
+        "title": "ProjectMind: Scan Project"
+      },
+      {
+        "command": "projectmind.scanFile",
+        "title": "ProjectMind: Scan Current File"
+      },
+      {
+        "command": "projectmind.showReport",
+        "title": "ProjectMind: Show Report"
+      },
+      {
+        "command": "projectmind.checkCoherence",
+        "title": "ProjectMind: Check Coherence"
+      },
+      {
+        "command": "projectmind.findSimilar",
+        "title": "ProjectMind: Find Similar Code"
+      },
+      {
+        "command": "projectmind.showImpact",
+        "title": "ProjectMind: Show Impact Analysis"
+      }
+    ],
+    "configuration": {
+      "title": "ProjectMind",
+      "properties": {
+        "projectmind.autoScan": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan on startup"
+        },
+        "projectmind.scanOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Scan file on save"
+        },
+        "projectmind.showInlineHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline coherence hints"
+        },
+        "projectmind.mcpServerPath": {
+          "type": "string",
+          "default": "projectmind",
+          "description": "Path to projectmind MCP server"
+        },
+        "projectmind.embeddings.provider": {
+          "type": "string",
+          "enum": ["simple", "openai", "transformers"],
+          "default": "transformers",
+          "description": "Embedding provider"
+        },
+        "projectmind.offline": {
+          "type": "boolean",
+          "default": false,
+          "description": "Offline mode - no code sent to cloud LLM"
+        }
+      }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "projectmindSidebar",
+          "name": "ProjectMind",
+          "when": "projectmind:activated"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "projectmind",
+          "title": "ProjectMind",
+          "icon": "images/vscode-activity-icon.png"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.0",
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.0",
+    "ts-loader": "^9.5.0",
+    "@vscode/test-cli": "^0.0.6",
+    "@vscode/test-electron": "^2.3.0"
+  }
+}

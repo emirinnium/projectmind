@@ -1,7 +1,7 @@
-import type { KnowledgeGraph } from '../../storage/knowledge-graph.js';
-import type { CoherenceEngine } from '../../core/coherence-engine.js';
-import type { DebtTracker } from '../../core/debt-tracker.js';
-import type { ScaleManager } from '../../core/scale-manager.js';
+import type { KnowledgeGraph } from '@/storage/knowledge-graph.js';
+import type { CoherenceEngine } from '@/core/coherence/engine.js';
+import type { DebtTracker } from '@/core/debt/tracker.js';
+import type { ScaleManager } from '@/core/scale/manager.js';
 
 export interface McpDependencies {
   kg: KnowledgeGraph;

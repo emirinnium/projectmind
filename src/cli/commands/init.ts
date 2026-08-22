@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import { withContext, asyncHandler, output } from '../utils/shared.js';
-import { join } from 'node:path';
+import { withContext, asyncHandler, output } from '@/cli/utils/shared.js';
+import { join } from '@/cli/utils/shared.js';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 
 export function createInitCommand(): Command {

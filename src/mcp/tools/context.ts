@@ -111,7 +111,7 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
                   })),
                 },
                 circularDependencies: fileCycles,
-                patterns: [],
+                patterns: file.patterns || [],
               }, null, 2),
             },
           ],

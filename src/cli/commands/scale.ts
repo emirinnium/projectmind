@@ -1,12 +1,43 @@
 import { Command } from 'commander';
-import { withScale, asyncHandler, output } from '../utils/shared.js';
+import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 
 export function createScaleCommand(): Command {
   return new Command('scale')
     .description('Show project scale and coverage report')
-    .action(asyncHandler(async () => {
-      await withScale(async (_ctx, scale) => {
+    .option('-j, --json', 'Output as JSON')
+    .action(asyncHandler(async (opts: { json?: boolean }) => {
+      await withService(['scale'], async (_ctx, services) => {
+        const scale = services.scale!;
         const report = scale.getScaleReport();
+
+        if (opts.json) {
+          console.log(JSON.stringify({
+            totalFiles: report.totalFiles,
+            totalLines: report.totalLines,
+            totalBytes: report.totalBytes,
+            agentCoverage: report.agentCoverage,
+            avgCognitiveLoad: report.avgCognitiveLoad,
+            languages: report.languages,
+            modules: report.modules.map(m => ({
+              path: m.path,
+              name: m.name,
+              fileCount: m.fileCount,
+              totalBytes: m.totalBytes,
+              cognitiveLoad: m.cognitiveLoad,
+              agentCoverage: m.agentCoverage,
+            })),
+            topHotspots: report.topHotspots.map(f => ({
+              path: f.relativePath,
+              cognitiveLoad: f.cognitiveLoad,
+              agentTouched: f.agentTouched,
+            })),
+            uncoveredFiles: report.uncoveredFiles.map(f => ({
+              path: f.relativePath,
+              cognitiveLoad: f.cognitiveLoad,
+            })),
+          }, null, 2));
+          return;
+        }
 
         output.section('Scale Report');
         output.kv('Files', report.totalFiles);

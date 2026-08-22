@@ -9,3 +9,10 @@ export { registerTraceImportsTool, registerFindCircularDepsTool, registerResolve
 export { registerResolvePathTool, registerFindFileByImportTool } from './paths.js';
 export { registerCheckArchitectureTool, registerAnalyzeImpactTool, registerSuggestRefactorTool } from './architecture.js';
 export { registerFileWatchTool, registerGetFileStatusTool, registerSyncContextTool, registerUnregisterFileWatchTool } from './sync.js';
+export { registerIngestTraceTool } from './trace.js';
+export { registerStructuralSearchTool } from './structural-search.js';
+export { registerProjectTools } from './projects.js';
+export { registerDataFlowTools } from './data-flow.js';
+export { registerEmbeddingTools } from './embeddings.js';
+export { registerTaintTools } from './taint.js';
+export { registerTeamMemoryTools } from './team-memory.js';

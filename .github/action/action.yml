@@ -1,0 +1,37 @@
+name: 'ProjectMind Code Intelligence'
+description: 'AI-powered codebase analysis: coherence, security, embeddings'
+author: 'emirinnium'
+
+branding:
+  icon: 'brain'
+  color: 'purple'
+
+inputs:
+  scan:
+    description: 'Run project scan'
+    required: false
+    default: 'true'
+  check:
+    description: 'Run coherence check'
+    required: false
+    default: 'false'
+  audit:
+    description: 'Run security audit'
+    required: false
+    default: 'false'
+  embed:
+    description: 'Embedding provider (simple|transformers|openai)'
+    required: false
+    default: 'transformers'
+  offline:
+    description: 'Offline mode (no cloud LLM)'
+    required: false
+    default: 'false'
+  token:
+    description: 'GitHub token for PR comments'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: 'node20'
+  main: '../dist/action.js'

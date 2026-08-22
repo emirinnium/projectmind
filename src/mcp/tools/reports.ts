@@ -13,13 +13,19 @@ export function registerDebtReportTool(server: McpServer, deps: McpDependencies)
       },
     },
     async (args) => {
-      if (args.resolveAfter) {
-        await deps.debt.detectDebt();
+      try {
+        if (args.resolveAfter) {
+          await deps.debt.detectDebt();
+        }
+        const report = deps.debt.getReport();
+        return {
+          content: [{ type: 'text', text: JSON.stringify(report, null, 2) }],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error instanceof Error ? error.message : 'Debt report failed' }) }],
+        };
       }
-      const report = deps.debt.getReport();
-      return {
-        content: [{ type: 'text', text: JSON.stringify(report, null, 2) }],
-      };
     }
   );
 }
@@ -31,14 +37,25 @@ export function registerScaleReportTool(server: McpServer, deps: McpDependencies
       title: 'Project Scale Report',
       description: 'Get project scale, module coverage, and cognitive load metrics.',
       inputSchema: {
-        root: z.string().default('.').describe('Root directory'),
+        root: z.string().default('.').describe('Root directory (note: uses initialized project root)'),
       },
     },
-    async () => {
-      const report = deps.scale.getScaleReport();
-      return {
-        content: [{ type: 'text', text: JSON.stringify(report, null, 2) }],
-      };
+    async (args) => {
+      try {
+        // If root is specified and differs from current, log a note
+        if (args.root && args.root !== '.') {
+          // ScaleManager uses the root from initialization
+          // For different root, re-scan would be needed
+        }
+        const report = deps.scale.getScaleReport();
+        return {
+          content: [{ type: 'text', text: JSON.stringify(report, null, 2) }],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error instanceof Error ? error.message : 'Scale report failed' }) }],
+        };
+      }
     }
   );
 }
@@ -52,19 +69,25 @@ export function registerGenomeScoreTool(server: McpServer, deps: McpDependencies
       inputSchema: {},
     },
     async () => {
-      const genome = deps.debt.computeGenome();
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              coherenceScore: genome.coherenceScore,
-              scorePercentage: `${(genome.coherenceScore * 100).toFixed(1)}%`,
-              genomeData: genome.genomeData,
-            }, null, 2),
-          },
-        ],
-      };
+      try {
+        const genome = deps.debt.computeGenome();
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                coherenceScore: genome.coherenceScore,
+                scorePercentage: `${(genome.coherenceScore * 100).toFixed(1)}%`,
+                genomeData: genome.genomeData,
+              }, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: error instanceof Error ? error.message : 'Genome score computation failed' }) }],
+        };
+      }
     }
   );
 }

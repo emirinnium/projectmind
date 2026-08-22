@@ -8,6 +8,7 @@ import { dirname } from 'node:path';
 export class CachePersistence<K, V> {
   private readonly options: Required<CacheOptions<K, V>>;
   private persistTimer: ReturnType<typeof setInterval> | null = null;
+  private cacheMap: Map<K, CacheEntry<V>> | null = null;
 
   constructor(options: CacheOptions<K, V>) {
     this.options = {
@@ -27,6 +28,7 @@ export class CachePersistence<K, V> {
   }
 
   loadFromDisk(map: Map<K, CacheEntry<V>>): void {
+    this.cacheMap = map;
     if (!this.options.persistent) return;
 
     try {
@@ -75,7 +77,9 @@ export class CachePersistence<K, V> {
 
   private startPersistTimer(): void {
     this.persistTimer = setInterval(() => {
-      // The actual persist will be called by the main cache class
+      if (this.cacheMap) {
+        this.persistToDisk(this.cacheMap);
+      }
     }, 60_000); // Persist every minute
   }
 

@@ -1,4 +1,34 @@
 export const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  root_path TEXT NOT NULL,
+  description TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_scanned TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS team_memories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_name TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  is_public BOOLEAN DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(scope, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_team_memories_scope ON team_memories(scope);
+CREATE INDEX IF NOT EXISTS idx_team_memories_agent ON team_memories(agent_name);
+
 CREATE TABLE IF NOT EXISTS files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   path TEXT UNIQUE NOT NULL,
@@ -49,6 +79,24 @@ CREATE TABLE IF NOT EXISTS imports (
   resolved_path TEXT,
   FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS calls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_function_id INTEGER NOT NULL,
+  to_function_id INTEGER NOT NULL,
+  dynamic BOOLEAN DEFAULT 0,
+  static_missed BOOLEAN DEFAULT 0,
+  call_count INTEGER DEFAULT 1,
+  workload_id TEXT,
+  detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (from_function_id) REFERENCES functions(id) ON DELETE CASCADE,
+  FOREIGN KEY (to_function_id) REFERENCES functions(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_calls_from ON calls(from_function_id);
+CREATE INDEX IF NOT EXISTS idx_calls_to ON calls(to_function_id);
+CREATE INDEX IF NOT EXISTS idx_calls_dynamic ON calls(dynamic);
+CREATE INDEX IF NOT EXISTS idx_calls_workload ON calls(workload_id);
 
 CREATE TABLE IF NOT EXISTS circular_dependencies (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,6 +198,18 @@ CREATE TABLE IF NOT EXISTS project_genome (
   computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS contracts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL,
+  description TEXT,
+  source_pattern TEXT NOT NULL,
+  forbidden_imports TEXT,
+  required_patterns TEXT,
+  severity TEXT CHECK(severity IN ('high', 'medium', 'low')) DEFAULT 'medium',
+  active BOOLEAN DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS scan_profiles (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   total_files INTEGER NOT NULL,
@@ -161,6 +221,34 @@ CREATE TABLE IF NOT EXISTS scan_profiles (
   errors TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS resources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  qualified_name TEXT UNIQUE NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('FILE', 'NETWORK', 'DATABASE', 'ENV', 'STDIN', 'STDOUT', 'STDERR', 'SOCKET')),
+  identity TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS data_flows (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_resource_id INTEGER NOT NULL,
+  to_resource_id INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('resource', 'arg', 'return')),
+  via TEXT,
+  source_function_id INTEGER,
+  target_function_id INTEGER,
+  detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (from_resource_id) REFERENCES resources(id) ON DELETE CASCADE,
+  FOREIGN KEY (to_resource_id) REFERENCES resources(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_function_id) REFERENCES functions(id) ON DELETE SET NULL,
+  FOREIGN KEY (target_function_id) REFERENCES functions(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_resources_qualified ON resources(qualified_name);
+CREATE INDEX IF NOT EXISTS idx_data_flows_from ON data_flows(from_resource_id);
+CREATE INDEX IF NOT EXISTS idx_data_flows_to ON data_flows(to_resource_id);
+CREATE INDEX IF NOT EXISTS idx_data_flows_kind ON data_flows(kind);
 
 CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
 CREATE INDEX IF NOT EXISTS idx_files_hash ON files(hash);
@@ -179,4 +267,14 @@ CREATE INDEX IF NOT EXISTS idx_memory_expires ON agent_memory(expires_at);
 CREATE INDEX IF NOT EXISTS idx_debt_resolved ON debt_items(resolved);
 CREATE INDEX IF NOT EXISTS idx_coherence_hash ON coherence_decisions(code_hash);
 CREATE INDEX IF NOT EXISTS idx_genome_checksum ON project_genome(checksum);
+
+-- Additional performance indexes (moved after table creation)
+-- Note: Indexes for columns added by migrations (project_id, etc.) are created in migrations
+CREATE INDEX IF NOT EXISTS idx_functions_name ON functions(name);
+CREATE INDEX IF NOT EXISTS idx_imports_source ON imports(source);
+CREATE INDEX IF NOT EXISTS idx_calls_workload_dynamic ON calls(workload_id, dynamic);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_session ON agent_memory(session_id);
+CREATE INDEX IF NOT EXISTS idx_agent_memory_scope ON agent_memory(scope, key);
+CREATE INDEX IF NOT EXISTS idx_coherence_decisions_hash ON coherence_decisions(code_hash);
+CREATE INDEX IF NOT EXISTS idx_debt_items_type ON debt_items(type, severity);
 `;

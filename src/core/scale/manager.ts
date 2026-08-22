@@ -21,12 +21,13 @@ export class ScaleManager {
     this.reporter = new ScaleReporter(this.kg);
   }
 
-  async scanProject(rootPath?: string): Promise<{ scanned: number; errors: number }> {
-    return this.scanner.scanProject(rootPath);
+  async scanProject(rootPath?: string, full?: boolean): Promise<{ scanned: number; errors: number; totalFiles: number }> {
+    const profile = await this.scanner.scanProjectWithProfile(rootPath, full);
+    return { scanned: profile.scannedFiles, errors: profile.errorFiles, totalFiles: profile.totalFiles };
   }
 
-  async scanProjectWithProfile(rootPath?: string): Promise<ScanProfile> {
-    const profile = await this.scanner.scanProjectWithProfile(rootPath);
+  async scanProjectWithProfile(rootPath?: string, full?: boolean): Promise<ScanProfile> {
+    const profile = await this.scanner.scanProjectWithProfile(rootPath, full);
     this.reporter.storeScanProfile(profile);
     return profile;
   }

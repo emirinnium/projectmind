@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { withContext, asyncHandler, output } from '../utils/shared.js';
+import { withContext, asyncHandler, output } from '@/cli/utils/shared.js';
 
 export function createMemoryCommand(): Command {
   return new Command('memory')

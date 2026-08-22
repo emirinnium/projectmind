@@ -17,10 +17,9 @@
     ".turbo/**"
   ],
   "llm": {
-    "provider": "kilo",
-    "model": "anthropic/claude-sonnet-4",
-    "apiKey": "${KILO_API_KEY}",
-    "deepModel": "anthropic/claude-opus-4",
+    "provider": "gemini",
+    "model": "gemini-3.6-flash",
+    "deepModel": "gemini-3.6-flash",
     "confidenceThreshold": 0.7,
     "maxCacheSize": 10000
   },

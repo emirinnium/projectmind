@@ -1,5 +1,9 @@
 # Dependencies
 node_modules/
+**/node_modules/
+.npm/
+.pnp/
+.pnp.js
 
 # Build output
 dist/
@@ -18,8 +22,16 @@ yarn-error.log*
 
 # Environment
 .env
+.env.*
 .env.local
 .env.*.local
+
+# Kilo AI
+.kilo/
+kilo.json
+
+# Build binaries
+bin/
 
 # IDE/Editor
 .vscode/
@@ -39,5 +51,32 @@ coverage/
 # TypeScript cache
 *.tsbuildinfo
 
-# Test temp
+# Test temp databases
 tests/tmp-*.db
+tests/tmp-*.db-shm
+tests/tmp-*.db-wal
+tests/tmp-test*.db
+tests/tmp-test*.db-shm
+tests/tmp-test*.db-wal
+tests/tmp-vitest*.db
+tests/tmp-vitest*.db-shm
+tests/tmp-vitest*.db-wal
+
+# Backup files
+*.bak
+*.bak.*
+
+# Temp files from development
+C:*/
+
+# Compiled Python
+__pycache__/
+*.pyc
+
+# Compiled C#
+*.dll
+*.exe
+*.pdb
+
+# Tool configs (local)
+.eslintcache

@@ -1,5 +1,5 @@
 import { AdvancedCache } from './advanced-cache.js';
-import type { CoherenceResult } from '../coherence-engine.js';
+import type { CoherenceResult } from '../coherence/engine.js';
 
 export class CoherenceCache extends AdvancedCache<string, CoherenceResult> {
   constructor(maxSize: number = 10_000, ttlMs: number = 300_000) {

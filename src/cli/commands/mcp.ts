@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { logger } from '../utils/logger.js';
+import { logger } from '@/cli/utils/logger.js';
 
 export function createMcpCommand(): Command {
   return new Command('mcp')

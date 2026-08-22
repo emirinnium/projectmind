@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { withContext, asyncHandler, output } from '../utils/shared.js';
+import { withContext, asyncHandler, output } from '@/cli/utils/shared.js';
 
 export function createDebugCommand(): Command {
   const debugCmd = new Command('debug')
@@ -10,8 +10,8 @@ export function createDebugCommand(): Command {
     .description('Show cache statistics')
     .action(asyncHandler(async () => {
       await withContext(async (ctx) => {
-        const { CoherenceEngine } = await import('../../core/coherence-engine.js');
-        const { DebtTracker } = await import('../../core/debt-tracker.js');
+        const { CoherenceEngine } = await import('../../core/coherence/engine.js');
+        const { DebtTracker } = await import('../../core/debt/tracker.js');
         
         const coherence = new CoherenceEngine(ctx.db);
         const debt = new DebtTracker(ctx.db, ctx.kg, coherence);
@@ -135,7 +135,7 @@ export function createDebugCommand(): Command {
     .description('Show last scan profile')
     .action(asyncHandler(async () => {
       await withContext(async (ctx) => {
-        const { ScaleManager } = await import('../../core/scale-manager.js');
+        const { ScaleManager } = await import('../../core/scale/manager.js');
         const scale = new ScaleManager(ctx.db, ctx.kg);
         const profile = scale.getLastScanProfile();
         

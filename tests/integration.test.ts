@@ -1,23 +1,33 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { initDatabase, setDatabase, closeDatabase } from '../src/storage/database.js';
 import { SCHEMA_SQL } from '../src/storage/schema.js';
 import { KnowledgeGraph } from '../src/storage/knowledge-graph.js';
-import { CoherenceEngine } from '../src/core/coherence-engine.js';
-import { DebtTracker } from '../src/core/debt-tracker.js';
-import { ScaleManager } from '../src/core/scale-manager.js';
+import { CoherenceEngine } from '../src/core/coherence/engine.js';
+import { DebtTracker } from '../src/core/debt/tracker.js';
+import { ScaleManager } from '../src/core/scale/manager.js';
 import { parseFile } from '../src/parser/ast-parser.js';
 import { PatternLibrary } from '../src/parser/pattern-extractor.js';
 import { textToEmbedding, cosineSimilarity } from '../src/parser/embeddings.js';
 
-const TEST_DB = join(process.cwd(), 'tests', 'tmp-test.db');
+const TEST_DB = join(process.cwd(), 'tests', `tmp-test-${randomUUID()}.db`);
 const PROJECT_ROOT = join(process.cwd());
 const SRC_DIR = join(PROJECT_ROOT, 'src');
 
 async function testDatabase(): Promise<void> {
   const dbDir = dirname(TEST_DB);
   if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true });
-  if (existsSync(TEST_DB)) rmSync(TEST_DB);
+  
+  // Retry cleanup to handle Windows file locking
+  for (let i = 0; i < 5; i++) {
+    try {
+      if (existsSync(TEST_DB)) rmSync(TEST_DB);
+      break;
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
 
   const db = initDatabase(TEST_DB);
   db.exec(SCHEMA_SQL);
@@ -89,7 +99,7 @@ async function testDatabase(): Promise<void> {
   const emb1 = textToEmbedding('hello world');
   const emb2 = textToEmbedding('world hello');
   const emb3 = textToEmbedding('completely different');
-  assert(emb1.length === 128, `Embedding dimension: ${emb1.length}`);
+  assert(emb1.length === 768, `Embedding dimension: ${emb1.length}`);
 
   const sim1 = cosineSimilarity(emb1, emb2);
   const sim2 = cosineSimilarity(emb1, emb3);
@@ -172,9 +182,94 @@ async function testDatabase(): Promise<void> {
   const allFiles = kg.getAllFiles();
   assert(allFiles.length > 0, `All files: ${allFiles.length}`);
 
+  console.log('\n=== Test: Project Management ===');
+  const project = kg.createProject('test-project', PROJECT_ROOT, 'Test project');
+  assert(project.id > 0, `Project created with ID: ${project.id}`);
+  assert(project.name === 'test-project', 'Project name matches');
+  assert(project.rootPath === PROJECT_ROOT, 'Project root path matches');
+
+  const projects = kg.listProjects();
+  assert(projects.length >= 1, `Projects listed: ${projects.length}`);
+  assert(projects.some((p) => p.name === 'test-project'), 'New project in list');
+
+  const switchResult = kg.switchProject(project.id);
+  assert(switchResult.success, 'Switched to new project');
+  assert(switchResult.project?.id === project.id, 'Switched project ID matches');
+
+  const currentProject = kg.getCurrentProject();
+  assert(currentProject?.id === project.id, 'Current project matches switched project');
+
+  console.log('\n=== Test: Dynamic Tracing ===');
+  kg.ingestDynamicCalls([
+    {
+      fromFunctionName: 'caller',
+      toFunctionName: 'callee',
+      workloadId: 'test-workload',
+      callCount: 3,
+      staticMissed: true,
+    },
+    {
+      fromFunctionName: 'caller2',
+      toFunctionName: 'callee2',
+      workloadId: 'test-workload',
+      callCount: 1,
+      staticMissed: false,
+    },
+  ]);
+
+  const dynamicCalls = kg.getDynamicCalls('test-workload');
+  assert(dynamicCalls.length === 2, `Dynamic calls: ${dynamicCalls.length}`);
+
+  const allDynamicCalls = kg.getAllDynamicCalls();
+  assert(allDynamicCalls.length >= 2, `All dynamic calls: ${allDynamicCalls.length}`);
+
+  const staticMissed = kg.getStaticMissedCalls();
+  assert(staticMissed.length >= 1, `Static missed calls: ${staticMissed.length}`);
+  assert(staticMissed[0].staticMissed === true, 'Static missed flag preserved');
+
+  const cleared = kg.clearDynamicCalls('test-workload');
+  assert(cleared === 2, `Cleared ${cleared} dynamic calls`);
+
+  console.log('\n=== Test: Data-Flow / Taint Analysis ===');
+  const flow = kg.recordDataFlow({
+    fromResourceQualifiedName: 'fs.readFile("./input.txt")',
+    fromResourceKind: 'FILE',
+    fromResourceIdentity: './input.txt',
+    toResourceQualifiedName: 'processInput',
+    toResourceKind: 'NETWORK',
+    toResourceIdentity: 'http://evil.com',
+    kind: 'arg',
+    via: 'processInput',
+    sourceFunctionName: 'loadData',
+    targetFunctionName: 'sendData',
+  });
+  assert(flow.id > 0, `Data flow recorded: ${flow.id}`);
+  assert(flow.fromResource.qualifiedName === 'fs.readFile("./input.txt")', 'From resource matches');
+  assert(flow.toResource.qualifiedName === 'processInput', 'To resource matches');
+
+  const flows = kg.getDataFlows();
+  assert(flows.length >= 1, `Data flows: ${flows.length}`);
+  assert(flows[0].kind === 'arg', 'Flow kind preserved');
+
+  const resourceFlows = kg.getResourceFlows('fs.readFile("./input.txt")');
+  assert(resourceFlows.length >= 1, `Resource flows: ${resourceFlows.length}`);
+
+  const clearedFlows = kg.clearDataFlows();
+  assert(clearedFlows >= 1, `Cleared ${clearedFlows} data flows`);
+
   closeDatabase();
 
-  if (existsSync(TEST_DB)) rmSync(TEST_DB);
+  // Retry cleanup to handle Windows file locking
+  for (let i = 0; i < 5; i++) {
+    try {
+      if (existsSync(TEST_DB)) rmSync(TEST_DB);
+      if (existsSync(TEST_DB + '-shm')) rmSync(TEST_DB + '-shm');
+      if (existsSync(TEST_DB + '-wal')) rmSync(TEST_DB + '-wal');
+      break;
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
 
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
   if (failed > 0) {
