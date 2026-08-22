@@ -28,12 +28,16 @@ export function storeMemory(ctx: KgContext, sessionId: number, scope: string, ke
 }
 
 export function getMemory(ctx: KgContext, scope: string, key?: string): MemoryEntry[] {
+  // Respect expires_at exactly like MemoryRepository does — the two data
+  // access layers previously diverged and expired memories leaked through
+  // this path.
+  const now = new Date().toISOString();
   const sql = key
-    ? 'SELECT * FROM agent_memory WHERE scope = ? AND key = ? ORDER BY created_at DESC'
-    : 'SELECT * FROM agent_memory WHERE scope = ? ORDER BY created_at DESC';
+    ? 'SELECT * FROM agent_memory WHERE scope = ? AND key = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC'
+    : 'SELECT * FROM agent_memory WHERE scope = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC';
   const rows = (key
-    ? getStatement(sql).all(scope, key)
-    : getStatement(sql).all(scope)
+    ? getStatement(sql).all(scope, key, now)
+    : getStatement(sql).all(scope, now)
   ) as Record<string, unknown>[];
   return rows.map((r) => ({
     id: r.id as number,

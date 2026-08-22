@@ -20,6 +20,7 @@ export class ImportRepository {
 
   /**
    * Get all files that import the given file (reverse dependencies).
+   * Matches on resolved_path (set during scan) with raw-source fallback.
    */
   getDependents(fileId: number, projectId: number): Array<{ id: number; path: string; relativePath: string }> {
     const rows = this.db.prepare(`
@@ -27,8 +28,8 @@ export class ImportRepository {
       FROM files f
       JOIN imports i ON f.id = i.file_id
       WHERE f.project_id = ? AND (
-        i.source = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
-        OR i.source LIKE (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id) || '/%'
+        i.resolved_path = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
+        OR i.source = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
       )
     `).all(projectId, fileId, fileId) as Record<string, unknown>[];
     return rows.map((r) => ({ id: r.id as number, path: r.path as string, relativePath: r.relative_path as string }));

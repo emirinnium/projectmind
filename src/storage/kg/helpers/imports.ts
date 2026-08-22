@@ -5,12 +5,15 @@ import type { KgContext } from './context.js';
 import { getFileByPath, getAllFiles, getImports, resolveImportSource } from './files.js';
 
 export function getDependents(ctx: KgContext, fileId: number): FileInfo[] {
+  // Dependents are files whose imports RESOLVED to this file.
+  // Match on resolved_path (populated at scan time by resolveImportSource),
+  // falling back to raw source equality for unresolvable-but-exact matches.
   const rows = getStatement(`
     SELECT DISTINCT f.* FROM files f
     JOIN imports i ON f.id = i.file_id
     WHERE f.project_id = ? AND (
-      i.source = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
-      OR i.source LIKE (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id) || '/%'
+      i.resolved_path = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
+      OR i.source = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
     )
   `).all(ctx.currentProjectId, fileId, fileId) as Record<string, unknown>[];
   return rows.map((r) => ({
@@ -34,7 +37,7 @@ export function getDirectDependents(ctx: KgContext, sourcePath: string): FileInf
   const rows = getStatement(`
     SELECT DISTINCT f.* FROM files f
     JOIN imports i ON f.id = i.file_id
-    WHERE f.project_id = ? AND (i.source = ? OR i.source LIKE ? || '/%')
+    WHERE f.project_id = ? AND (i.resolved_path = ? OR i.source = ?)
   `).all(ctx.currentProjectId, normalizedSource, normalizedSource) as Record<string, unknown>[];
   return rows.map((r) => ({
     id: r.id as number,
@@ -99,7 +102,16 @@ function cyclesEqual(a: string[], b: string[]): boolean {
   return true;
 }
 
+// Full-project cycle detection is expensive (DFS over every file).
+// Hot callers like get_context invoke it repeatedly, so results are
+// memoized briefly; scans naturally outlive this TTL.
+let _cycleCache: { cycles: string[][]; computedAt: number } | null = null;
+const CYCLE_CACHE_TTL_MS = 60_000;
+
 export function findCircularDependencies(ctx: KgContext): string[][] {
+  if (_cycleCache && Date.now() - _cycleCache.computedAt < CYCLE_CACHE_TTL_MS) {
+    return _cycleCache.cycles;
+  }
   const allFiles = getAllFiles(ctx);
   const fileMap = new Map(allFiles.map((f) => [f.id, f]));
   const cycles: string[][] = [];
@@ -162,6 +174,7 @@ export function findCircularDependencies(ctx: KgContext): string[][] {
     retryableErrors: ['SQLITE_BUSY', 'SQLITE_LOCKED', 'database is locked'],
   });
 
+  _cycleCache = { cycles: uniqueCycles, computedAt: Date.now() };
   return uniqueCycles;
 }
 

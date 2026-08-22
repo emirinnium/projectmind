@@ -1,9 +1,10 @@
 import { getStatement, runWithRetry } from '../../database.js';
 import { codeToEmbedding, cosineSimilarity } from '../../../parser/embeddings.js';
 import { FileStructure } from '../../../parser/ast-parser.js';
-import { dirname, resolve } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import { loadConfig } from '../../../utils/config.js';
+import { globalCacheRegistry } from '../../../core/cache/index.js';
 import type { FileInfo } from '../types.js';
 import type { KgContext } from './context.js';
 
@@ -119,6 +120,9 @@ export async function upsertFile(ctx: KgContext, fileStruct: FileStructure, rela
         cognitiveLoad,
         existing.id
       );
+      // The embedding changed — evict the stale cached copy so similarity
+      // search reflects the new content instead of the pre-update vector.
+      globalCacheRegistry.get('embeddings')?.delete(`file:${existing.id}`);
       clearFileRelations(ctx, existing.id);
       return existing.id;
     } else {
@@ -184,22 +188,34 @@ export function storeFileDetails(ctx: KgContext, fileId: number, fileStruct: Fil
       const projectRoot = config.projectRoot;
 
       const aliases: { prefix: string; paths: string[] }[] = [];
-      const tsconfigFile = getFileByPath(ctx, 'tsconfig.json');
-      if (tsconfigFile) {
-        try {
-          const content = readFileSync(tsconfigFile.path, 'utf-8');
-          const tsconfig = JSON.parse(content);
-          if (tsconfig.compilerOptions?.paths) {
-            for (const [prefix, paths] of Object.entries(tsconfig.compilerOptions.paths)) {
-              aliases.push({
-                prefix: prefix.replace(/\*$/, ''),
-                paths: (paths as string[]).map(p => p.replace(/\*$/, '')),
-              });
+      // Read tsconfig.json from the FILESYSTEM (it is not scanned into the
+      // knowledge graph, so looking it up via getFileByPath never succeeds).
+      // Mirrors the working approach used by the MCP resolve_path tool.
+      try {
+        const config = loadConfig();
+        const tsconfigCandidates = [
+          join(config.projectRoot, 'tsconfig.json'),
+          join(process.cwd(), 'tsconfig.json'),
+        ];
+        for (const candidate of tsconfigCandidates) {
+          if (existsSync(candidate)) {
+            const content = readFileSync(candidate, 'utf-8');
+            // tsconfig may contain comments; strip them before JSON.parse.
+            const jsonText = content.replace(/^\s*\/\/.*$/gm, '');
+            const tsconfig = JSON.parse(jsonText);
+            if (tsconfig.compilerOptions?.paths) {
+              for (const [prefix, paths] of Object.entries(tsconfig.compilerOptions.paths)) {
+                aliases.push({
+                  prefix: prefix.replace(/\*$/, ''),
+                  paths: (paths as string[]).map(p => p.replace(/\*$/, '')),
+                });
+              }
             }
+            break;
           }
-        } catch {
-          // ignore
         }
+      } catch {
+        // No readable tsconfig or invalid JSON: alias resolution stays off.
       }
 
       for (const imp of fileStruct.imports) {
