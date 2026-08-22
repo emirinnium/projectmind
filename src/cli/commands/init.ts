@@ -19,9 +19,12 @@ export function createInitCommand(): Command {
           mkdirSync(configDir, { recursive: true });
         }
 
-        const configFile = join(configDir, '.projectmindrc.json');
+        // loadConfig() reads .projectmindrc.json from the project ROOT,
+        // so the starter config must be written there (not inside .projectmind/).
+        const configFile = join(process.cwd(), '.projectmindrc.json');
         if (!existsSync(configFile)) {
           writeFileSync(configFile, JSON.stringify({ description: 'ProjectMind config' }, null, 2));
+          output.kv('Config created', '.projectmindrc.json');
         }
 
         output.success('ProjectMind initialized successfully.');

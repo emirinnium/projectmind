@@ -185,31 +185,33 @@ export function createPrPreviewCommand(): Command {
 }
 
 async function getChangedFiles(base: string, head: string, projectRoot: string): Promise<string[]> {
-  // In real implementation, use git diff --name-only base..head
-  // For now, simulate with recent agent-touched files
   const { spawnSync } = await import('node:child_process');
-  
-  try {
-    const result = spawnSync('git', ['diff', '--name-only', `${base}..${head}`], {
+  const codeExts = /\.(ts|tsx|js|jsx|mjs|cjs)$/;
+
+  // Prefer three-dot (merge-base) diff — this is exactly what a PR shows.
+  for (const range of [`${base}...${head}`, `${base}..${head}`] as const) {
+    const result = spawnSync('git', ['diff', '--name-only', range], {
       cwd: projectRoot,
       encoding: 'utf-8',
     });
-    
     if (result.status === 0 && result.stdout.trim()) {
-      return result.stdout.trim().split('\n').filter(f => f.endsWith('.ts') || f.endsWith('.js'));
+      return result.stdout.trim().split(/\r?\n/).filter((f) => codeExts.test(f));
     }
-  } catch (e) {
-    logger.debug(`Git diff failed, falling through to simulation: ${e instanceof Error ? e.message : String(e)}`);
   }
-  
-  // Simulation: return some project files
-  return [
-    'src/cli/commands/search.ts',
-    'src/cli/commands/impact.ts',
-    'src/cli/commands/layers.ts',
-    'src/cli/commands/coupling.ts',
-    'src/cli/utils/shared.ts',
-  ];
+
+  // Final fallback: uncommitted working-tree changes against head, so
+  // pre-commit previews still reflect reality.
+  const uncommitted = spawnSync('git', ['diff', '--name-only', head], {
+    cwd: projectRoot,
+    encoding: 'utf-8',
+  });
+  if (uncommitted.status === 0 && uncommitted.stdout.trim()) {
+    return uncommitted.stdout.trim().split(/\r?\n/).filter((f) => codeExts.test(f));
+  }
+
+  // NEVER fabricate file lists: report nothing and say why.
+  logger.warn('git diff unavailable for this repository/ref pair; reporting zero changed files.');
+  return [];
 }
 
 function analyzeAffectedModules(changedFiles: string[], scale: ScaleManager): { path: string; files: string[]; risk: 'high' | 'medium' | 'low' }[] {

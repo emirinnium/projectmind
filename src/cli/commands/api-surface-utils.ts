@@ -1,4 +1,5 @@
 import { logger } from '@/cli/utils/shared.js';
+import { join } from 'node:path';
 
 export interface ExportedSymbol {
   name: string;
@@ -152,11 +153,38 @@ export function extractSince(doc?: string): string | undefined {
   return match ? match[1] : undefined;
 }
 
-export async function getApiAtRef(_ref: string, _projectRoot: string): Promise<ExportedSymbol[]> {
-  // Try to use git show to get files at ref
-  // For now, return empty array (would need git integration)
-  // This is a placeholder for git integration
-  return [];
+/**
+ * Extract the exported API surface of the tree at a git ref.
+ * Lists code files via `git ls-tree`, reads each through `git show ref:path`,
+ * and runs the same regex extractor used for the working tree.
+ */
+export async function getApiAtRef(ref: string, projectRoot: string): Promise<ExportedSymbol[]> {
+  const { spawnSync } = await import('node:child_process');
+  const run = (args: string[], maxBuffer = 32 * 1024 * 1024) =>
+    spawnSync('git', args, { cwd: projectRoot, encoding: 'utf-8', maxBuffer, shell: true });
+
+  const ls = run(['ls-tree', '-r', '--name-only', ref]);
+  if (ls.status !== 0 || !ls.stdout?.trim()) {
+    return []; // unknown ref or not a git repo — caller treats as "no base"
+  }
+
+  const files = ls.stdout
+    .split(/\r?\n/)
+    .filter((f) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(f))
+    .filter((f) => !f.includes('node_modules/'))
+    .filter((f) => !/(^|\/)(dist|dist-tests|coverage|build|out|\.next)(\/|$)/.test(f));
+
+  const symbols: ExportedSymbol[] = [];
+  for (const rel of files.slice(0, 500)) {
+    const show = run(['show', `${ref}:${rel}`], 8 * 1024 * 1024);
+    if (show.status !== 0 || !show.stdout) continue;
+    try {
+      symbols.push(...extractExportsFromFile(show.stdout, join(projectRoot, rel), rel.replace(/\\/g, '/')));
+    } catch {
+      // Skip files whose content trips the extractor.
+    }
+  }
+  return symbols;
 }
 
 export function computeDiff(base: ExportedSymbol[], current: ExportedSymbol[]): ApiDiff {

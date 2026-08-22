@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { writeFileSync } from 'node:fs';
+import { getStatement } from '../../storage/database.js';
 
 interface ModuleCoupling {
   name: string;
@@ -33,7 +34,7 @@ export function createCouplingCommand(): Command {
     .option('-o, --output <file>', 'Write to file')
     .option('--threshold-abstractness <n>', 'Abstractness threshold', '0.3')
     .action(asyncHandler(async (opts: { threshold: string; format: string; output: string; thresholdAbstractness: string }) => {
-      await withService(['scale'], async (_ctx, services) => {
+      await withService(['scale'], async (ctx, services) => {
         const scale = services.scale!;
         
         output.section('Module Coupling Analysis');
@@ -48,8 +49,19 @@ export function createCouplingCommand(): Command {
           return;
         }
         
+        // REAL import edges from the knowledge graph (resolved at scan time).
+        // Replaces the previous heuristic that relied on unpopulated
+        // per-file import lists.
+        const edgeRows = getStatement(
+          `SELECT f.relative_path AS from_path, i.resolved_path AS to_path
+           FROM imports i JOIN files f ON f.id = i.file_id
+           WHERE i.resolved_path IS NOT NULL AND f.project_id = ?`
+        ).all(ctx.kg.getCurrentProjectId()) as Array<{ from_path: string; to_path: string }>;
+        const realEdges = edgeRows.map((r) => ({ from: r.from_path, to: r.to_path }));
+        output.kv('Resolved import edges', realEdges.length);
+        
         // Build module dependency graph
-        const moduleCoupling = calculateCoupling(modules);
+        const moduleCoupling = calculateCoupling(modules, realEdges);
         
         const instabilityThreshold = parseFloat(opts.threshold);
         const abstractnessThreshold = parseFloat(opts.thresholdAbstractness);
@@ -190,7 +202,7 @@ export function createCouplingCommand(): Command {
   return couplingCmd;
 }
 
-function calculateCoupling(modules: ModuleInfoWithFiles[]): ModuleCoupling[] {
+function calculateCoupling(modules: ModuleInfoWithFiles[], realEdges?: Array<{ from: string; to: string }>): ModuleCoupling[] {
   // Build adjacency lists
   const afferent = new Map<string, Set<string>>(); // Who imports this module
   const efferent = new Map<string, Set<string>>(); // What this module imports
@@ -200,19 +212,52 @@ function calculateCoupling(modules: ModuleInfoWithFiles[]): ModuleCoupling[] {
     efferent.set(module.path, new Set());
   }
   
-  // Analyze file imports to build module graph
+  const moduleByFile = new Map<string, string>();
   for (const module of modules) {
     for (const file of module.files || []) {
-      // We need to analyze imports from the file
-      // This is a simplified version - in reality we'd parse imports
-      const imports = file.imports || [];
-      
-      for (const imp of imports) {
-        // Find which module this import belongs to
-        const targetModule = findModuleForImport(imp.source, modules);
-        if (targetModule && targetModule.path !== module.path) {
-          efferent.get(module.path)?.add(targetModule.path);
-          afferent.get(targetModule.path)?.add(module.path);
+      moduleByFile.set(file.relativePath.replace(/\\/g, '/'), module.path);
+    }
+  }
+  const findModuleForFilePath = (filePath: string): ModuleInfoWithFiles | undefined => {
+    const normalized = filePath.replace(/\\/g, '/');
+    const exact = moduleByFile.get(normalized);
+    if (exact) return modules.find((m) => m.path === exact);
+    // Longest-prefix match for directory-level modules
+    let best: ModuleInfoWithFiles | undefined;
+    let bestLen = -1;
+    for (const m of modules) {
+      if (normalized.startsWith(m.path) && m.path.length > bestLen) {
+        best = m;
+        bestLen = m.path.length;
+      }
+    }
+    return best;
+  };
+
+  const addEdge = (fromModule: string, toModule: string): void => {
+    if (fromModule !== toModule && modules.some((m) => m.path === fromModule) && modules.some((m) => m.path === toModule)) {
+      efferent.get(fromModule)?.add(toModule);
+      afferent.get(toModule)?.add(fromModule);
+    }
+  };
+
+  if (realEdges && realEdges.length > 0) {
+    // Primary path: real resolved edges recorded during scan.
+    for (const edge of realEdges) {
+      const fromModule = findModuleForFilePath(edge.from);
+      const toModule = findModuleForFilePath(edge.to);
+      if (fromModule && toModule) addEdge(fromModule.path, toModule.path);
+    }
+  } else {
+    // Fallback (pre-scan databases): per-file import lists.
+    for (const module of modules) {
+      for (const file of module.files || []) {
+        const imports = file.imports || [];
+        for (const imp of imports) {
+          const targetModule = findModuleForImport(imp.source, modules);
+          if (targetModule && targetModule.path !== module.path) {
+            addEdge(module.path, targetModule.path);
+          }
         }
       }
     }

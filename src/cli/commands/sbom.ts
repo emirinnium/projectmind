@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 interface SbomPackage {
   name: string;
@@ -118,8 +119,11 @@ export function createSbomCommand(): Command {
         }
         
         if (opts.sign) {
-          output.info('Signing SBOM with cosign... (not implemented in demo)');
-          output.info('Run: cosign sign-blob --key=<key> --output-signature=<file> <sbom-file>');
+          if (!opts.output) {
+            output.warn('Signing requires --output <file> (cosign signs a file on disk)');
+          } else {
+            signWithCosign(opts.output);
+          }
         }
         
         output.success(`SBOM generated: ${packages.length} packages in ${opts.format.toUpperCase()} format`);
@@ -233,4 +237,28 @@ function escapeXml(str: string): string {
     .replace(/>/g, '>')
     .replace(/"/g, '"')
     .replace(/'/g, '&apos;');
+}
+/**
+ * Sign an SBOM file with cosign when the binary is available.
+ * Uses keyless OIDC flow unless COSIGN_KEY is set in the environment.
+ */
+function signWithCosign(filePath: string): void {
+  const probe = spawnSync('cosign', ['version'], { encoding: 'utf-8', shell: true });
+  if (probe.status !== 0) {
+    output.warn('cosign CLI not found on PATH — signing skipped.');
+    output.info('Install sigstore/cosign or run manually:');
+    output.kv('  cosign sign-blob', `--key=<key> --output-signature=${filePath}.sig ${filePath}`);
+    return;
+  }
+
+  const args = ['sign-blob', '--output-signature', `${filePath}.sig`, '--yes'];
+  if (process.env.COSIGN_KEY) {
+    args.push('--key', process.env.COSIGN_KEY);
+  }
+  const result = spawnSync('cosign', [...args, filePath], { encoding: 'utf-8', shell: true });
+  if (result.status === 0) {
+    output.success(`SBOM signed: ${filePath}.sig`);
+  } else {
+    output.warn(`cosign failed (exit ${result.status}): ${(result.stderr || '').slice(0, 200)}`);
+  }
 }

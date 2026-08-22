@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { loadConfig } from '@/cli/utils/shared.js';
-import { writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from '@/cli/utils/shared.js';
 
 interface DependencyInfo {
@@ -64,26 +65,42 @@ export function createDepsFreshCommand(): Command {
         const depNames = Object.keys(allDeps);
         output.kv('Total dependencies', depNames.length);
         
-        // Simulate version checking (in real implementation, would call npm registry)
+        // Real freshness data from the installed tree + `npm outdated --json`.
+        const installedLicenses = collectInstalledLicenses(config.projectRoot);
+        const npmOutdated = runNpmOutdated(config.projectRoot);
+
         const depInfo: DependencyInfo[] = [];
-        
+
         for (const name of depNames) {
-          const current = allDeps[name];
-          // In real implementation, would call npm view or registry API
-          // For now, simulate with current version
+          const current = allDeps[name].replace(/^[\^~]/, '');
+          const od = npmOutdated.get(name);
+          const latest = od?.latest ?? current;
+          const currentParts = current.split('.').map(Number);
+          const latestParts = latest.split('.').map(Number);
+          const majorBehind = (latestParts[0] ?? 0) > (currentParts[0] ?? 0) && opts.major;
+          const minorBehind = !majorBehind && (latestParts[0] ?? 0) === (currentParts[0] ?? 0)
+            && (latestParts[1] ?? 0) > (currentParts[1] ?? 0) && opts.minor === 'true';
+          const patchBehind = !majorBehind && !minorBehind
+            && (latestParts[0] ?? 0) === (currentParts[0] ?? 0)
+            && (latestParts[1] ?? 0) === (currentParts[1] ?? 0)
+            && (latestParts[2] ?? 0) > (currentParts[2] ?? 0) && opts.patch === 'true';
+
           depInfo.push({
             name,
-            current: current.replace(/^[\^~]/, ''),
-            latest: current.replace(/^[\^~]/, ''), // Simulated
+            current,
+            latest,
             type: pkg.dependencies?.[name] ? 'prod' : pkg.devDependencies?.[name] ? 'dev' : 'peer',
-            outdated: false,
-            majorBehind: false,
-            minorBehind: false,
-            patchBehind: false,
+            outdated: Boolean(od),
+            majorBehind,
+            minorBehind,
+            patchBehind,
+            license: installedLicenses.get(name) ?? '',
           });
         }
-        
-        // Simulate some outdated deps for demo
+
+        if (!npmOutdated.size && depNames.length > 0) {
+          output.info('npm outdated returned nothing — dependencies are current or registry unreachable');
+        }
         const outdatedDeps = depInfo.filter(d => d.outdated);
         
         if (opts.format === 'json') {
@@ -132,19 +149,30 @@ export function createDepsFreshCommand(): Command {
         
         if (opts.audit) {
           output.section('Security Audit');
-          output.info('Running npm audit... (simulated)');
-          // In real implementation, would run npm audit
-          output.kv('Vulnerabilities found', '0 (simulated)');
+          const audit = runNpmAudit();
+          if (!audit) {
+            output.warn('npm audit could not be executed (offline or npm unavailable)');
+          } else if (audit.total === 0) {
+            output.success('No known vulnerabilities found');
+          } else {
+            output.kv('Vulnerabilities', audit.total);
+            if (audit.critical > 0) output.kv('  Critical', audit.critical);
+            if (audit.high > 0) output.kv('  High', audit.high);
+            if (audit.moderate > 0) output.kv('  Moderate', audit.moderate);
+            if (audit.low > 0) output.kv('  Low', audit.low);
+          }
         }
         
         if (opts.license) {
           output.section('License Compliance');
-          output.info('Checking licenses... (simulated)');
           const licenses = depInfo.map(d => d.license).filter(Boolean);
+          const unknown = depInfo.filter(d => !d.license).length;
           const uniqueLicenses = [...new Set(licenses)];
-          output.kv('Unique licenses', uniqueLicenses.length);
-          for (const lic of uniqueLicenses.slice(0, 10)) {
-            output.kv(`  ${lic}`, '');
+          output.kv('Packages with known license', licenses.length);
+          if (unknown > 0) output.kv('Unknown license', String(unknown));
+          for (const lic of uniqueLicenses.sort()) {
+            const count = licenses.filter((l) => l === lic).length;
+            output.kv(`  ${lic}`, `${count} pkg`);
           }
         }
         
@@ -192,4 +220,101 @@ function generateMarkdownDeps(deps: DependencyInfo[], outdated: DependencyInfo[]
   }
   
   return lines.join('\n');
+}
+interface AuditSummary { total: number; critical: number; high: number; moderate: number; low: number }
+
+/**
+ * Run the real `npm audit --json` and summarize vulnerability severities.
+ * Returns null when npm is unavailable or the project has no lockfile.
+ */
+function runNpmAudit(): AuditSummary | null {
+  try {
+    const result = spawnSync('npm', ['audit', '--json'], {
+      cwd: loadConfig().projectRoot,
+      encoding: 'utf-8',
+      maxBuffer: 32 * 1024 * 1024,
+      // npm is a .cmd shim on Windows; plain spawn would fail with ENOENT.
+      // Args are static literals, so the shell adds no injection surface.
+      shell: true,
+    });
+    // npm audit exits non-zero when vulnerabilities exist; stdout still holds JSON.
+    if (!result.stdout || !result.stdout.trim()) return null;
+    const parsed = JSON.parse(result.stdout) as {
+      metadata?: { vulnerabilities?: { info?: number; low?: number; moderate?: number; high?: number; critical?: number } };
+    };
+    const v = parsed.metadata?.vulnerabilities;
+    if (!v) return null;
+    const total = (v.info ?? 0) + (v.low ?? 0) + (v.moderate ?? 0) + (v.high ?? 0) + (v.critical ?? 0);
+    return {
+      total,
+      critical: v.critical ?? 0,
+      high: v.high ?? 0,
+      moderate: v.moderate ?? 0,
+      low: v.low ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Collect real license identifiers from installed packages under
+ * node_modules (including @scope packages) by reading their package.json.
+ */
+function collectInstalledLicenses(projectRoot: string): Map<string, string> {
+  const licenses = new Map<string, string>();
+  const nmRoot = join(projectRoot, 'node_modules');
+  if (!existsSync(nmRoot)) return licenses;
+
+  const readPkgLicense = (pkgDir: string): void => {
+    const pkgJsonPath = join(pkgDir, 'package.json');
+    if (!existsSync(pkgJsonPath)) return;
+    try {
+      const p = JSON.parse(readFileSync(pkgJsonPath, 'utf-8')) as { name?: string; license?: string | { type?: string } };
+      if (!p.name) return;
+      const lic = typeof p.license === 'string' ? p.license : typeof p.license === 'object' ? p.license?.type ?? '' : '';
+      licenses.set(p.name, lic);
+    } catch {
+      // unreadable package.json: skip
+    }
+  };
+
+  for (const entry of readdirSync(nmRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('@')) {
+      const scopeDir = join(nmRoot, entry.name);
+      for (const sub of readdirSync(scopeDir, { withFileTypes: true })) {
+        if (sub.isDirectory()) readPkgLicense(join(scopeDir, sub.name));
+      }
+    } else {
+      readPkgLicense(join(nmRoot, entry.name));
+    }
+  }
+  return licenses;
+}
+
+interface OutdatedEntry { current?: string; wanted?: string; latest?: string }
+
+/**
+ * Real version data via `npm outdated --json`. Returns a map keyed by
+ * package name; empty when everything is current or npm is unavailable.
+ */
+function runNpmOutdated(projectRoot: string): Map<string, OutdatedEntry> {
+  const result = new Map<string, OutdatedEntry>();
+  try {
+    const proc = spawnSync('npm', ['outdated', '--json'], {
+      cwd: projectRoot,
+      encoding: 'utf-8',
+      maxBuffer: 32 * 1024 * 1024,
+      shell: true, // npm is a .cmd shim on Windows
+    });
+    if (!proc.stdout || !proc.stdout.trim()) return result;
+    const parsed = JSON.parse(proc.stdout) as Record<string, OutdatedEntry>;
+    for (const [name, entry] of Object.entries(parsed)) {
+      if (entry && typeof entry === 'object') result.set(name, entry);
+    }
+  } catch {
+    // offline / no npm: callers fall back to current-as-latest
+  }
+  return result;
 }

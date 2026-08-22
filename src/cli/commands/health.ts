@@ -1,31 +1,8 @@
 import { Command } from 'commander';
 import { BaseCommand, asyncHandler, output } from '@/cli/utils/shared.js';
-import { readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'url';
+import { resolvePackageVersion, currentModuleDir } from '@/cli/utils/version.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Read version from package.json - search up from current directory
-function getVersion(): string {
-  let dir = __dirname;
-  for (let i = 0; i < 5; i++) {
-    try {
-      const pkgPath = join(dir, 'package.json');
-      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-      if (pkg.name === '@emirhanturker/projectmind') {
-        return pkg.version;
-      }
-    } catch {
-      // Continue searching upward
-    }
-    dir = dirname(dir);
-  }
-  return '0.0.0';
-}
-
-const pkgVersion = getVersion();
+const pkgVersion = resolvePackageVersion(currentModuleDir(import.meta.url));
 
 class HealthCommand extends BaseCommand {
   constructor() {
@@ -93,8 +70,10 @@ class HealthCommand extends BaseCommand {
 
             output.section('Component Checks');
             for (const [check, result] of Object.entries(health.checks)) {
-              const icon = result.startsWith('ok') ? 'âœ‘' : result === 'warning' ? 'âš ' : 'âœ—';
-              output.kv(`  ${check}`, `${icon} ${result}`);
+            // Output icons as escaped unicode to survive any source-file
+            // encoding round-trip (previously stored as broken UTF-8).
+            const icon = result.startsWith('ok') ? '\u2713' : result === 'warning' ? '\u26A0' : '\u2717';
+            output.kv(`  ${check}`, `${icon} ${result}`);
             }
 
             output.section('Metrics');

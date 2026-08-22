@@ -1,6 +1,8 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output, loadConfig, join } from '@/cli/utils/shared.js';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { ContractEngine } from '@/index.js';
+import fg from 'fast-glob';
 
 export interface ContractTest {
   contractId: string;
@@ -57,25 +59,33 @@ export function createContractTestCommand(): Command {
         if (opts.generate) {
           output.section('Generating Contract Tests');
           
-          const testFiles = generateContractTests(contracts, opts.framework, config);
+          const generated = generateContractTests(contracts, opts.framework, config);
+          testFiles.push(...generated);
           
-          for (const { fileName, content } of testFiles) {
-            const outputPath = join(config.projectRoot, opts.outputDir, fileName);
+          const outDir = join(config.projectRoot, opts.outputDir);
+          if (!existsSync(outDir)) {
+            mkdirSync(outDir, { recursive: true });
+          }
+          
+          for (const { fileName, content } of generated) {
+            const outputPath = join(outDir, fileName);
             writeFileSync(outputPath, content);
             output.success(`Generated: ${outputPath}`);
           }
           
-          output.success(`Generated ${testFiles.length} test file(s) in ${opts.outputDir}`);
+          output.success(`Generated ${generated.length} test file(s) in ${opts.outputDir}`);
         }
         
         if (opts.run) {
           output.section('Running Contract Tests');
-          output.info('Running tests... (simulated)');
+          output.info('Evaluating contracts against source files...');
           
-          // In real implementation, would run vitest/jest
-          const results = simulateContractTestRun(contracts);
+          // Real evaluation: the ContractEngine scans actual project sources
+          // for violations of every configured contract.
+          const results = runContractEvaluation(config.projectRoot, contracts);
           
-          output.kv('Tests run', results.total);
+          output.kv('Files scanned', results.filesScanned);
+          output.kv('Contracts evaluated', results.total);
           output.kv('Passed', results.passed);
           output.kv('Failed', results.failed);
           
@@ -113,58 +123,11 @@ export function createContractTestCommand(): Command {
 }
 
 async function getContracts(_config: { projectRoot: string }): Promise<ContractLike[]> {
-  // In real implementation, would load from ContractEngine
-  // For now, return default contracts
-  return [
-    {
-      id: 'no-eval',
-      name: 'No Dynamic Execution (eval)',
-      description: 'Dynamic code execution (eval/Function constructor) is strictly prohibited for security',
-      sourcePattern: '**/*.ts',
-      forbiddenKeywords: ['eval\\s*\\(', 'new\\s+Function\\s*\\('],
-      severity: 'error',
-    },
-    {
-      id: 'no-raw-process-exit-in-core',
-      name: 'No Unhandled Process Exit in Core',
-      description: 'Core modules should throw errors rather than calling process.exit directly',
-      sourcePattern: 'src/core/**/*.ts',
-      forbiddenKeywords: ['process.exit('],
-      severity: 'error',
-    },
-    {
-      id: 'no-direct-db-in-mcp-tools',
-      name: 'No Direct DB Schema Modification in Tools',
-      description: 'MCP tools must use KnowledgeGraph or abstraction layer rather than direct SQL DDL',
-      sourcePattern: 'src/mcp/tools/**/*.ts',
-      forbiddenKeywords: ['CREATE TABLE', 'DROP TABLE', 'ALTER TABLE'],
-      severity: 'warning',
-    },
-    {
-      id: 'no-inline-any-in-cli',
-      name: 'No inline "any" in CLI Commands',
-      description: 'CLI command files should avoid using "any" type for type safety',
-      sourcePattern: 'src/cli/commands/**/*.ts',
-      forbiddenKeywords: ['\\bany\\b'],
-      severity: 'error',
-    },
-    {
-      id: 'no-hardcoded-paths-in-tools',
-      name: 'No Hardcoded File Paths in Tools',
-      description: 'MCP tools should use KnowledgeGraph path resolution rather than hardcoded paths',
-      sourcePattern: 'src/mcp/tools/**/*.ts',
-      forbiddenKeywords: ['\\.\\./\\.\\./src/storage'],
-      severity: 'warning',
-    },
-    {
-      id: 'no-unused-imports-in-critical',
-      name: 'No Unused Imports in Critical Files',
-      description: 'Critical files should not have imports that are never used',
-      sourcePattern: 'src/core/**/*.ts',
-      forbiddenImports: ['src/cli/'],
-      severity: 'error',
-    },
-  ];
+  // Single source of truth: the ContractEngine loads user contracts from
+  // .projectmindrc.json ("contracts" key) or its maintained defaults.
+  // A previously duplicated hardcoded list here had drifted out of sync
+  // and ignored per-contract excludePaths.
+  return new ContractEngine().getContracts() as ContractLike[];
 }
 
 function generateContractTests(contracts: ContractLike[], framework: string, _config: { projectRoot: string }): { fileName: string; content: string }[] {
@@ -329,32 +292,76 @@ function suggestContractTests(contract: ContractLike): { description: string; ty
   return suggestions;
 }
 
-function simulateContractTestRun(contracts: ContractLike[]): { total: number; passed: number; failed: number; failures: { contract: string; reason: string }[] } {
-  let total = 0;
+/**
+ * Evaluate every contract against the project's actual source files using
+ * ContractEngine. A contract "fails" when at least one matching source file
+ * violates it; per-violation details are returned for reporting.
+ */
+function runContractEvaluation(projectRoot: string, contracts: ContractLike[]): {
+  total: number;
+  passed: number;
+  failed: number;
+  filesScanned: number;
+  failures: { contract: string; reason: string }[];
+} {
+  const engine = new ContractEngine(contracts as never);
+
+  const sourceFiles = fg.sync(
+    ['**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    {
+      cwd: projectRoot,
+      ignore: [
+        '**/node_modules/**', '**/dist/**', '**/dist-tests/**', '**/.git/**',
+        '**/coverage/**', '**/build/**', '**/out/**', '**/.next/**',
+        '**/*.min.*', '**/*.d.ts',
+      ],
+      absolute: false,
+    }
+  );
+
+  // violations[contractId] = list of human-readable violation descriptions
+  const violations = new Map<string, string[]>();
+  for (const contract of contracts) {
+    violations.set(contract.id, []);
+  }
+
+  for (const relPath of sourceFiles) {
+    const filePath = join(projectRoot, relPath);
+    let content: string;
+    try {
+      content = readFileSync(filePath, 'utf-8');
+    } catch {
+      continue;
+    }
+
+    try {
+      const found = engine.evaluate(relPath.replace(/\\/g, '/'), content);
+      for (const v of found) {
+        const list = violations.get(v.contractId);
+        if (list) {
+          list.push(`${relPath}${v.line ? `:${v.line}` : ''} — ${v.message}`);
+        }
+      }
+    } catch {
+      // Unreadable/unparseable file: skip rather than fail the whole run.
+    }
+  }
+
   let passed = 0;
   let failed = 0;
   const failures: { contract: string; reason: string }[] = [];
-  
+
   for (const contract of contracts) {
-    const testCases = generateContractTestCases(contract);
-    for (const tc of testCases) {
-      total++;
-      // Simulate test run - in reality would use actual contract engine
-      const shouldFail = tc.expectedResult === 'fail';
-      // Simulate: sometimes tests pass, sometimes fail (for demo)
-      const testPassed = Math.random() > 0.1; // 90% pass rate
-      
-      if (testPassed === shouldFail) {
-        passed++;
-      } else {
-        failed++;
-        failures.push({
-          contract: contract.name,
-          reason: `Expected ${tc.expectedResult} but got ${testPassed ? 'pass' : 'fail'} for: ${tc.description}`,
-        });
+    const list = violations.get(contract.id) ?? [];
+    if (list.length === 0) {
+      passed++;
+    } else {
+      failed++;
+      for (const reason of list) {
+        failures.push({ contract: contract.name, reason });
       }
     }
   }
-  
-  return { total, passed, failed, failures };
+
+  return { total: contracts.length, passed, failed, filesScanned: sourceFiles.length, failures };
 }

@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { loadConfig } from '@/cli/utils/shared.js';
 import { writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 
 export function createChurnCommand(): Command {
   const churnCmd = new Command('churn')
@@ -115,35 +116,74 @@ export function createChurnCommand(): Command {
   return churnCmd;
 }
 
-function calculateChurnFromSessions(files: any[], _projectRoot: string, sinceDays: number): any[] {
+interface GitChurnEntry { count: number; authors: Set<string> }
+
+/**
+ * Parse real change frequency from `git log --name-only`.
+ * Commit records start with an '@@<author>' sentinel followed by changed
+ * file paths, so author lines and file lines can never be confused.
+ */
+function collectGitChurn(projectRoot: string, sinceDays: number): Map<string, GitChurnEntry> {
+  const churn = new Map<string, GitChurnEntry>();
+  try {
+    const out = execSync(
+      `git log --since="${sinceDays} days ago" --pretty=format:@@%an --name-only`,
+      { cwd: projectRoot, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 }
+    );
+    let currentAuthor = 'unknown';
+    for (const rawLine of out.split('\n')) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      if (line.startsWith('@@')) {
+        currentAuthor = line.slice(2) || 'unknown';
+        continue;
+      }
+      const normalized = line.replace(/\\/g, '/');
+      if (!normalized.includes('/')) continue; // skip stray non-path lines
+      const entry = churn.get(normalized) ?? { count: 0, authors: new Set<string>() };
+      entry.count += 1;
+      entry.authors.add(currentAuthor);
+      churn.set(normalized, entry);
+    }
+  } catch {
+    // Not a git repo / git missing: callers fall back to agent-touch signals.
+  }
+  return churn;
+}
+
+function calculateChurnFromSessions(files: any[], projectRoot: string, sinceDays: number): any[] {
   const cutoff = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+  const gitChurn = collectGitChurn(projectRoot, sinceDays);
   const results = [];
-  
+
   for (const file of files) {
-    // Simulate churn based on agent touches and cognitive load
-    // In real implementation, this would parse git log
+    const normalizedPath = String(file.relativePath).replace(/\\/g, '/');
+    const gitEntry = gitChurn.get(normalizedPath);
+
     let churnCount = 0;
     const authors = new Set<string>();
-    
-    if (file.agentTouched && file.agentTouchedAt) {
-      const touchDate = new Date(file.agentTouchedAt);
-      if (touchDate >= cutoff) {
-        churnCount = Math.floor(Math.random() * 5) + 1; // Simulated
-        authors.add(file.agentTouchedBy || 'unknown');
+
+    if (gitEntry) {
+      // Real change frequency from git history.
+      churnCount = gitEntry.count;
+      for (const a of gitEntry.authors) authors.add(a);
+    } else {
+      // No git data for this file — fall back to agent-touch signal only
+      // (no fabricated counts).
+      if (file.agentTouched && file.agentTouchedAt) {
+        const touchDate = new Date(file.agentTouchedAt);
+        if (touchDate >= cutoff) {
+          churnCount = 1; // at least one recorded touch
+          authors.add(file.agentTouchedBy || 'agent');
+        }
       }
     }
-    
-    // Add some randomness for files without agent touches (simulating git history)
-    if (churnCount === 0 && Math.random() > 0.7) {
-      churnCount = Math.floor(Math.random() * 3) + 1;
-      authors.add('git-history');
-    }
-    
+
     // Risk score combines churn frequency and cognitive load
     const normalizedChurn = Math.min(churnCount / 20, 1); // Normalize to 0-1
     const normalizedLoad = Math.min(file.cognitiveLoad / 0.5, 1); // Normalize to 0-1
     const riskScore = (normalizedChurn * 0.6) + (normalizedLoad * 0.4);
-    
+
     if (churnCount > 0 || riskScore > 0.1) {
       results.push({
         path: file.relativePath,
@@ -154,7 +194,7 @@ function calculateChurnFromSessions(files: any[], _projectRoot: string, sinceDay
       });
     }
   }
-  
+
   return results;
 }
 
