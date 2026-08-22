@@ -1,7 +1,7 @@
-import * as path from 'path';
-import * as webpack from 'webpack';
+const path = require('path');
+const webpack = require('webpack');
 
-const config: webpack.Configuration = {
+const config = {
   target: 'node',
   mode: 'production',
   entry: './src/extension.ts',
@@ -29,4 +29,4 @@ const config: webpack.Configuration = {
   devtool: 'source-map',
 };
 
-export default config;
+module.exports = config;
