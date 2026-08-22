@@ -8,6 +8,8 @@ node_modules/
 # Build output
 dist/
 dist-tests/
+.next/
+**/next/
 
 # ProjectMind runtime data
 .projectmind/
@@ -66,7 +68,7 @@ tests/tmp-vitest*.db-wal
 *.bak
 *.bak.*
 
-# Temp files from development
+# Build artifacts (OS temp)
 C:*/
 
 # Compiled Python
