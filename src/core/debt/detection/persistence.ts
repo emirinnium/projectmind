@@ -54,6 +54,33 @@ export class DebtPersistence {
       ? (getStatement('SELECT id FROM files WHERE path = ? OR relative_path = ?').get(opts.filePath, opts.filePath) as { id: number } | undefined)?.id
       : null;
 
+    // Deduplicate: descriptions are deterministic per finding
+    // ("Potential duplicate code: A vs B", "Circular dependency detected: ..."),
+    // so an existing unresolved item with the same type+description is the
+    // SAME finding — refresh it instead of inserting another copy.
+    const existing = getStatement(
+      'SELECT id FROM debt_items WHERE type = ? AND description = ? AND resolved = 0 LIMIT 1'
+    ).get(opts.type, opts.description) as { id: number } | undefined;
+
+    if (existing) {
+      getStatement(
+        `UPDATE debt_items SET detected_at = CURRENT_TIMESTAMP, severity = ?, suggestion = ?, reasoning_trace = ?
+         WHERE id = ?`
+      ).run(opts.severity, opts.suggestion, JSON.stringify(opts.reasoningTrace), existing.id);
+
+      return {
+        id: existing.id,
+        type: opts.type,
+        description: opts.description,
+        severity: opts.severity,
+        suggestion: opts.suggestion,
+        reasoningTrace: opts.reasoningTrace,
+        detectedAt: new Date().toISOString(),
+        resolved: false,
+        filePath: opts.filePath,
+      };
+    }
+
     const result = getStatement(
       `INSERT INTO debt_items 
        (type, description, severity, suggestion, reasoning_trace, file_id)

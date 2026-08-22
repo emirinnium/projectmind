@@ -33,9 +33,9 @@ export class DebtTracker {
     this.kg = kg ?? new KnowledgeGraph();
     this.coherenceEngine = engine ?? new CoherenceEngine();
     this.redundancyDetector = new RedundancyDetector();
-    this.patternDriftDetector = new PatternDriftDetector(this.coherenceEngine);
-    this.architecturalDriftDetector = new ArchitecturalDriftDetector();
     this.persistence = new DebtPersistence();
+    this.patternDriftDetector = new PatternDriftDetector(this.coherenceEngine, this.persistence);
+    this.architecturalDriftDetector = new ArchitecturalDriftDetector(this.persistence);
     this.genomeComputer = new GenomeComputer(this.kg);
   }
 

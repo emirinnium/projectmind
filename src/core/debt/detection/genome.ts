@@ -1,6 +1,7 @@
 import { getStatement } from '../../../storage/database.js';
 import { KnowledgeGraph } from '../../../storage/knowledge-graph.js';
 import { PatternLibrary, Pattern } from '../../../parser/pattern-extractor.js';
+import { stableHash } from '../../../utils/hash.js';
 
 export interface GenomeResult {
   genomeData: string;
@@ -120,23 +121,28 @@ export class GenomeComputer {
       computedAt: new Date().toISOString(),
     });
 
-    const checksum = this.hashCode(genomeData);
-    getStatement(
-      `INSERT OR REPLACE INTO project_genome (checksum, genome_data, coherence_score, computed_at) 
-       VALUES (?, ?, ?, ?)`
-    ).run(checksum, genomeData, coherenceScore, new Date().toISOString());
+  const checksum = this.hashCode(genomeData);
+  getStatement(
+    `INSERT OR REPLACE INTO project_genome (checksum, genome_data, coherence_score, computed_at) 
+     VALUES (?, ?, ?, ?)`
+  ).run(checksum, genomeData, coherenceScore, new Date().toISOString());
 
-    return { genomeData, coherenceScore, breakdown };
+  // Prune history: keep only the 10 most recent genome snapshots so the
+  // table cannot grow unboundedly across a long-lived server.
+  getStatement(
+    `DELETE FROM project_genome WHERE id NOT IN (
+       SELECT id FROM project_genome ORDER BY computed_at DESC, id DESC LIMIT 10
+     )`
+  ).run();
+
+  return { genomeData, coherenceScore, breakdown };
   }
 
   private patternCache: Pattern[] | null = null;
   private patternCacheExpiry = 0;
 
+  /** Kept as thin alias — single crypto-backed implementation in utils/hash. */
   private hashCode(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
-    }
-    return Math.abs(hash).toString(16);
+    return stableHash(str);
   }
 }

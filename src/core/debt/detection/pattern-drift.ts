@@ -1,42 +1,45 @@
 import { FileInfo } from '../../../storage/knowledge-graph.js';
 import { CoherenceEngine } from '../../coherence/engine.js';
+import type { DebtItem } from './persistence.js';
 
-export type DebtType = 'pattern_drift' | 'architectural_drift' | 'redundancy' | 'agent_conflict';
-export type Severity = 'high' | 'medium' | 'low';
-
-export interface DebtItem {
-  id: number;
-  type: DebtType;
-  description: string;
-  severity: Severity;
-  suggestion: string;
-  reasoningTrace: string[];
-  detectedAt: string;
-  resolved: boolean;
-  filePath: string | null;
-}
-
-/**
- * Handles detection of pattern drift using coherence engine
- */
 export class PatternDriftDetector {
   private coherenceEngine: CoherenceEngine;
+  private persistence: { createDebtItem(opts: {
+    type: 'pattern_drift';
+    description: string;
+    severity: 'high' | 'medium' | 'low';
+    suggestion: string;
+    reasoningTrace: string[];
+    filePath: string | null;
+  }): DebtItem };
 
-  constructor(coherenceEngine: CoherenceEngine) {
+  constructor(coherenceEngine: CoherenceEngine, persistence: PatternDriftDetector['persistence']) {
     this.coherenceEngine = coherenceEngine;
+    this.persistence = persistence;
   }
 
   async detect(file: FileInfo, content: string): Promise<DebtItem[]> {
     const items: DebtItem[] = [];
 
+    // Pattern consistency is a PRODUCT-code concern. Test scaffolding,
+    // scripts and build output legitimately violate style heuristics
+    // (console noise, loose typing in fixtures) and must not raise drift.
+    if (!file.relativePath.replace(/\\/g, '/').startsWith('src/')) {
+      return items;
+    }
+
     const result = await this.coherenceEngine.checkCoherence({
       code: content,
-      filePath: file.path,
+      // Contract source patterns are project-relative globs (e.g.
+      // 'src/cli/commands/**/*.ts'); passing the absolute path would
+      // never match them, silently disabling contract-based detection.
+      filePath: file.relativePath,
       fastOnly: true,
     });
 
     if (result.verdict === 'fail' || result.verdict === 'warn') {
-      items.push(this.createDebtItem({
+      // Persist immediately so findings reach debt_items and every report.
+      items.push(this.persistence.createDebtItem({
         type: 'pattern_drift',
         description: `Pattern inconsistency in ${file.relativePath}`,
         severity: result.verdict === 'fail' ? 'high' : 'medium',
@@ -47,26 +50,5 @@ export class PatternDriftDetector {
     }
 
     return items;
-  }
-
-  private createDebtItem(opts: {
-    type: DebtType;
-    description: string;
-    severity: Severity;
-    suggestion: string;
-    reasoningTrace: string[];
-    filePath: string | null;
-  }): DebtItem {
-    return {
-      id: 0, // Will be set when persisted
-      type: opts.type,
-      description: opts.description,
-      severity: opts.severity,
-      suggestion: opts.suggestion,
-      reasoningTrace: opts.reasoningTrace,
-      detectedAt: new Date().toISOString(),
-      resolved: false,
-      filePath: opts.filePath,
-    };
   }
 }

@@ -1,39 +1,53 @@
 import { getStatement } from '../../../storage/database.js';
 import { FileInfo } from '../../../storage/knowledge-graph.js';
-
-export type DebtType = 'pattern_drift' | 'architectural_drift' | 'redundancy' | 'agent_conflict';
-export type Severity = 'high' | 'medium' | 'low';
-
-export interface DebtItem {
-  id: number;
-  type: DebtType;
-  description: string;
-  severity: Severity;
-  suggestion: string;
-  reasoningTrace: string[];
-  detectedAt: string;
-  resolved: boolean;
-  filePath: string | null;
-}
+import type { DebtItem } from './persistence.js';
 
 /**
- * Handles detection of architectural drift (circular dependencies)
+ * Handles detection of architectural drift (circular dependencies).
+ * Uses resolved_path edges recorded at scan time so cycles are detectable
+ * for normal relative imports as well as path aliases.
  */
 export class ArchitecturalDriftDetector {
+  private persistence: { createDebtItem(opts: {
+    type: 'architectural_drift';
+    description: string;
+    severity: 'high' | 'medium' | 'low';
+    suggestion: string;
+    reasoningTrace: string[];
+    filePath: string | null;
+  }): DebtItem };
+
+  constructor(persistence: ArchitecturalDriftDetector['persistence']) {
+    this.persistence = persistence;
+  }
+
   async detect(files: FileInfo[]): Promise<DebtItem[]> {
     const items: DebtItem[] = [];
 
-    const importGraph = new Map<string, Set<string>>();
+    // Build the graph from RESOLVED import edges (relative_path -> relative_path).
+    const fileByPath = new Set<string>();
     for (const file of files) {
-      const imports = getStatement(
-        `SELECT source FROM imports JOIN files ON imports.file_id = files.id WHERE files.id = ?`
-      ).all(file.id) as { source: string }[];
-      importGraph.set(file.relativePath, new Set(imports.map((i: { source: string }) => i.source)));
+      fileByPath.add(file.relativePath);
     }
 
-    const cyclicDeps = this.findCyclicDependencies(importGraph, files);
-    for (const cycle of cyclicDeps) {
-      items.push(this.createDebtItem({
+    const graph = new Map<string, Set<string>>();
+    for (const file of files) {
+      const edges = getStatement(
+        `SELECT resolved_path FROM imports WHERE file_id = ? AND resolved_path IS NOT NULL`
+      ).all(file.id) as Array<{ resolved_path: string }>;
+      for (const { resolved_path } of edges) {
+        // Only keep edges that land on known files (self-project edges).
+        if (!fileByPath.has(resolved_path)) continue;
+        if (!graph.has(file.relativePath)) graph.set(file.relativePath, new Set());
+        graph.get(file.relativePath)!.add(resolved_path);
+      }
+    }
+
+    for (const cycle of this.deduplicateCycles(this.findCycles(graph))) {
+      // Persist immediately so findings reach debt_items and every report.
+      // Dedupe also prevents rotated representations of the same cycle from
+      // creating multiple debt rows within a single run.
+      items.push(this.persistence.createDebtItem({
         type: 'architectural_drift',
         description: `Circular dependency detected: ${cycle.join(' -> ')}`,
         severity: 'high',
@@ -46,61 +60,41 @@ export class ArchitecturalDriftDetector {
     return items;
   }
 
-  private findCyclicDependencies(graph: Map<string, Set<string>>, files: FileInfo[]): string[][] {
+  /** Rotate each cycle so its lexicographically smallest node leads, then drop repeats. */
+  private deduplicateCycles(cycles: string[][]): string[][] {
+    const unique: string[][] = [];
+    for (const cycle of cycles) {
+      let minIdx = 0;
+      for (let i = 1; i < cycle.length; i++) {
+        if (cycle[i] < cycle[minIdx]) minIdx = i;
+      }
+      const normalized = [...cycle.slice(minIdx), ...cycle.slice(0, minIdx)];
+      if (!unique.some((u) => u.length === normalized.length && u.every((n, i) => n === normalized[i]))) {
+        unique.push(normalized);
+      }
+    }
+    return unique;
+  }
+
+  private findCycles(graph: Map<string, Set<string>>): string[][] {
     const cycles: string[][] = [];
     const visited = new Set<string>();
     const recStack = new Set<string>();
     const path: string[] = [];
 
-    // Build a map of resolved imports (relative + absolute) to file paths
-    const resolvedImportMap = new Map<string, string>();
-    for (const file of files) {
-      resolvedImportMap.set(file.relativePath, file.relativePath);
-    }
-
-    const resolveImport = (source: string, currentFile: string): string | null => {
-      // Relative import
-      if (source.startsWith('.')) {
-        // Resolve relative path
-        const parts = currentFile.split('/');
-        parts.pop(); // Remove filename
-        const sourceParts = source.split('/');
-        for (const part of sourceParts) {
-          if (part === '..') parts.pop();
-          else if (part !== '.') parts.push(part);
-        }
-        return parts.join('/');
-      }
-
-      // Absolute import (path alias like @/utils/config)
-      if (source.startsWith('@/')) {
-        const resolved = source.slice(2); // Remove @/ prefix
-        // Check if this resolves to a known file
-        for (const file of files) {
-          if (file.relativePath.startsWith(resolved) || file.relativePath === resolved + '.ts' || file.relativePath === resolved + '.tsx') {
-            return file.relativePath;
-          }
-        }
-      }
-
-      // Package import - skip (external dependency)
-      return null;
-    };
-
-    const dfs = (node: string) => {
+    const dfs = (node: string): void => {
       if (!graph.has(node)) return;
       visited.add(node);
       recStack.add(node);
       path.push(node);
 
       for (const dep of graph.get(node)!) {
-        const depPath = resolveImport(dep, node);
-        if (depPath && !visited.has(depPath)) {
-          dfs(depPath);
-        } else if (depPath && recStack.has(depPath)) {
-          const cycleStart = path.indexOf(depPath);
+        if (!visited.has(dep)) {
+          dfs(dep);
+        } else if (recStack.has(dep)) {
+          const cycleStart = path.indexOf(dep);
           if (cycleStart >= 0) {
-            cycles.push([...path.slice(cycleStart), depPath]);
+            cycles.push([...path.slice(cycleStart), dep]);
           }
         }
       }
@@ -110,32 +104,9 @@ export class ArchitecturalDriftDetector {
     };
 
     for (const node of graph.keys()) {
-      if (!visited.has(node)) {
-        dfs(node);
-      }
+      if (!visited.has(node)) dfs(node);
     }
 
     return cycles;
-  }
-
-  private createDebtItem(opts: {
-    type: DebtType;
-    description: string;
-    severity: Severity;
-    suggestion: string;
-    reasoningTrace: string[];
-    filePath: string | null;
-  }): DebtItem {
-    return {
-      id: 0,
-      type: opts.type,
-      description: opts.description,
-      severity: opts.severity,
-      suggestion: opts.suggestion,
-      reasoningTrace: opts.reasoningTrace,
-      detectedAt: new Date().toISOString(),
-      resolved: false,
-      filePath: opts.filePath,
-    };
   }
 }
