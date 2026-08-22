@@ -1,10 +1,15 @@
 {
-  "name": "projectmind",
+  "name": "projectmind-lcil",
   "displayName": "ProjectMind",
   "description": "AI-powered codebase intelligence: coherence, security, embeddings",
   "version": "0.2.0",
   "publisher": "emirinnium",
   "icon": "images/vscode-icon-128x128.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/emirinnium/projectmind.git"
+  },
+  "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -26,6 +31,15 @@
     "onStartupFinished"
   ],
   "main": "./dist/extension.js",
+  "files": [
+    "dist",
+    "images",
+    "src",
+    "webview",
+    "README.md",
+    "tsconfig.json",
+    "webpack.config.cjs"
+  ],
   "contributes": {
     "commands": [
       {
