@@ -47,3 +47,15 @@ export class CacheRegistry {
 }
 
 export const globalCacheRegistry = new CacheRegistry();
+
+// Persist persistent caches on process shutdown. 'exit' handlers must be
+// synchronous — CachePersistence.persistToDisk uses writeFileSync, so this
+// is safe. Without this hook the last (up to 60s of) cache entries were
+// never flushed and the interval timers kept handles alive.
+process.on('exit', () => {
+  try {
+    globalCacheRegistry.destroyAll();
+  } catch {
+    // Shutdown must never throw.
+  }
+});

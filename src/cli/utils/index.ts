@@ -7,3 +7,4 @@ export { withRetry, RetryOptions } from './retry.js';
 export { debug } from './debug.js';
 export { trackAgentTouched } from './agent.js';
 export { BaseCommand } from './base-command.js';
+export { resolvePackageVersion, currentModuleDir } from './version.js';

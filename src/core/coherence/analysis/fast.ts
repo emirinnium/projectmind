@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { CoherenceCache } from '../../cache/index.js';
 import { FileInfo } from '../../../storage/knowledge-graph.js';
 import { ContractEngine } from '../../contracts/engine.js';
+import { stableHash } from '../../../utils/hash.js';
 
 export interface LLMProvider {
   name: string;
@@ -161,11 +162,8 @@ export class FastCoherenceAnalyzer {
     }
   }
 
+  /** Kept as thin alias — single crypto-backed implementation in utils/hash. */
   private hashCode(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
-    }
-    return Math.abs(hash).toString(16);
+    return stableHash(str);
   }
 }

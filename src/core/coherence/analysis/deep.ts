@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { CoherenceCache } from '../../cache/index.js';
 import { runWithRetry } from '../../../storage/database.js';
 import { logger } from '../../../utils/logger.js';
+import { stableHash } from '../../../utils/hash.js';
 
 // Warning tracking to avoid spamming user
 let cloudLLMWarningShown = false;
@@ -165,11 +166,8 @@ SUGGESTIONS: (one per line, or "none")`;
     }
   }
 
+  /** Kept as thin alias — single crypto-backed implementation in utils/hash. */
   private hashCode(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
-    }
-    return Math.abs(hash).toString(16);
+    return stableHash(str);
   }
 }

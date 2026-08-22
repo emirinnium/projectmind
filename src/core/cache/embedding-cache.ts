@@ -1,4 +1,5 @@
 import { AdvancedCache } from './advanced-cache.js';
+import { stableHash } from '../../utils/hash.js';
 
 export class EmbeddingCache extends AdvancedCache<string, number[]> {
   constructor(maxSize: number = 50_000, ttlMs: number = 86_400_000) { // 24 hours
@@ -10,15 +11,10 @@ export class EmbeddingCache extends AdvancedCache<string, number[]> {
     });
   }
 
-  makeKey(text: string, dim: number = 128): string {
-    return `${dim}:${this.hashCode(text)}`;
-  }
-
-  private hashCode(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
-    }
-    return Math.abs(hash).toString(16);
+  // NOTE: default dim kept for API compatibility; callers should pass the
+  // real embedding dimension (768) so vectors of different dims never
+  // share a key.
+  makeKey(text: string, dim: number = 768): string {
+    return `${dim}:${stableHash(text)}`;
   }
 }

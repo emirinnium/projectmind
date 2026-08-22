@@ -1,14 +1,13 @@
-import { logger } from '@/index.js';
+import { runWithRetry as coreRunWithRetry } from '@/storage/database-utils.js';
+import type { RetryOptions } from '@/storage/database-utils.js';
 
-export interface RetryOptions {
-  maxAttempts?: number;
-  baseDelayMs?: number;
-  maxDelayMs?: number;
-  backoffMultiplier?: number;
-  retryableErrors?: string[];
-  onRetry?: (attempt: number, error: Error) => void;
-}
+export type { RetryOptions };
 
+/**
+ * CLI-facing retry helper. Delegates to the single canonical implementation
+ * in storage/database-utils (previously a near-duplicate with divergent
+ * defaults); preserves this module's original default delay semantics.
+ */
 export async function withRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions = {}
@@ -22,36 +21,15 @@ export async function withRetry<T>(
     onRetry,
   } = options;
 
-  let lastError: Error;
-  
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      
-      const isRetryable = retryableErrors.some(e => 
-        lastError.message.includes(e) || lastError.name.includes(e)
-      );
-      
-      if (!isRetryable || attempt === maxAttempts) {
-        throw lastError;
-      }
-      
-      const delay = Math.min(
-        baseDelayMs * Math.pow(backoffMultiplier, attempt - 1),
-        maxDelayMs
-      );
-      
-      if (onRetry) {
-        onRetry(attempt, lastError);
-      } else {
-        logger.warn(`Attempt ${attempt}/${maxAttempts} failed: ${lastError.message}. Retrying in ${delay}ms...`);
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-  
-  throw lastError!;
+  return coreRunWithRetry(fn, {
+    maxAttempts,
+    baseDelayMs,
+    maxDelayMs,
+    backoffMultiplier,
+    retryableErrors,
+    onRetry,
+  });
 }
+
+// Re-export for callers that want the storage-default variant directly.
+export { coreRunWithRetry };

@@ -97,17 +97,17 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
                   agentTouched: f.agentTouched,
                 })),
                 structure: {
-                  functions: (functions as any[]).map((fn: any) => ({
+                  functions: functions.map((fn) => ({
                     name: fn.name,
                     signature: fn.signature,
                     complexity: fn.complexity,
-                    startLine: fn.start_line,
-                    endLine: fn.end_line,
+                    startLine: fn.startLine,
+                    endLine: fn.endLine,
                   })),
-                  classes: (classes as any[]).map((cls: any) => ({
+                  classes: classes.map((cls) => ({
                     name: cls.name,
-                    methodsCount: cls.methods_count,
-                    propertiesCount: cls.properties_count,
+                    methodsCount: cls.methodsCount,
+                    propertiesCount: cls.propertiesCount,
                   })),
                 },
                 circularDependencies: fileCycles,

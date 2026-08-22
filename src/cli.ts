@@ -2,35 +2,14 @@
 import { Command } from 'commander';
 import { logger } from './utils/logger.js';
 import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'path';
+import { currentModuleDir, resolvePackageVersion } from './cli/utils/version.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Read version from package.json - search up from current directory
-function getVersion(): string {
-  let dir = __dirname;
-  for (let i = 0; i < 5; i++) {
-    try {
-      const pkgPath = join(dir, 'package.json');
-      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-      if (pkg.name === '@emirhanturker/projectmind') {
-        return pkg.version;
-      }
-    } catch {
-      // Continue searching upward
-    }
-    dir = dirname(dir);
-  }
-  return '0.0.0';
-}
-
-const pkgVersion = getVersion();
+const pkgVersion = resolvePackageVersion(currentModuleDir(import.meta.url));
 
 // Display ASCII banner on startup
 try {
-  const logoPath = join(__dirname, '..', 'assets', 'cli-logo.txt');
+  const logoPath = join(currentModuleDir(import.meta.url), '..', 'assets', 'cli-logo.txt');
   const logo = readFileSync(logoPath, 'utf-8');
   console.log(logo);
   console.log('');

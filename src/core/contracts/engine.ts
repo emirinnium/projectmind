@@ -12,6 +12,10 @@ export interface ArchitecturalContract {
   requiredImports?: string[];
   maxLines?: number;
   severity: 'error' | 'warning';
+  /** Glob patterns of files this contract must NOT be applied to.
+   *  Useful for exempting rule-definition files from their own rules
+   *  (e.g. the contracts engine listing "process.exit(" as literal data). */
+  excludePaths?: string[];
 }
 
 export interface ContractViolation {
@@ -51,6 +55,8 @@ export class ContractEngine {
         sourcePattern: 'src/core/**/*.ts',
         forbiddenKeywords: ['process.exit('],
         severity: 'error',
+        // The engine itself lists the keyword as literal DATA, not code.
+        excludePaths: ['src/core/contracts/engine.ts'],
       },
       {
         id: 'no-direct-db-in-mcp-tools',
@@ -102,6 +108,11 @@ export class ContractEngine {
 
     for (const contract of this.contracts) {
       if (!this.matchesPattern(normalizedPath, contract.sourcePattern)) {
+        continue;
+      }
+
+      // Honor per-contract path exclusions.
+      if (contract.excludePaths?.some((ex) => this.matchesPattern(normalizedPath, ex))) {
         continue;
       }
 
