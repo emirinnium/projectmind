@@ -100,5 +100,10 @@
   },
   "engines": {
     "node": ">=22.0.0"
+  },
+  "overrides": {
+    "tree-sitter-cpp": {
+      "tree-sitter": "^0.25.1"
+    }
   }
 }
