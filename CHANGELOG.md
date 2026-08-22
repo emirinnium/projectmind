@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-22
+
+Stability release: every CLI command now performs real analysis (no simulated
+metrics), the two hidden circular dependencies were broken, and all known
+npm vulnerabilities are resolved.
+
+### Fixed
+- **storage**: `getDependents`/`getDirectDependents` match `resolved_path`
+  (dependents & impact analysis now return real results); kg memory reads
+  honour `expires_at`
+- **debt**: pattern-drift and architectural-drift findings persist to
+  `debt_items` (previously discarded); findings dedupe across scans;
+  `project_genome` pruned to latest 10 snapshots; drift detection scoped to
+  product code (`src/`)
+- **parser**: shared types extracted to `parser/types.ts`, breaking the two
+  real circular dependencies `ast-parser <-> ast/parser` and
+  `ast-parser <-> multilang-parser`
+- **config**: API keys resolve per selected provider (no cross-provider key
+  leakage); embeddings OpenAI key gains env fallback
+- **cli**: `pm init` writes `.projectmindrc.json` where `loadConfig` reads it;
+  `pm mcp` wrapped in asyncHandler; health icons/encoding repaired
+- **mcp**: server reports the real package version (was hardcoded 1.0.0);
+  `get_context` structure fields fixed (were undefined via snake_case)
+- **vscode**: extension performs the mandatory MCP initialize handshake
+  (previously every command timed out); sidebar buttons wired to live data;
+  inline diagnostics activated; phantom `find_similar` call replaced with
+  `get_context includeSimilar`
+- engines raised to `node >=22.13.0` (required by `node:sqlite`)
+- CLI logo asset now ships in the published package
+
+### Added
+- Real data sources: churn from git log; contract tests via ContractEngine;
+  dependency audit/outdated/licenses via npm; PR preview via three-dot git
+  diff; ref-level API-surface diff via git ls-tree/show; module coupling via
+  resolved import edges
+- `ArchitecturalContract.excludePaths` for rule-definition exemptions
+- Cache flush on process exit; embedding-cache invalidation on rescan
+
+### Changed
+- Unified content hashing (`utils/stableHash`) replacing five weak 32-bit
+  hash copies; unified retry helpers
+- Multilang parser adds C support (`.c`); scanner stops reporting unsupported
+  `.php` files as errors
+
+### Security
+- Overrides: `adm-zip ^0.6.0`, `protobufjs ^8.7.2`, `sharp ^0.35.3`
+- `npm audit`: 7 vulnerabilities (1 critical) → **0**
+
+### Install note
+Use `npm install --legacy-peer-deps` while tree-sitter grammars declare an
+older optional peer (see README "Installation Notes").
+
 ### Added
 - Initial public release preparation
 - README.md with full documentation
