@@ -4,6 +4,7 @@ import { registerAllTools } from './mcp/tools/registry/index.js';
 import { logger } from './cli/utils/logger.js';
 import { initializeDependencies, getDependencies } from './mcp/dependencies.js';
 import { closeDatabase } from './storage/database.js';
+import { resolvePackageVersion, currentModuleDir } from './utils/version.js';
 
 let _server: McpServer | null = null;
 let _initialized = false;
@@ -20,7 +21,8 @@ export async function initMcpServer(): Promise<void> {
 
     const server = new McpServer({
       name: 'projectmind',
-      version: '1.0.0',
+      // Real package version (was hardcoded '1.0.0' while package.json said 0.2.x).
+      version: resolvePackageVersion(currentModuleDir(import.meta.url)) || '0.0.0',
     });
 
     registerAllTools(server, getDependencies());

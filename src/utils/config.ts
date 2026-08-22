@@ -115,10 +115,11 @@ export function loadConfig(): ProjectMindConfig {
  * Merge validated ProjectMindRc with defaults to produce ProjectMindConfig
  */
 function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
+  const provider = validated.llm?.provider ?? DEFAULT_CONFIG.llm.provider;
   const llmConfig = {
-    provider: validated.llm?.provider ?? DEFAULT_CONFIG.llm.provider,
+    provider,
     model: validated.llm?.model ?? DEFAULT_CONFIG.llm.model,
-    apiKey: resolveApiKey(validated.llm?.apiKey),
+    apiKey: resolveApiKey(validated.llm?.apiKey, provider),
     deepModel: validated.llm?.deepModel ?? DEFAULT_CONFIG.llm.deepModel,
     confidenceThreshold: validated.llm?.confidenceThreshold ?? DEFAULT_CONFIG.llm.confidenceThreshold,
     maxCacheSize: validated.llm?.maxCacheSize ?? DEFAULT_CONFIG.llm.maxCacheSize,
@@ -129,7 +130,7 @@ function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
     unixcoderModelPath: validated.embeddings?.unixcoderModelPath ?? DEFAULT_CONFIG.embeddings.unixcoderModelPath,
     codebertModelPath: validated.embeddings?.codebertModelPath ?? DEFAULT_CONFIG.embeddings.codebertModelPath,
     dimension: validated.embeddings?.dimension ?? DEFAULT_CONFIG.embeddings.dimension,
-    openaiApiKey: validated.embeddings?.openaiApiKey,
+    openaiApiKey: validated.embeddings?.openaiApiKey ?? process.env.OPENAI_API_KEY,
     openaiModel: validated.embeddings?.openaiModel ?? DEFAULT_CONFIG.embeddings.openaiModel,
     transformersModel: validated.embeddings?.transformersModel ?? DEFAULT_CONFIG.embeddings.transformersModel,
   };
@@ -155,13 +156,26 @@ function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
 }
 
 /**
- * Resolve API key from config or environment variables
+ * Resolve API key for a specific LLM provider from config or environment variables.
+ * Keys are resolved PER PROVIDER so one provider's credential is never sent to another.
  */
-function resolveApiKey(configApiKey?: string): string | undefined {
+function resolveApiKey(configApiKey?: string, provider?: string): string | undefined {
   if (configApiKey) return configApiKey;
-  return process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY
-    || process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY
-    || process.env.OPENAI_API_KEY;
+  const p = provider ?? DEFAULT_CONFIG.llm.provider;
+  switch (p) {
+    case 'anthropic':
+      return process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+    case 'openai':
+      return process.env.OPENAI_API_KEY;
+    case 'gemini':
+      return process.env.GEMINI_API_KEY;
+    case 'groq':
+      return process.env.GROQ_API_KEY;
+    case 'ollama':
+      return undefined; // self-hosted, no key needed
+    default:
+      return undefined;
+  }
 }
 
 export function getConfigPath(): string {
