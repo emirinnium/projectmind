@@ -1,6 +1,6 @@
 {
   "name": "@emirhanturker/projectmind",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Living Codebase Intelligence Layer for AI Agents — persistent memory, real-time coherence, and Opus-level reasoning",
   "bin": {
     "projectmind": "./cli.mjs",

@@ -86,3 +86,6 @@ __pycache__/
 # Packaging smoke-test sandbox
 smoke/
 *.tgz
+
+# Extension packages
+*.vsix

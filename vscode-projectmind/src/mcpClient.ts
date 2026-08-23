@@ -45,8 +45,15 @@ export class MCPClient extends EventEmitter {
 
   private async boot(): Promise<void> {
     const { spawn } = await import('child_process');
+    // On Windows the npm global bin is a .cmd shim; CreateProcess cannot
+    // execute .cmd files directly, so plain spawn('projectmind') throws
+    // ENOENT even when it is on PATH. Enabling the shell lets cmd.exe
+    // resolve the shim (arguments are static literals — no injection
+    // surface). POSIX keeps shell:false.
+    const needsShell = process.platform === 'win32';
     this.process = spawn(this.serverPath, ['mcp'], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      shell: needsShell,
     });
 
     this.process.on('error', (err) => {
