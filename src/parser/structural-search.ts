@@ -27,6 +27,19 @@ export interface StructuralReplaceOptions extends StructuralSearchOptions {
   dryRun?: boolean;
 }
 
+/** Friendly modifier names -> TS SyntaxKind names (pass-through for exact names). */
+const MODIFIER_ALIASES: Record<string, string> = {
+  async: 'AsyncKeyword',
+  export: 'ExportKeyword',
+  default: 'DefaultKeyword',
+  static: 'StaticKeyword',
+  public: 'PublicKeyword',
+  private: 'PrivateKeyword',
+  protected: 'ProtectedKeyword',
+  readonly: 'ReadonlyKeyword',
+  abstract: 'AbstractKeyword',
+};
+
 /**
  * Structural Search: Find AST nodes matching a pattern across the codebase
  */
@@ -146,11 +159,15 @@ export class StructuralSearcher {
       return false;
     }
 
-    // Match by modifier (async, export, etc.)
+    // Match by modifier. Accept friendly names ('async', 'export', ...) and
+    // map them to TS SyntaxKind names ('AsyncKeyword', ...); raw kind names
+    // still work as pass-through. Previously '-m async' could never match,
+    // silently breaking the documented usage.
     if (options.hasModifier) {
+      const wanted = MODIFIER_ALIASES[options.hasModifier.toLowerCase()] ?? options.hasModifier;
       const hasMods = ts.canHaveModifiers(node);
       const modifiers = hasMods ? ts.getModifiers(node) : undefined;
-      if (!modifiers || !Array.from(modifiers).some((m) => ts.SyntaxKind[m.kind] === options.hasModifier)) {
+      if (!modifiers || !Array.from(modifiers).some((m) => ts.SyntaxKind[m.kind] === wanted)) {
         return false;
       }
     }
