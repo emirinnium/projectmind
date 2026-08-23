@@ -17,11 +17,12 @@ import { registerEmbeddingTools } from '../embeddings.js';
 import { registerTaintTools } from '../taint.js';
 import { registerTeamMemoryTools } from '../team-memory.js';
 import { registerCliBridgeTool } from '../cli-bridge.js';
+import { registerCliParityTools } from '../cli-parity.js';
 
 /**
  * Register all MCP tools - single entry point for tool registration.
  */
-export function registerAllTools(server: McpServer, deps: McpDependencies): void {
+export async function registerAllTools(server: McpServer, deps: McpDependencies): Promise<void> {
   // Core tools
   registerCheckCoherenceTool(server, deps);
   registerGetContextTool(server, deps);
@@ -85,4 +86,8 @@ export function registerAllTools(server: McpServer, deps: McpDependencies): void
   // contract-test generate/run, trace convert/show/clear, refactor-roi,
   // deps-fresh, flags, secrets-life, onboard, embed ...).
   registerCliBridgeTool(server, deps);
+
+  // Auto-generated 1:1 CLI-parity tools (pm_<command>[_<sub>])
+  const parityCount = await registerCliParityTools(server, deps);
+  console.info(`[mcp] dedicated tools + ${parityCount} CLI-parity tools registered`);
 }

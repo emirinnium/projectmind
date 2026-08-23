@@ -5,6 +5,7 @@ import { logger } from './cli/utils/logger.js';
 import { initializeDependencies, getDependencies } from './mcp/dependencies.js';
 import { closeDatabase } from './storage/database.js';
 import { resolvePackageVersion, currentModuleDir } from './utils/version.js';
+import { pathToFileURL } from 'node:url';
 
 let _server: McpServer | null = null;
 let _initialized = false;
@@ -25,7 +26,7 @@ export async function initMcpServer(): Promise<void> {
       version: resolvePackageVersion(currentModuleDir(import.meta.url)) || '0.0.0',
     });
 
-    registerAllTools(server, getDependencies());
+    await registerAllTools(server, getDependencies());
 
     const transport = new StdioServerTransport();
     _server = server;
@@ -66,8 +67,17 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-const isMainModule = import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}` ||
-  import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}`;
+// Main-module detection hardened: process.argv[1] is undefined under
+// `node -e` / embedded ESM evaluation, and Windows paths need file:// URLs.
+const isMainModule = (() => {
+  try {
+    const arg1 = process.argv[1];
+    if (!arg1) return false;
+    return import.meta.url === pathToFileURL(arg1).href;
+  } catch {
+    return false;
+  }
+})();
 if (isMainModule) {
   logger.info('ProjectMind MCP Server: detected as main module, starting...');
 
