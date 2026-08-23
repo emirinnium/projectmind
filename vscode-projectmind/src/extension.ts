@@ -12,8 +12,10 @@ let diagnostics: DiagnosticManager | null = null;
 export async function activate(context: vscode.ExtensionContext) {
   console.log('ProjectMind extension activated');
 
-  // Initialize MCP client
+  // Initialize MCP client — pin it to the first workspace folder so the
+  // server scans the user's project, not the VS Code installation dir.
   mcpClient = new MCPClient();
+  mcpClient.workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
   // Initialize status bar
   statusBar = new StatusBarManager(context);

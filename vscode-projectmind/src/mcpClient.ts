@@ -25,6 +25,13 @@ export class MCPClient extends EventEmitter {
   private stdoutBuffer = '';
   private bootPromise: Promise<void> | null = null;
 
+  /**
+   * Workspace folder the server should treat as the project root.
+   * Without this the server inherits the extension host's cwd (often inside
+   * the VS Code installation) and scans THAT instead of the user's project.
+   */
+  public workspaceRoot?: string;
+
   constructor(serverPath: string = 'projectmind') {
     super();
     this.serverPath = serverPath;
@@ -54,6 +61,13 @@ export class MCPClient extends EventEmitter {
     this.process = spawn(this.serverPath, ['mcp'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: needsShell,
+      // Pin the project root: config resolves projectRoot from
+      // PROJECTMIND_ROOT first, so scanning + DB land in the workspace
+      // instead of wherever the extension host happens to run.
+      cwd: this.workspaceRoot || undefined,
+      env: this.workspaceRoot
+        ? { ...process.env, PROJECTMIND_ROOT: this.workspaceRoot }
+        : undefined,
     });
 
     this.process.on('error', (err) => {
