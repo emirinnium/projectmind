@@ -66,7 +66,9 @@ export function registerCommands(
         const debt = debtRes ? JSON.parse(debtRes.content[0]?.text || '{}') : {};
         const fin = (v: unknown): number =>
           typeof v === 'number' && Number.isFinite(v) ? v : 0;
-        const hotspots = (scale.topHotspots ?? []).slice(0, 10) as Array<{ path?: string; cognitiveLoad?: number; agentTouched?: boolean }>;
+        const hotspots = (scale.topHotspots ?? []).slice(0, 10) as Array<{ path?: string; relativePath?: string; cognitiveLoad?: number; agentTouched?: boolean }>;
+        const disp = (h: { path?: string; relativePath?: string }): string =>
+          String(h.relativePath || h.path || '').replace(/</g, '&lt;');
         panel.webview.html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
           body{font-family:-apple-system,'Segoe UI',sans-serif;padding:24px;color:var(--vscode-foreground)}
           .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:16px 0}
@@ -84,7 +86,7 @@ export function registerCommands(
             <div class="card"><div class="k">Debt Items</div><div class="v">${fin(debt.totalItems)}<small> (H:${fin(debt.bySeverity?.high)} M:${fin(debt.bySeverity?.medium)} L:${fin(debt.bySeverity?.low)})</small></div></div>
           </div>
           <h3>Top Hotspots</h3>
-          ${hotspots.length ? `<ul>${hotspots.map((h) => `<li><code>${String(h.path ?? '').replace(/</g, '&lt;')}</code> — load ${fin(h.cognitiveLoad).toFixed(3)}${h.agentTouched ? ' · agent-touched' : ''}</li>`).join('')}</ul>`
+          ${hotspots.length ? `<ul>${hotspots.map((h) => `<li><code>${disp(h)}</code> — load ${fin(h.cognitiveLoad).toFixed(3)}${h.agentTouched ? ' · agent-touched' : ''}</li>`).join('')}</ul>`
             : '<p>No hotspots yet — run <b>Scan Project</b> first.</p>'}
         </body></html>`;
       } catch (e) {

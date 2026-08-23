@@ -104,12 +104,12 @@ export class SidebarPanel {
   private async renderHotspots(): Promise<void> {
     const result = await this.mcpClient.callTool('scale_report', {});
     const report = JSON.parse(result.content[0]?.text || '{}') as {
-      topHotspots?: Array<{ path?: string; cognitiveLoad?: number; agentTouched?: boolean }>;
+      topHotspots?: Array<{ path?: string; relativePath?: string; cognitiveLoad?: number; agentTouched?: boolean }>;
       avgCognitiveLoad?: number;
     };
     const spots = (report.topHotspots ?? []).slice(0, 10);
     const rows = spots.map((h) =>
-      `<li><code>${escapeHtml(h.path ?? '')}</code> — load ${(h.cognitiveLoad ?? 0).toFixed(3)}${h.agentTouched ? ' · agent-touched' : ''}</li>`
+      `<li><code>${escapeHtml(h.relativePath || h.path || '')}</code> — load ${(h.cognitiveLoad ?? 0).toFixed(3)}${h.agentTouched ? ' · agent-touched' : ''}</li>`
     ).join('');
     this.panel.webview.html = listPage('Top Hotspots', [
       `Avg cognitive load: ${(report.avgCognitiveLoad ?? 0).toFixed(3)}`,
