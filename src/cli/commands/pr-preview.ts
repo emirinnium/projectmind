@@ -35,7 +35,7 @@ export function createPrPreviewCommand(): Command {
         output.kv('Base', opts.base);
         output.kv('Head', opts.head);
         
-        // Get changed files (simulated - would use git diff in real implementation)
+        // Changed files via real three-dot/two-dot/uncommitted git diff.
         const changedFiles = await getChangedFiles(opts.base, opts.head, config.projectRoot);
         
         if (changedFiles.length === 0) {
@@ -85,7 +85,7 @@ export function createPrPreviewCommand(): Command {
           else if (warnCount > 0) coherenceRisk = 'low';
         }
         
-        // Test selection (simulated)
+        // Deterministic heuristic selection: src->tests path mapping + module tests.
         let testSelection: string[] = [];
         if (opts.tests) {
           testSelection = selectTests(changedFiles, scale);

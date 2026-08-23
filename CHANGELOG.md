@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-08-23
+
+Honesty-completion release: the last fabricated/simulated metrics and stub
+commands are gone — every command now performs real analysis or states its
+limits explicitly.
+
+### Fixed
+- `refactor-roi`: ROI churn input now comes from real git history (shared
+  `collectGitChurn` util); random numbers removed
+- `test-quality`: coverage read from `coverage/coverage-summary.json` when
+  present (-1 = unmeasured, never invented); flaky metric replaced with a
+  real static skipped/todo signal; mutation score honestly reports as
+  unmeasured without a mutator (e.g. Stryker)
+- `doctor fix-imports`: implemented for real — groups unresolved imports per
+  file from the knowledge graph, suggests tsconfig alias targets, counts
+  alias-fixable cases (analysis mode; no auto-editing)
+- `health`: metrics wired to live data (import resolution rate, pattern
+  count/high-confidence, agent sessions) instead of hardcoded zeros;
+  import-resolution check degrades to warning below 80%
+- `trace convert`: accepts an input file, validates/normalizes trace-event
+  JSON arrays; other formats fail with an explicit not-implemented error
+- `scale_report` (MCP): requesting a non-active root now returns explicit
+  guidance instead of silently ignoring the parameter
+
+### Changed
+- `register_file_watch` (MCP): registers a REAL session-scoped fs.watch —
+  change events flag the file as agent-touched; watchers close on unregister
+- pr-preview comments aligned with the already-real git-diff implementation
+
 ## [0.3.1] - 2026-08-23
 
 ### Fixed

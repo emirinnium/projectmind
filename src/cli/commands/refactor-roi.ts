@@ -1,6 +1,8 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { writeFileSync } from 'node:fs';
+import { collectGitChurn } from '@/cli/utils/git-churn.js';
+import { loadConfig } from '@/cli/utils/shared.js';
 
 interface RefactorCandidate {
   file: string;
@@ -166,16 +168,18 @@ export function createRefactorRoiCommand(): Command {
 
 function generateRefactorCandidates(files: FileInfoForRefactor[], debtReport: DebtReportForRefactor): RefactorCandidate[] {
   const candidates: RefactorCandidate[] = [];
-  
+  // Real 90-day change frequency from git history; agent-touch fallback.
+  const gitChurn = collectGitChurn(loadConfig().projectRoot, 90);
+
   for (const file of files) {
     const debtItems = debtReport.items.filter(d => d.filePath === file.relativePath || d.filePath === file.path);
     const debtCount = debtItems.length;
-    
+
     // Skip files with no debt and low cognitive load
     if (debtCount === 0 && file.cognitiveLoad < 0.2) continue;
-    
-    // Calculate churn (simulated from agent touches)
-    const churn = file.agentTouched ? 1 + Math.floor(Math.random() * 5) : Math.floor(Math.random() * 2);
+
+    // Real change frequency from git history (falls back to agent-touch signal).
+    const churn = gitChurn.get(String(file.relativePath).replace(/\\/g, '/'))?.count ?? (file.agentTouched ? 1 : 0);
     
     // Calculate coupling (imports + imported by) - used in createCandidate
     const _coupling = Math.min(file.imports?.length || 0, 10) / 10;

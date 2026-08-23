@@ -42,10 +42,16 @@ export function registerScaleReportTool(server: McpServer, deps: McpDependencies
     },
     async (args) => {
       try {
-        // If root is specified and differs from current, log a note
         if (args.root && args.root !== '.') {
-          // ScaleManager uses the root from initialization
-          // For different root, re-scan would be needed
+          // The report always reflects the initialized project root
+          // (PROJECTMIND_ROOT / cwd at server start). A different root
+          // requires re-scanning that project first.
+          return {
+            content: [{ type: 'text', text: JSON.stringify({
+              note: `Report reflects the initialized project root. Requested root '${args.root}' is not the active project — run scan_project with that root (or restart the server there) first.`,
+              hint: 'Use scan_project { root } to index another project, switch_project to it, then retry.',
+            }, null, 2) }],
+          };
         }
         const report = deps.scale.getScaleReport();
         return {

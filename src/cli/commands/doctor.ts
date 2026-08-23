@@ -1,4 +1,7 @@
 import { Command } from 'commander';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { getStatement } from '../../storage/database.js';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 
 export function createDoctorCommand(): Command {
@@ -7,14 +10,70 @@ export function createDoctorCommand(): Command {
 
   doctorCmd
     .command('fix-imports')
-    .description('Attempt to fix unresolved imports using path aliases')
-    .option('--dry-run', 'Show what would be fixed without applying')
-    .action(asyncHandler(async (_opts: { dryRun?: boolean }) => {
-      await withService(['scale', 'coherence'], async (_ctx, _services) => {
-        
-        output.section('Found unresolved imports analysis...');
-        // Note: This simplified version uses the services from withService
-        // Full implementation would use scale/coherence as before
+    .description('Analyze unresolved imports and suggest alias/path fixes')
+    .option('--limit <n>', 'Max files to show', '25')
+    .action(asyncHandler(async (opts: { limit?: string }) => {
+      await withService(['scale'], async (ctx, _services) => {
+        output.section('Unresolved Imports Analysis');
+
+        // Real data: every import recorded as unresolved during scan.
+        const rows = getStatement(
+          `SELECT f.relative_path AS file, i.source AS src
+           FROM imports i JOIN files f ON f.id = i.file_id
+           WHERE f.project_id = ? AND i.resolved = 0
+           ORDER BY f.relative_path`
+        ).all(ctx.kg.getCurrentProjectId()) as Array<{ file: string; src: string }>;
+
+        if (rows.length === 0) {
+          output.success('All imports are resolved. Nothing to fix.');
+          return;
+        }
+
+        // Load tsconfig path aliases (filesystem — tsconfig is not scanned).
+        let aliases: { prefix: string; target: string }[] = [];
+        try {
+          const cfgPath = join(process.cwd(), 'tsconfig.json');
+          if (existsSync(cfgPath)) {
+            const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8').replace(/^\s*\/\/.*$/gm, ''));
+            for (const [prefix, targets] of Object.entries(cfg.compilerOptions?.paths ?? {})) {
+              const target = (targets as string[])[0]?.replace(/\*$/, '');
+              if (target) aliases.push({ prefix: prefix.replace(/\*$/, ''), target });
+            }
+          }
+        } catch { /* no readable tsconfig */ }
+
+        // Group by file and produce suggestions.
+        const byFile = new Map<string, string[]>();
+        let aliasFixable = 0;
+        for (const r of rows) {
+          const list = byFile.get(r.file) ?? [];
+          let hint = '';
+          for (const a of aliases) {
+            if (!r.src.startsWith('./') && !r.src.startsWith('../') && r.src.startsWith(a.prefix)) {
+              hint = `alias '${a.prefix}' -> ${a.target}`;
+              aliasFixable++;
+              break;
+            }
+          }
+          if (!hint) hint = /^[./]/.test(r.src) ? 'relative — check file exists / extension' : 'external package';
+          list.push(`${r.src}   (${hint})`);
+          byFile.set(r.file, list);
+        }
+
+        const limit = Math.max(1, parseInt(opts.limit ?? '25', 10));
+        output.kv('Files affected', byFile.size);
+        output.kv('Unresolved imports', rows.length);
+        output.kv('Alias-fixable', aliasFixable);
+        output.section('Details');
+        for (const [file, list] of [...byFile.entries()].slice(0, limit)) {
+          output.kv(file, `${list.length} unresolved`);
+          for (const l of list.slice(0, 5)) output.warn(`   - ${l}`);
+        }
+        if (byFile.size > limit) output.info(`…and ${byFile.size - limit} more files`);
+
+        // Analysis mode: we report precisely; automatic code rewriting is
+        // intentionally out of scope (risk of breaking source files).
+        output.info('Analysis mode — auto-editing source imports is not performed.');
       });
     }));
 

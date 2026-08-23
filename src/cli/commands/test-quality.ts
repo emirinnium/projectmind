@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output, logger } from '@/cli/utils/shared.js';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 interface TestFile {
   path: string;
@@ -8,7 +8,10 @@ interface TestFile {
   framework: 'vitest' | 'jest' | 'mocha' | 'playwright' | 'cypress';
   tests: number;
   assertions: number;
+  /** -1 = unmeasured (no coverage artifact); never fabricated */
   coverage: number;
+  /** static stability signal: .skip/.todo/xit occurrences */
+  skipped?: number;
   mutations?: { killed: number; total: number; score: number };
   flaky?: boolean;
   lastRun?: string;
@@ -216,9 +219,17 @@ function analyzeTestFile(content: string, filePath: string, frameworkFilter: str
   else if (content.includes('integration') || content.includes('.int.')) type = 'integration';
   else if (content.includes('component') || content.includes('.component.')) type = 'component';
   
-  // Estimate coverage (would need actual coverage data in real impl)
-  const coverage = Math.max(0, Math.min(100, 50 + Math.random() * 50)); // placeholder
+  // Real coverage when the project has produced vitest/v8 summary data;
+  // otherwise -1 signals 'unmeasured' (never fabricate).
+  let coverage = -1;
+  try {
+    const summary = JSON.parse(readFileSync('coverage/coverage-summary.json', 'utf-8'));
+    const total = summary.total?.statements?.pct ?? summary.total?.lines?.pct;
+    if (typeof total === 'number') coverage = Math.max(0, Math.min(100, total));
+  } catch { /* no coverage artifact */ }
   
+  const skipped = (content.match(/\.(skip|todo)\s*\(|\bxit\s*\(/g) || []).length;
+
   return {
     path: filePath,
     type,
@@ -226,14 +237,16 @@ function analyzeTestFile(content: string, filePath: string, frameworkFilter: str
     tests,
     assertions,
     coverage,
+    skipped,
   };
 }
 
 function generateQualityReport(testFiles: TestFile[], coverageTarget: number, slowThreshold: number, _flakyThreshold: number): TestQualityReport {
   const totalTests = testFiles.reduce((sum, f) => sum + f.tests, 0);
   const totalAssertions = testFiles.reduce((sum, f) => sum + f.assertions, 0);
-  const avgCoverage = testFiles.length > 0 
-    ? testFiles.reduce((sum, f) => sum + f.coverage, 0) / testFiles.length 
+  const measured = testFiles.filter(f => f.coverage >= 0);
+  const avgCoverage = measured.length > 0
+    ? measured.reduce((sum, f) => sum + f.coverage, 0) / measured.length
     : 0;
   
   const slowTests = testFiles.filter(f => f.duration && f.duration > slowThreshold);
@@ -242,10 +255,11 @@ function generateQualityReport(testFiles: TestFile[], coverageTarget: number, sl
   // Missing coverage
   const missingCoverage = testFiles
     .filter(f => f.coverage < coverageTarget)
-    .map(f => ({ file: f.path, uncoveredLines: ['line 1', 'line 5', 'line 10'] as string[] }));
+    .filter(f => f.coverage >= 0)
+    .map(f => ({ file: f.path, uncoveredLines: [] as string[] }));
   
-  // Flaky detection (placeholder)
-  const flakyTests = Math.floor(testFiles.length * 0.05); // 5% placeholder
+  // Real static stability signal: skipped/todo tests (flakiness needs runtime data).
+  const flakyTests = testFiles.reduce((sum, f) => sum + (f.skipped ?? 0), 0);
   
   const recommendations: string[] = [];
   
@@ -270,10 +284,11 @@ function generateQualityReport(testFiles: TestFile[], coverageTarget: number, sl
   }
   
   if (flakyTests > 0) {
-    recommendations.push(`${flakyTests} potentially flaky tests detected - investigate and stabilize`);
+    recommendations.push(`${flakyTests} skipped/todo tests detected - review and stabilize or remove`);
   }
   
-  const mutationScore = Math.max(0, 100 - (100 - avgCoverage) * 1.5); // placeholder formula
+  // Mutation score cannot be derived statically — requires a mutator (e.g. Stryker).
+  const mutationScore = 0;
   
   return {
     totalFiles: testFiles.length,

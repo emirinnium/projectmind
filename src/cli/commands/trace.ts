@@ -83,17 +83,35 @@ export function createTraceCommand(): Command {
     }));
 
   traceCmd
-    .command('convert')
-    .description('Convert another trace format into ProjectMind trace JSON')
-    .option('--format <fmt>', 'Input format: cgr|pprof|json', 'json')
+    .command('convert <input>')
+    .description('Normalize a trace-events JSON file into ProjectMind ingest format')
+    .option('--format <fmt>', 'Input format: json (cgr|pprof planned)', 'json')
     .option('-o, --output <file>', 'Output file path')
-    .action(asyncHandler(async (opts: { format: string; output?: string }) => {
-      await withService(['scale'], async () => {
-        output.info(`Converting trace format: ${opts.format}`);
-        output.info('This is a placeholder for format conversion logic.');
-        output.info('Supported formats: cgr, pprof, json');
-        output.info('Use --output to specify the converted JSON file path.');
-      });
+    .action(asyncHandler(async (input: string, opts: { format: string; output?: string }) => {
+      if (opts.format !== 'json') {
+        throw new Error(`Converter for '${opts.format}' is not implemented yet (supported: json).`);
+      }
+      const { readFileSync, writeFileSync } = await import('node:fs');
+      const raw = JSON.parse(readFileSync(input, 'utf-8')) as
+        | unknown[]
+        | { events?: unknown[] };
+      const events = Array.isArray(raw) ? raw : (raw.events ?? []);
+      const normalized = (events as Array<Record<string, unknown>>)
+        .filter((e) => e && typeof e.fromFunctionName === 'string' && typeof e.toFunctionName === 'string')
+        .map((e) => ({
+          fromFunctionName: String(e.fromFunctionName),
+          toFunctionName: String(e.toFunctionName),
+          workloadId: typeof e.workloadId === 'string' ? e.workloadId : 'converted',
+          callCount: typeof e.callCount === 'number' ? e.callCount : 1,
+          staticMissed: Boolean(e.staticMissed),
+        }));
+      const out = JSON.stringify(normalized, null, 2);
+      if (opts.output) {
+        writeFileSync(opts.output, out);
+        output.success(`Converted ${normalized.length} events -> ${opts.output}`);
+      } else {
+        console.log(out);
+      }
     }));
 
   traceCmd

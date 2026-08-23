@@ -1,16 +1,49 @@
 import { z } from 'zod';
+import { watch, type FSWatcher } from 'node:fs';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 
-// In-memory store for file watches (in production, use persistent storage)
+// Session-scoped registry of live watchers + intent records.
+// Watchers perform REAL change detection: on any file event the file is
+// flagged as agent-touched so subsequent scans/status reflect the activity.
 const fileWatches = new Map<string, { agentId: string; callback?: string; registeredAt: string }[]>();
+const liveWatchers = new Map<string, FSWatcher>();
+
+function startLiveWatch(deps: McpDependencies, filePath: string, agentId: string): void {
+  const key = `${filePath}::${agentId}`;
+  if (liveWatchers.has(key)) return;
+  try {
+    const w = watch(filePath, { persistent: false }, () => {
+      try {
+        deps.kg.markAgentTouched(filePath, agentId);
+      } catch {
+        // Never let a watcher crash the server.
+      }
+    });
+    w.on('error', () => liveWatchers.delete(key));
+    liveWatchers.set(key, w);
+  } catch {
+    // File may not exist yet / permission: registration intent still recorded.
+  }
+}
+
+function stopLiveWatch(filePath: string, agentId: string): void {
+  const key = `${filePath}::${agentId}`;
+  liveWatchers.get(key)?.close();
+  liveWatchers.delete(key);
+}
+
+export function closeAllLiveWatchers(): void {
+  for (const [, w] of liveWatchers) w.close();
+  liveWatchers.clear();
+}
 
 export function registerFileWatchTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
     'register_file_watch',
     {
       title: 'Register File Watch',
-      description: 'Register interest in a file for continuous synchronization between coding agent and ProjectMind.',
+      description: 'Watch a file for changes during this server session: change events flag the file as agent-touched. Registry is session-scoped (not persisted across restarts).',
       inputSchema: {
         filePath: z.string().describe('Path of the file to watch'),
         agentId: z.string().describe('Unique identifier for the coding agent'),
@@ -49,6 +82,7 @@ export function registerFileWatchTool(server: McpServer, deps: McpDependencies):
         registeredAt: new Date().toISOString(),
       });
       fileWatches.set(args.filePath, watches);
+      startLiveWatch(deps, args.filePath, args.agentId);
 
       // Return current file state for sync
       const imports = deps.kg.getImportsWithDetails(file.id);
@@ -279,9 +313,10 @@ export function registerUnregisterFileWatchTool(server: McpServer, _deps: McpDep
       },
     },
     async (args) => {
-      const watches = fileWatches.get(args.filePath) || [];
+      stopLiveWatch(args.filePath, args.agentId);
+      const watches = fileWatches.get(args.filePath) ?? [];
       const filtered = watches.filter((w) => w.agentId !== args.agentId);
-      
+
       if (filtered.length === 0) {
         fileWatches.delete(args.filePath);
       } else {

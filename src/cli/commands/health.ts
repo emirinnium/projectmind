@@ -22,6 +22,18 @@ class HealthCommand extends BaseCommand {
           const genome = debt.computeGenome();
           const scanProfile = scale.getLastScanProfile();
 
+          // Real signals from the knowledge graph (replaces hardcoded zeros).
+          const { getStatement, getDatabase } = await import('../../storage/database.js');
+          const q = <T>(sql: string): T => getStatement(sql).get() as T;
+          const imp = q<{ total: number; resolved: number }>(
+            "SELECT COUNT(*) AS total, SUM(CASE WHEN resolved = 1 THEN 1 ELSE 0 END) AS resolved FROM imports"
+          ) ?? { total: 0, resolved: 0 };
+          const importResolutionRate = imp.total > 0 ? imp.resolved / imp.total : 0;
+          const patternStats = q<{ n: number; hi: number }>(
+            'SELECT COUNT(*) AS n, SUM(CASE WHEN confidence >= 0.8 THEN 1 ELSE 0 END) AS hi FROM patterns'
+          ) ?? { n: 0, hi: 0 };
+          const sessionCount = (getDatabase().prepare('SELECT COUNT(*) AS n FROM agent_sessions').get() as { n: number }).n;
+
           const health = {
             status: 'healthy' as 'healthy' | 'degraded' | 'unhealthy',
             timestamp: new Date().toISOString(),
@@ -30,7 +42,7 @@ class HealthCommand extends BaseCommand {
               database: 'ok',
               knowledgeGraph: 'ok',
               coherenceEngine: coherence.hasLLMProvider() ? 'ok (with LLM)' : 'ok (fast-tier only)',
-              importResolution: 'ok',
+              importResolution: importResolutionRate >= 0.8 ? 'ok' : `warning (${Math.round(importResolutionRate*100)}% resolved)`,
               agentCoverage: scale.getScaleReport().agentCoverage > 0 ? 'ok' : 'warning',
               cognitiveLoad: scale.getScaleReport().avgCognitiveLoad < 0.5 ? 'ok' : 'warning',
               debt: debt.getReport().bySeverity.high === 0 ? 'ok' : 'critical',
@@ -39,15 +51,15 @@ class HealthCommand extends BaseCommand {
             metrics: {
               totalFiles: scale.getScaleReport().totalFiles,
               genomeScore: Math.round(genome.coherenceScore * 10000) / 100,
-              importResolutionRate: 0,
+              importResolutionRate: Math.round(importResolutionRate * 10000) / 100,
               agentCoverage: Math.round(scale.getScaleReport().agentCoverage * 10000) / 100,
               avgCognitiveLoad: Math.round(scale.getScaleReport().avgCognitiveLoad * 1000) / 1000,
               highDebtItems: debt.getReport().bySeverity.high,
               mediumDebtItems: debt.getReport().bySeverity.medium,
               lowDebtItems: debt.getReport().bySeverity.low,
-              patternCount: 0,
-              highConfidencePatterns: 0,
-              agentSessions: 0,
+              patternCount: patternStats.n,
+              highConfidencePatterns: patternStats.hi,
+              agentSessions: sessionCount,
               lastScanDurationMs: scanProfile?.durationMs,
               lastScanThroughput: scanProfile?.filesPerSecond,
             },
