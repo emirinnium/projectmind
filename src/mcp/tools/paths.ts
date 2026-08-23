@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { resolve, dirname } from 'node:path';
 import { readFileSync, existsSync } from 'node:fs';
+import { loadConfig } from '../../utils/config.js';
 
 interface PathAlias {
   prefix: string;
@@ -34,8 +35,12 @@ function resolveWithAliases(importPath: string, aliases: PathAlias[], baseDir: s
     if (importPath.startsWith(alias.prefix)) {
       const remainder = importPath.slice(alias.prefix.length);
       for (const targetPath of alias.paths) {
-        const resolved = resolve(baseDir, targetPath + remainder);
-        return resolved.replace(/\\/g, '/');
+        const candidate = resolve(baseDir, targetPath + remainder);
+        // Only accept candidates that actually exist on disk — otherwise
+        // fall through to remaining alias targets and later strategies.
+        if (existsSync(candidate)) {
+          return candidate.replace(/\\/g, '/');
+        }
       }
     }
   }
@@ -79,7 +84,7 @@ export function registerResolvePathTool(server: McpServer, deps: McpDependencies
       // Try alias resolution first
       if (aliases.length > 0) {
         const fromDir = dirname(fromFile.path).replace(/\\/g, '/');
-        const aliasResolved = resolveWithAliases(importPath, aliases, fromDir);
+        const aliasResolved = resolveWithAliases(importPath, aliases, loadConfig().projectRoot.replace(/\\/g, '/'));
         if (aliasResolved) {
           importPath = aliasResolved;
         }

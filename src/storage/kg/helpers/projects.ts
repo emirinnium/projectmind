@@ -13,8 +13,12 @@ export function loadCurrentProjectId(ctx: KgContext): number {
     const row = getStatement("SELECT value FROM settings WHERE key = 'current_project_id'").get() as { value: string } | undefined;
     if (row) {
       const parsed = parseInt(row.value, 10);
+      // Guard: a persisted id whose project row is gone (e.g. deleted via
+      // another connection) must fall back to the default project instead
+      // of silently emptying every file query.
       if (!Number.isNaN(parsed) && parsed > 0) {
-        return parsed;
+        const exists = getStatement('SELECT id FROM projects WHERE id = ?').get(parsed);
+        if (exists) return parsed;
       }
     }
   } catch {
@@ -91,5 +95,13 @@ export function deleteProject(ctx: KgContext, projectId: number): { success: boo
   const result = getStatement('DELETE FROM files WHERE project_id = ?').run(projectId);
   const deletedFiles = Number(result.changes);
   getStatement('DELETE FROM projects WHERE id = ?').run(projectId);
+
+  // If the deleted project was active, fall back to the default project so
+  // subsequent queries don't run against a dangling id.
+  if (ctx.currentProjectId === projectId || loadCurrentProjectId(ctx) === projectId) {
+    ctx.currentProjectId = 1;
+    persistCurrentProjectId(ctx);
+  }
+
   return { success: true, deletedFiles };
 }

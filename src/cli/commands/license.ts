@@ -6,7 +6,27 @@ import { join } from '@/cli/utils/shared.js';
 
 export function createLicenseCommand(): Command {
   const licenseCmd = new Command('license')
-    .description('License compliance (basic check)');
+    .description('License compliance (basic check)')
+    .action(asyncHandler(async () => {
+      // Default view when invoked without a subcommand.
+      const config = loadConfig();
+      const pkgPath = join(config.projectRoot, 'package.json');
+      if (!existsSync(pkgPath)) {
+        output.warn('No package.json found');
+        return;
+      }
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+        output.section('License Overview');
+        output.kv('Project', pkg.name);
+        output.kv('Version', pkg.version);
+        output.kv('License', pkg.license || 'UNKNOWN');
+        output.kv('Dependencies', Object.keys(pkg.dependencies ?? {}).length);
+        output.info('Subcommands: license check | license report');
+      } catch (e) {
+        output.error(`Failed to parse package.json: ${e}`);
+      }
+    }));
 
   licenseCmd
     .command('check')
