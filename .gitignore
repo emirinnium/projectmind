@@ -82,3 +82,7 @@ __pycache__/
 
 # Tool configs (local)
 .eslintcache
+
+# Packaging smoke-test sandbox
+smoke/
+*.tgz
