@@ -1,0 +1,46 @@
+# ProjectMind — Cursor AI Rules
+
+You have access to ProjectMind MCP tools for persistent codebase intelligence.
+Use them PROACTIVELY throughout every interaction. Never edit blind.
+
+## After Every File Edit
+Run coherence check immediately:
+```
+check_coherence { code: <edited content>, filePath: <path>, fastOnly: true }
+```
+If verdict is "warn" or "fail" → read suggestions, apply fixes before continuing.
+
+## Before Any Commit or Major Change
+Run these three in sequence:
+1. `debt_report { resolveAfter: false }` → high-severity must be 0
+2. `find_circular_deps {}` → no new cycles allowed
+3. `genome_score {}` → score should be ≥ 70%
+
+## Before Touching Any File
+Always query context first:
+1. `get_context { filePath }` → imports, structure, dependents
+2. `analyze_impact { filePath }` → who breaks if you change this
+
+## Memory — Cross-Session Persistence
+Store architectural decisions and API contracts:
+```
+store_memory { scope: "decisions", key: "<topic>", value: "<what+why>" }
+```
+Retrieve when returning to unfamiliar files:
+```
+get_memory { scope: "decisions" }
+```
+
+## Full CLI Access
+For anything without a dedicated tool:
+```
+run_cli { args: ["<command>", ...flags] }
+```
+Examples: `["doctor","scan-health"]`, `["churn","--since","30"]`, `["audit"]`,
+`["sbom"]`, `["testgen","src/foo.ts"]`
+
+## Golden Rules
+- NEVER edit a file without get_context first
+- ALWAYS check_coherence after edits — fix warnings immediately
+- Store decisions in memory — future you will thank present you
+- When unsure about impact, always ask analyze_impact first

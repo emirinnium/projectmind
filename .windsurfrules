@@ -1,0 +1,42 @@
+# ProjectMind — Windsurf Cascade Rules
+
+You have access to ProjectMind MCP tools for codebase intelligence.
+Use them proactively in every interaction.
+
+## Workflow
+
+### Before file operations
+```
+get_context { filePath }
+analyze_impact { filePath }
+```
+
+### After edits
+```
+check_coherence { code, filePath, fastOnly: true }
+```
+Fix warnings before proceeding.
+
+### Before commits
+```
+debt_report {}
+find_circular_deps {}
+genome_score {}
+```
+
+### Memory
+```
+store_memory { scope, key, value }   → persist decisions
+get_memory { scope }                  → recall context
+```
+
+### Full CLI
+```
+run_cli { args: ["<command>", ...flags] }
+```
+
+## Rules
+- Never edit blind — get_context first
+- Always coherence-check after edits
+- High-severity debt = release blocker
+- Store decisions for future sessions
