@@ -92,3 +92,6 @@ smoke/
 
 # Local dev/test scripts (kept out of the published repo)
 scripts/
+
+# Exhaustive test sandbox
+all-actions-sandbox/
