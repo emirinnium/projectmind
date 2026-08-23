@@ -89,3 +89,6 @@ smoke/
 
 # Extension packages
 *.vsix
+
+# Local dev/test scripts (kept out of the published repo)
+scripts/
