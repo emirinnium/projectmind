@@ -21,11 +21,18 @@ export class StatusBarManager {
   }
 
   /**
-   * Update the status bar with scan results.
+   * Update the status bar with scan results. Values are sanitized so a
+   * malformed upstream payload can never render 'NaN'.
    */
   updateMetrics(files: number, coverage: number, load: number): void {
-    const coveragePercent = (coverage * 100).toFixed(1);
-    this.statusBarItem.text = `$(brain) ${files} files | ${coveragePercent}% | load: ${load.toFixed(2)}`;
+    const safe = (v: unknown, fallback = 0): number => {
+      const n = typeof v === 'string' ? Number(v) : v;
+      return typeof n === 'number' && Number.isFinite(n) ? n : fallback;
+    };
+    const safeFiles = Math.max(0, Math.round(safe(files)));
+    const coveragePct = safe(coverage) * 100;
+    const safeLoad = safe(load);
+    this.statusBarItem.text = `$(brain) PM ${safeFiles} | ${coveragePct.toFixed(1)}% | load: ${safeLoad.toFixed(2)}`;
   }
 
   /**

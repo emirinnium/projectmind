@@ -46,16 +46,52 @@ export function registerCommands(
     })
   );
 
-  // Show Report
+  // Show Report — renders LIVE data (was a static 'Loading...' placeholder)
   context.subscriptions.push(
     vscode.commands.registerCommand('projectmind.showReport', async () => {
       const panel = vscode.window.createWebviewPanel(
         'projectmindReport',
         'ProjectMind Report',
         vscode.ViewColumn.One,
-        {}
+        { enableScripts: false }
       );
-      panel.webview.html = getReportHtml();
+      panel.webview.html = `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:20px">
+        <h2>ProjectMind Report</h2><p>Fetching…</p></body></html>`;
+      try {
+        const [scaleRes, debtRes] = await Promise.all([
+          mcpClient.callTool('scale_report', {}),
+          mcpClient.callTool('debt_report', {}).catch(() => null),
+        ]);
+        const scale = JSON.parse(scaleRes.content[0]?.text || '{}');
+        const debt = debtRes ? JSON.parse(debtRes.content[0]?.text || '{}') : {};
+        const fin = (v: unknown): number =>
+          typeof v === 'number' && Number.isFinite(v) ? v : 0;
+        const hotspots = (scale.topHotspots ?? []).slice(0, 10) as Array<{ path?: string; cognitiveLoad?: number; agentTouched?: boolean }>;
+        panel.webview.html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+          body{font-family:-apple-system,'Segoe UI',sans-serif;padding:24px;color:var(--vscode-foreground)}
+          .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:16px 0}
+          .card{background:var(--vscode-input-background);border-radius:8px;padding:14px}
+          .k{font-size:11px;text-transform:uppercase;opacity:.65}
+          .v{font-size:22px;font-weight:600;margin-top:4px}
+          li{margin:4px 0} code{color:var(--vscode-textPreformat-foreground)}
+        </style></head><body>
+          <h2>🧠 ProjectMind Report</h2>
+          <div class="grid">
+            <div class="card"><div class="k">Total Files</div><div class="v">${fin(scale.totalFiles)}</div></div>
+            <div class="card"><div class="k">Agent Coverage</div><div class="v">${(fin(scale.agentCoverage)*100).toFixed(1)}%</div></div>
+            <div class="card"><div class="k">Avg Cognitive Load</div><div class="v">${fin(scale.avgCognitiveLoad).toFixed(3)}</div></div>
+            <div class="card"><div class="k">Genome Score</div><div class="v">${(fin(debt.coherenceGenomeScore)*100).toFixed(1)}%</div></div>
+            <div class="card"><div class="k">Debt Items</div><div class="v">${fin(debt.totalItems)}<small> (H:${fin(debt.bySeverity?.high)} M:${fin(debt.bySeverity?.medium)} L:${fin(debt.bySeverity?.low)})</small></div></div>
+          </div>
+          <h3>Top Hotspots</h3>
+          ${hotspots.length ? `<ul>${hotspots.map((h) => `<li><code>${String(h.path ?? '').replace(/</g, '&lt;')}</code> — load ${fin(h.cognitiveLoad).toFixed(3)}${h.agentTouched ? ' · agent-touched' : ''}</li>`).join('')}</ul>`
+            : '<p>No hotspots yet — run <b>Scan Project</b> first.</p>'}
+        </body></html>`;
+      } catch (e) {
+        panel.webview.html = `<html><body style="padding:24px;font-family:sans-serif">
+          <h3>Report failed</h3><p>${String(e instanceof Error ? e.message : e).replace(/</g, '&lt;')}</p>
+          <p>Make sure the CLI is installed and run <b>Scan Project</b>.</p></body></html>`;
+      }
     })
   );
 
@@ -126,25 +162,4 @@ export function registerCommands(
       }
     })
   );
-}
-
-/**
- * Generate HTML for the report webview.
- */
-function getReportHtml(): string {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>ProjectMind Report</title>
-  <style>
-    body { font-family: sans-serif; padding: 20px; }
-    .metric { margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 4px; }
-  </style>
-</head>
-<body>
-  <h1>ProjectMind Report</h1>
-  <div class="metric">Loading...</div>
-</body>
-</html>`;
 }

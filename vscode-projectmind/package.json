@@ -2,7 +2,7 @@
   "name": "projectmind-lcil",
   "displayName": "ProjectMind",
   "description": "AI-powered codebase intelligence: coherence, security, embeddings",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "publisher": "emirinnium",
   "icon": "images/vscode-icon-128x128.png",
   "repository": {
