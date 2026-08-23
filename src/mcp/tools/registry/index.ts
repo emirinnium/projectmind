@@ -16,6 +16,7 @@ import { registerDataFlowTools } from '../data-flow.js';
 import { registerEmbeddingTools } from '../embeddings.js';
 import { registerTaintTools } from '../taint.js';
 import { registerTeamMemoryTools } from '../team-memory.js';
+import { registerCliBridgeTool } from '../cli-bridge.js';
 
 /**
  * Register all MCP tools - single entry point for tool registration.
@@ -76,4 +77,12 @@ export function registerAllTools(server: McpServer, deps: McpDependencies): void
 
   // Team memory tools
   registerTeamMemoryTools(server, deps);
+
+  // CLI bridge — exposes the full CLI surface to agents that need a
+  // capability without a dedicated tool (doctor, health, report, layers,
+  // audit, license, sbom, churn, api-surface, dedup, heatmap, ownership,
+  // adr, testgen, docgen, migrate, skill-recommend, context-budget,
+  // contract-test generate/run, trace convert/show/clear, refactor-roi,
+  // deps-fresh, flags, secrets-life, onboard, embed ...).
+  registerCliBridgeTool(server, deps);
 }

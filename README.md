@@ -264,3 +264,9 @@ All three were verified compatible: `onnxruntime-node` and
 ## License
 
 MIT
+
+## MCP / AI Agent Integration
+
+See [docs/MCP.md](docs/MCP.md) for connecting Claude Code, Cursor,
+OpenCode, Windsurf or any MCP client — 28 dedicated tools plus the
+`run_cli` bridge exposing the full CLI surface.
