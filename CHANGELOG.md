@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-23
+
+### Fixed
+- **Windows CLI crash on installed package**: `cli.mjs` passed a raw
+  `C:\...` path to dynamic `import()`, throwing
+  `ERR_UNSUPPORTED_ESM_URL_SCHEME` for every `npx projectmind` / global-bin
+  invocation on Windows (POSIX was unaffected; in-repo `node dist/cli.js`
+  runs never hit it). Now converted via `pathToFileURL`.
+- Verified end-to-end from the packed tarball in a clean directory:
+  banner, `--version`, and a real `genome` run against an empty project.
+
 ## [0.3.0] - 2026-08-22
 
 Stability release: every CLI command now performs real analysis (no simulated
