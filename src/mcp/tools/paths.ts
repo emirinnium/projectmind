@@ -83,7 +83,7 @@ export function registerResolvePathTool(server: McpServer, deps: McpDependencies
 
       // Try alias resolution first
       if (aliases.length > 0) {
-        const fromDir = dirname(fromFile.path).replace(/\\/g, '/');
+        // Alias targets are relative to the project root, not the importing file's dir.
         const aliasResolved = resolveWithAliases(importPath, aliases, loadConfig().projectRoot.replace(/\\/g, '/'));
         if (aliasResolved) {
           importPath = aliasResolved;

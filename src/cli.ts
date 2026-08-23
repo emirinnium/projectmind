@@ -27,28 +27,26 @@ program
   .version(pkgVersion);
 
 buildProgram()
-  .then((loaded) => {
+  .then(async (loaded) => {
     // Merge every registered command from the shared builder into the root
     // program that owns version/banner/exit handling.
     for (const cmd of loaded.commands) {
       program.addCommand(cmd);
     }
-    program.exitOverride();
 
-    try {
-      program.parse();
-    } catch (err: unknown) {
-      if (err && typeof err === 'object' && 'code' in err) {
-        const code = (err as { code: string }).code;
-        if (code !== 'commander.help' && code !== 'commander.version') {
-          logger.error(`CLI error: ${err instanceof Error ? err.message : String(err)}`);
-          process.exit(1);
-        }
-      } else {
-        logger.error(`CLI error: ${err instanceof Error ? err.message : String(err)}`);
-        process.exit(1);
-      }
-    }
+    // NOTE: exitOverride is intentionally NOT used here.
+    //
+    // With exitOverride active, commander intercepts process.exit() calls
+    // made by action handlers and re-throws them as CommanderError. Since
+    // asyncHandler calls process.exit(0) on success, every successful
+    // command would be caught as an "error" and re-exited with code 1.
+    // Without exitOverride, process.exit() calls pass through directly,
+    // giving correct exit codes for free.
+
+    await program.parseAsync(process.argv).catch((err: unknown) => {
+      logger.error(`CLI error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    });
   })
   .catch((err: unknown) => {
     logger.error(`Failed to initialize CLI: ${err instanceof Error ? err.message : String(err)}`);
