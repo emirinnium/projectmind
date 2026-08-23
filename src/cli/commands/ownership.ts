@@ -5,8 +5,9 @@ export function createOwnershipCommand(): Command {
   return new Command('ownership')
     .description('Show agent file ownership from session data')
     .option('--since <days>', 'Days to look back', '30')
-    .action(asyncHandler(async () => {
+    .action(asyncHandler(async (opts: { since: string }) => {
       await withService(['scale'], async (_ctx, services) => {
+        const cutoff = new Date(Date.now() - Number(opts.since) * 24 * 60 * 60 * 1000).getTime();
         const scale = services.scale!;
         
         output.section('Agent Ownership');
@@ -21,7 +22,7 @@ export function createOwnershipCommand(): Command {
         
         output.section('File Ownership (by agent coverage)');
         const allFiles = report.modules.flatMap(m => m.files || []);
-        const touchedFiles = allFiles.filter(f => f.agentTouched);
+        const touchedFiles = allFiles.filter(f => f.agentTouched && (!f.agentTouchedAt || new Date(f.agentTouchedAt).getTime() >= cutoff));
         
         output.kv('Total files', allFiles.length);
         output.kv('Agent-touched files', touchedFiles.length);

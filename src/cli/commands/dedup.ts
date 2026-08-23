@@ -4,8 +4,6 @@ import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 export function createDedupCommand(): Command {
   return new Command('dedup')
     .description('Find duplicate code using existing redundancy detection')
-    .option('-t, --threshold <n>', 'Similarity threshold (0-1)', '0.8')
-    .option('-m, --min-lines <n>', 'Minimum lines', '10')
     .action(asyncHandler(async () => {
       await withService(['debt'], async (_ctx, services) => {
         const debt = services.debt!;
