@@ -77,6 +77,11 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
                 importAnalysis: importStats,
                 circularDependencies: circularDeps,
                 circularDependencyCount: circularDeps.length,
+                scanStats: {
+                  durationMs: result.durationMs,
+                  filesPerSecond: result.filesPerSecond,
+                  memoryUsedMB: result.memoryUsedMB,
+                },
               }, null, 2),
             },
           ],
