@@ -7,7 +7,12 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
     'scan_project',
     {
       title: 'Scan Project',
-      description: 'Scan the project to build or update the knowledge graph with full import/dependency analysis.',
+      description:
+        'Build or refresh the knowledge graph for the current project root (parses files, indexes imports, extracts patterns, computes cognitive load).\n' +
+        'Returns: file count, scan errors, import resolution stats, optional circular dependencies, top hotspots.\n' +
+        'WHEN to call: at the start of a session, after adding/renaming many files, or before running debt_report / genome_score / get_context.\n' +
+        'It is INCREMENTAL: only files with a newer mtime than the last scan are re-parsed, so this is usually cheap.\n' +
+        'WHEN NOT to call: between every single edit (use get_context + check_coherence instead). Pass full=true only when you suspect cache corruption.',
       inputSchema: {
         root: z.string().default('.').describe('Root directory to scan'),
         analyzeImports: z.boolean().default(true).describe('Analyze import/dependency relationships'),

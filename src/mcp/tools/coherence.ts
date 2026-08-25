@@ -8,7 +8,12 @@ export function registerCheckCoherenceTool(server: McpServer, deps: McpDependenc
     'check_coherence',
     {
       title: 'Check Code Coherence',
-      description: 'Check code coherence against project patterns. Can detect pattern drift, architectural inconsistency, and style violations.',
+      description:
+        'Check whether a code snippet matches the project\'s established patterns, naming conventions, and architectural rules.\n' +
+        'Returns: verdict (pass/warn/fail), confidence, reasoning trace, actionable suggestions, plus optional import + reverse-dependency context.\n' +
+        'WHEN to call: AFTER writing or editing a file, before commit, or when the user asks "is this consistent with the rest of the codebase?"\n' +
+        'Use deep=true for LLM-based semantic analysis (requires API key for the configured provider); fast (default) is pattern-based and offline.\n' +
+        'WHEN NOT to call: as a substitute for typecheck/lint; this checks pattern consistency, not correctness.',
       inputSchema: {
         code: z.string().describe('The code to analyze'),
         filePath: z.string().describe('Path of the file (for context resolution)'),

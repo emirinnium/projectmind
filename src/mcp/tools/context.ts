@@ -8,7 +8,12 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
     'get_context',
     {
       title: 'Get File Context',
-      description: 'Get relevant context for a file — similar files, patterns, imports, dependents, and architectural constraints.',
+      description:
+        'Get context for a file you are about to EDIT — use BEFORE writing code.\n' +
+        'Returns: imports (resolved + unresolved), reverse dependencies (who imports this file), similar files, function/class structure, and patterns observed elsewhere in the project.\n' +
+        'WHEN to call: before editing a file, when you need to understand who depends on it, or to find similar implementations to mimic.\n' +
+        'WHEN NOT to call: when you just need symbol references (use refs via run_cli) or to find similar code semantically (use find_file_by_import or embedding search).\n' +
+        'Requires: scan_project to have indexed the file at least once.',
       inputSchema: {
         filePath: z.string().describe('Path of the file to get context for'),
         limit: z.number().default(5).describe('Maximum number of context items to return'),
