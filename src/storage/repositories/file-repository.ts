@@ -29,6 +29,31 @@ export interface FileAttributes {
 /**
  * Repository for file-related database operations.
  */
+/**
+ * Embedding storage parity with kg/helpers/files.ts: compact Float32 BLOB on
+ * write, dual-format decode (BLOB or legacy JSON TEXT) on read so rows written
+ * before v0.5.0 keep working until the next rescan converts them.
+ */
+function encodeEmbedding(values: number[]): Buffer {
+  return Buffer.from(new Float32Array(values).buffer);
+}
+
+function decodeEmbedding(raw: unknown): number[] {
+  if (raw instanceof Uint8Array) {
+    const floats = new Float32Array(raw.buffer, raw.byteOffset, Math.floor(raw.byteLength / 4));
+    return Array.from(floats);
+  }
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? parsed.map(Number) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export class FileRepository {
   constructor(private readonly db: DatabaseSync = getDatabase()) {}
 
@@ -44,7 +69,7 @@ export class FileRepository {
         attrs.language,
         attrs.sizeBytes,
         attrs.hash,
-        attrs.embedding ? JSON.stringify(attrs.embedding) : null,
+        attrs.embedding ? encodeEmbedding(attrs.embedding) : null,
         attrs.cognitiveLoad,
         existing.id
       );
@@ -60,7 +85,7 @@ export class FileRepository {
         attrs.language,
         attrs.sizeBytes,
         attrs.hash,
-        attrs.embedding ? JSON.stringify(attrs.embedding) : null,
+        attrs.embedding ? encodeEmbedding(attrs.embedding) : null,
         attrs.cognitiveLoad
       );
       return Number(result.lastInsertRowid);
@@ -103,24 +128,20 @@ export class FileRepository {
   }
 
   getEmbedding(fileId: number): number[] | null {
-    const row = this.db.prepare('SELECT embedding FROM files WHERE id = ?').get(fileId) as { embedding: string | null } | undefined;
+    const row = this.db.prepare('SELECT embedding FROM files WHERE id = ?').get(fileId) as { embedding: unknown } | undefined;
     if (!row || !row.embedding) return null;
-    try {
-      return JSON.parse(row.embedding) as number[];
-    } catch {
-      return null;
-    }
+    const decoded = decodeEmbedding(row.embedding);
+    return decoded.length > 0 ? decoded : null;
   }
 
   getAllEmbeddings(projectId: number): Map<number, number[]> {
     const rows = this.db.prepare('SELECT id, embedding FROM files WHERE project_id = ? AND embedding IS NOT NULL')
-      .all(projectId) as Array<{ id: number; embedding: string }>;
+      .all(projectId) as Array<{ id: number; embedding: unknown }>;
     const map = new Map<number, number[]>();
     for (const row of rows) {
-      try {
-        map.set(row.id, JSON.parse(row.embedding) as number[]);
-      } catch {
-        // skip invalid embeddings
+      const decoded = decodeEmbedding(row.embedding);
+      if (decoded.length > 0) {
+        map.set(row.id, decoded);
       }
     }
     return map;

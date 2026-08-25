@@ -95,18 +95,37 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
       const paramsNode = node.childForFieldName('parameters') || node.childForFieldName('parameters_node');
       const params = paramsNode?.text ?? '()';
 
+      // Return type when the grammar exposes one (TS/Python/Rust/Java/Go);
+      // honest 'any' fallback otherwise.
+      const typeNode =
+        node.childForFieldName('type') ??
+        node.childForFieldName('return_type') ??
+        node.childForFieldName('result');
+
+      // Real cyclomatic complexity: 1 + decision points inside the function.
+      const complexity =
+        1 +
+        node.descendantsOfType([
+          'if_statement', 'if_expression', 'elif_clause', 'else_clause',
+          'switch_statement', 'switch_case', 'case_statement', 'match_arm',
+          'for_statement', 'for_in_statement', 'for_each_statement',
+          'while_statement', 'do_statement', 'do_while_statement',
+          'catch_clause', 'except_clause', 'handler',
+          'conditional_expression', 'ternary_expression',
+        ]).length;
+
       functions.push({
         name,
         signature: `${name}${params}`,
-        returnType: 'any',
+        returnType: typeNode?.text ?? 'any',
         startLine: node.startPosition.row + 1,
         endLine: node.endPosition.row + 1,
-        complexity: 0,
+        complexity,
         kind: nodeType === 'method_definition' || nodeType === 'method_declaration' || nodeType === 'method' ? 'method' : 'function',
         parameters: [],
         isExported: false,
         isAsync: false,
-        cyclomaticComplexity: 1,
+        cyclomaticComplexity: complexity,
       });
     }
 

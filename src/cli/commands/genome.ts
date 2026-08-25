@@ -11,6 +11,33 @@ export function createGenomeCommand(): Command {
         const score = genome.coherenceScore;
         output.section('Coherence Genome');
         output.kv('Score', formatGenomeScore(score));
+
+        // Rich breakdown from the persisted genome payload.
+        try {
+          const data = JSON.parse(genome.genomeData) as {
+            patternCount?: number;
+            violationCount?: number;
+            agentSessions?: number;
+            breakdown?: {
+              avgConfidence?: number;
+              highConfidencePatterns?: number;
+              importResolutionRate?: number;
+              circularDepPenalty?: number;
+              violationPenalty?: number;
+            };
+          };
+          output.kv('Patterns detected', String(data.patternCount ?? 0));
+          output.kv('Violations', String(data.violationCount ?? 0));
+          output.kv('Agent sessions', String(data.agentSessions ?? 0));
+          const b = data.breakdown ?? {};
+          if (typeof b.avgConfidence === 'number') output.kv('Avg pattern confidence', `${Math.round(b.avgConfidence * 100)}%`);
+          if (typeof b.highConfidencePatterns === 'number') output.kv('High-confidence patterns', String(b.highConfidencePatterns));
+          if (typeof b.importResolutionRate === 'number') output.kv('Import resolution rate', `${Math.round(b.importResolutionRate * 100)}%`);
+          if (b.circularDepPenalty) output.warn(`Circular dependency penalty applied: ${b.circularDepPenalty}`);
+          if (b.violationPenalty) output.warn(`Violation penalty applied: ${b.violationPenalty}`);
+        } catch {
+          // Genome payload is informational — never block on parse issues.
+        }
         output.kv('Genome data length', genome.genomeData.length);
       });
     }));

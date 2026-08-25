@@ -1,9 +1,9 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { NextResponse } from 'next/server';
 import { join } from 'path';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // Resolve CLI path: try multiple strategies
 function getCliPath(): string {
@@ -23,8 +23,9 @@ const PROJECT_ROOT = join(process.cwd(), '..');
 
 export async function POST() {
   try {
-    const { stdout, stderr } = await execAsync(
-      `node ${CLI_PATH} scan --full --json --root ${PROJECT_ROOT}`,
+    const { stdout, stderr } = await execFileAsync(
+      process.execPath,
+      [CLI_PATH, 'scan', '--full', '--json', '--root', PROJECT_ROOT],
       {
         cwd: process.cwd(),
         timeout: 120000,
