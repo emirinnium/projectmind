@@ -263,17 +263,29 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
         }
 
         if (args.action === 'pull' || args.action === 'both') {
-          // Pull relevant context from ProjectMind
-          const decisions = deps.kg.getMemory('decisions');
-          const patterns = deps.kg.getMemory('patterns');
-          const issues = deps.kg.getMemory('issues');
-          const syncData = deps.kg.getMemory('sync');
+          // Pull relevant context from ProjectMind. Entries are ranked by
+          // relevance to the current file (key/path term overlap) with
+          // recency as tiebreaker, then capped so the model's context is not
+          // flooded by unranked key-value dumps.
+          const currentFile = args.context?.currentFile ?? '';
+          const fileTerms = currentFile.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 3);
+
+          const rank = (entries: Array<{ key: string; value: unknown; createdAt?: string }>): Array<{ key: string; value: unknown }> =>
+            entries
+              .map((e) => {
+                const hay = `${e.key}`.toLowerCase();
+                const relevance = fileTerms.reduce((acc, t) => acc + (hay.includes(t) ? 1 : 0), 0);
+                return { e, relevance, ts: e.createdAt ? Date.parse(e.createdAt) || 0 : 0 };
+              })
+              .sort((a, b) => (b.relevance - a.relevance) || (b.ts - a.ts))
+              .slice(0, 10)
+              .map(({ e }) => ({ key: e.key, value: e.value }));
 
           pulled = {
-            decisions: decisions.map((d) => ({ key: d.key, value: d.value })),
-            patterns: patterns.map((p) => ({ key: p.key, value: p.value })),
-            issues: issues.map((i) => ({ key: i.key, value: i.value })),
-            sync: syncData.map((s) => ({ key: s.key, value: s.value })),
+            decisions: rank(deps.kg.getMemory('decisions')),
+            patterns: rank(deps.kg.getMemory('patterns')),
+            issues: rank(deps.kg.getMemory('issues')),
+            sync: rank(deps.kg.getMemory('sync')),
           };
         }
 

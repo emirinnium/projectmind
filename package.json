@@ -69,7 +69,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.4.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@xenova/transformers": "^2.17.2",
     "commander": "^12.1.0",
     "dotenv": "^17.4.2",

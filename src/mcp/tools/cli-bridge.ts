@@ -3,9 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { trackAgentAccess } from './types.js';
 import { runCliCapture } from './cli-runner.js';
-
-/** Commands that must never be launched through this bridge. */
-const BLOCKED_ROOT_COMMANDS = new Set(['mcp', 'init']);
+import { isBlockedCliInvocation } from './guard.js';
 
 export function registerCliBridgeTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -20,10 +18,12 @@ export function registerCliBridgeTool(server: McpServer, deps: McpDependencies):
         'contract-test, trace convert/show/clear, refactor-roi, deps-fresh, flags,',
         'secrets-life, onboard, embed ...). Prefer dedicated / pm_* parity tools.',
         'shell disabled; cwd pinned to the active project root.',
+        'BLOCKED: root commands "mcp"/"init" plus destructive subcommands',
+        '(project delete, debt clear*, data-flow clear, trace clear, doctor rebuild-index).',
       ].join(' '),
       inputSchema: {
         args: z.array(z.string()).min(1).describe(
-          'Argument vector AFTER the binary name. Example: ["doctor","scan-health"]. Root command "mcp" is blocked.'
+          'Argument vector AFTER the binary name. Example: ["doctor","scan-health"]. Root "mcp"/"init" and destructive subcommands are blocked.'
         ),
         timeoutMs: z.number().optional().describe('Kill after this many ms (default 120000)'),
       },
@@ -31,9 +31,9 @@ export function registerCliBridgeTool(server: McpServer, deps: McpDependencies):
     async (args) => {
       try {
         const argv = args.args.map((a) => String(a));
-        if (argv.length === 0 || BLOCKED_ROOT_COMMANDS.has(argv[0])) {
+        if (isBlockedCliInvocation(argv)) {
           return {
-            content: [{ type: 'text', text: JSON.stringify({ ok: false, error: `Command "${argv[0] ?? ''}" is not allowed through run_cli.` }) }],
+            content: [{ type: 'text', text: JSON.stringify({ ok: false, error: `Command "${argv.join(' ')}" is not allowed through run_cli (blocked as destructive or restricted).` }) }],
           };
         }
         if (deps.agentName) {

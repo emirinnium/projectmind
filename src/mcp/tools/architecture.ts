@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
+import { getStatement } from '../../storage/database.js';
 
 export function registerCheckArchitectureTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -288,10 +289,35 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
                      message: `Function "${currentFn.name}" has similar signature in ${otherFile.relativePath}`,
                      details: `Current: ${currentFn.signature} (${file.relativePath})\nOther: ${otherSig} (${otherFile.relativePath})`,
                    });
-                 }
-               }
-             }
+              }
           }
+        }
+
+        // Cross-file BODY duplication from the persisted redundancy detector
+        // (debt_items type='redundancy'), which compares real code bodies via
+        // embeddings — far beyond same-file signature matching above.
+        try {
+          const cols = (getStatement('PRAGMA table_info(debt_items)').all() as Array<{ name: string }>).map((c) => c.name);
+          if (cols.includes('type') && cols.includes('description')) {
+            const fileCol = cols.includes('file_path') ? 'file_path' : cols.includes('filePath') ? 'filePath' : null;
+            const rows = (
+              fileCol
+                ? getStatement(`SELECT description, ${fileCol} AS loc FROM debt_items WHERE type='redundancy' AND (${fileCol} = ? OR description LIKE ?) ORDER BY rowid DESC LIMIT 5`).all(file.relativePath, `%${file.relativePath}%`)
+                : getStatement(`SELECT description, '' AS loc FROM debt_items WHERE type='redundancy' AND description LIKE ? ORDER BY rowid DESC LIMIT 5`).all(`%${file.relativePath}%`)
+            ) as Array<{ description: string; loc: string }>;
+            for (const row of rows) {
+              suggestions.push({
+                type: 'duplication',
+                priority: 'medium',
+                message: `Redundancy detector: similar logic found involving this file`,
+                details: row.description,
+              });
+            }
+          }
+        } catch {
+          // debt_items not available in this database — skip silently.
+        }
+      }
         }
       }
 

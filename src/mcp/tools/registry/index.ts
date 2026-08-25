@@ -18,11 +18,15 @@ import { registerTaintTools } from '../taint.js';
 import { registerTeamMemoryTools } from '../team-memory.js';
 import { registerCliBridgeTool } from '../cli-bridge.js';
 import { registerCliParityTools } from '../cli-parity.js';
+import { annotateToolRegistration, shouldRegisterParityTools } from '../guard.js';
 
 /**
  * Register all MCP tools - single entry point for tool registration.
  */
 export async function registerAllTools(server: McpServer, deps: McpDependencies): Promise<void> {
+  // Inject readOnly/idempotent hints into every dedicated read-only tool
+  // registered below (single wrap point — no per-file edits needed).
+  annotateToolRegistration(server);
   // Core tools
   registerCheckCoherenceTool(server, deps);
   registerGetContextTool(server, deps);
@@ -87,7 +91,13 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   // deps-fresh, flags, secrets-life, onboard, embed ...).
   registerCliBridgeTool(server, deps);
 
-  // Auto-generated 1:1 CLI-parity tools (pm_<command>[_<sub>])
-  const parityCount = await registerCliParityTools(server, deps);
-  console.info(`[mcp] dedicated tools + ${parityCount} CLI-parity tools registered`);
+  // Auto-generated 1:1 CLI-parity tools (pm_<command>[_<sub>]).
+  // Skipped when PROJECTMIND_TOOLS=core so clients with a small active-tool
+  // budget (e.g. Cursor) get the dedicated surface (~45 tools) only.
+  if (shouldRegisterParityTools()) {
+    const parityCount = await registerCliParityTools(server, deps);
+    console.info(`[mcp] dedicated tools + ${parityCount} CLI-parity tools registered`);
+  } else {
+    console.info('[mcp] PROJECTMIND_TOOLS=core — CLI-parity tools skipped (run_cli bridge still available)');
+  }
 }

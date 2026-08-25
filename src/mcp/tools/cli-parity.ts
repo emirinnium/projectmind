@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { buildProgram } from '../../cli/program.js';
 import { runCliCapture } from './cli-runner.js';
+import { isBlockedCliInvocation, parityAnnotations } from './guard.js';
 
 /**
  * CLI-parity generator.
@@ -30,7 +31,7 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
     const hasAction = Boolean((cmd as unknown as { _actionHandler?: unknown })._actionHandler);
     const rootName = path[0];
 
-    if (hasAction && !BLOCKED.has(rootName)) {
+    if (hasAction && !BLOCKED.has(rootName) && !isBlockedCliInvocation(path)) {
       const toolName = 'pm_' + path.join('_').replace(/-/g, '_');
       const longFlags = cmd.options.map((o) => o.long?.slice(2)).filter(Boolean) as string[];
       const positional = cmd.registeredArguments.map((a) => a.name + (a.variadic ? '…' : ''));
@@ -48,6 +49,7 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
         {
           title: `PM: ${path.join(' ')}`,
           description,
+          annotations: parityAnnotations(path),
           inputSchema: {
             options: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional()
               .describe(`Long-flag map. Valid keys: ${longFlags.length ? longFlags.map(f=>`--${f}`).join(', ') : '(none)'}`),
