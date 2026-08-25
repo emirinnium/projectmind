@@ -279,6 +279,10 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
           }
         }
 
+        // Living Context Window enrichment result (filled inside the pull
+        // branch below when the agent reports its current file).
+        let enrichment: { file?: string; dependents?: string[]; similar?: string[] } | undefined;
+
         if (args.action === 'pull' || args.action === 'both') {
           // Pull relevant context from ProjectMind. Entries are ranked by
           // relevance to the current file (key/path term overlap) with
@@ -304,6 +308,26 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
             issues: rank(deps.kg.getMemory('issues')),
             sync: rank(deps.kg.getMemory('sync')),
           };
+
+          // Living Context Window enrichment: attach the reported file's real
+          // dependency closure + similar files to every pull.
+          const ctxFile = typeof currentFile === 'string' ? currentFile : '';
+          if (ctxFile.length > 0) {
+            try {
+              const f = deps.kg.getFileByPath(ctxFile);
+              if (f) {
+                const dependents = deps.kg.getDependents(f.id).map((d) => d.relativePath).slice(0, 10);
+                let similar: string[] = [];
+                const emb = deps.kg.getFileEmbedding ? deps.kg.getFileEmbedding(f.id) : null;
+                if (emb) {
+                  similar = deps.kg.findSimilarFiles(emb, 0.7, 5).map((s) => s.relativePath);
+                }
+                enrichment = { file: f.relativePath, dependents, similar };
+              }
+            } catch {
+              // Enrichment is best-effort — never break the sync.
+            }
+          }
         }
 
         return {
@@ -316,6 +340,7 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
                 action: args.action,
                 pushed,
                 pulled,
+                enrichment,
                 message: 'Context synchronized successfully',
               }, null, 2),
             },

@@ -170,6 +170,9 @@ function generateRefactorCandidates(files: FileInfoForRefactor[], debtReport: De
   const candidates: RefactorCandidate[] = [];
   // Real 90-day change frequency from git history; agent-touch fallback.
   const gitChurn = collectGitChurn(loadConfig().projectRoot, 90);
+  // Second, shorter window feeds the acceleration (predictive) signal used
+  // by createCandidate below (module-level so both scopes share it).
+  recentChurnByFile = collectGitChurn(loadConfig().projectRoot, 30);
 
   for (const file of files) {
     const debtItems = debtReport.items.filter(d => d.filePath === file.relativePath || d.filePath === file.path);
@@ -229,10 +232,22 @@ function generateRefactorCandidates(files: FileInfoForRefactor[], debtReport: De
   return candidates;
 }
 
+/** Last-30d churn map shared with createCandidate for acceleration detection. */
+let recentChurnByFile: Map<string, { count: number; authors: Set<string> }> | null = null;
+
 function createCandidate(file: FileInfoForRefactor, type: RefactorCandidate['type'], description: string, effort: number, riskReduction: number, churn: number, debtReport: DebtReportForRefactor): RefactorCandidate {
   const frequency = churn;
   const roi = (riskReduction * frequency) / effort;
-  
+
+  // Predictive signal: is churn ACCELERATING? Compare last-30d against the
+  // 90d window — a hot file heats up before it becomes a hotspot.
+  let accelerating = false;
+  if (recentChurnByFile) {
+    const rel = file.relativePath.replace(/\\/g, '/');
+    const c30 = recentChurnByFile.get(rel)?.count ?? 0;
+    accelerating = churn > 2 && c30 >= Math.max(2, Math.ceil(churn * 0.6));
+  }
+
   let suggestion = '';
   switch (type) {
     case 'extract-function':
@@ -263,7 +278,7 @@ function createCandidate(file: FileInfoForRefactor, type: RefactorCandidate['typ
     file: file.relativePath,
     module: file.relativePath.split('/')[0] || 'root',
     type,
-    description,
+    description: accelerating ? `${description} ⏳ accelerating churn (30d vs 90d)` : description,
     cognitiveLoad: file.cognitiveLoad,
     churn: file.churn || 0,
     debtCount,

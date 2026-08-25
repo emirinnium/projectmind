@@ -163,6 +163,28 @@ export class MCPClient extends EventEmitter {
     return result as MCPToolResult;
   }
 
+  // ---- Resources & Prompts (server exposes pm://schema|config|stats + workflow prompts) ----
+
+  async listResources(): Promise<unknown> {
+    await this.start();
+    return this.request('resources/list', {}, 15_000);
+  }
+
+  async readResource(uri: string): Promise<unknown> {
+    await this.start();
+    return this.request('resources/read', { uri }, 30_000);
+  }
+
+  async listPrompts(): Promise<unknown> {
+    await this.start();
+    return this.request('prompts/list', {}, 15_000);
+  }
+
+  async getPrompt(name: string, args?: Record<string, string>): Promise<unknown> {
+    await this.start();
+    return this.request('prompts/get', { name, arguments: args ?? {} }, 30_000);
+  }
+
   private failAllPending(error: Error): void {
     for (const [, pending] of this.pending) {
       clearTimeout(pending.timer);

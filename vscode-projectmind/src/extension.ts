@@ -3,6 +3,7 @@ import { MCPClient } from './mcpClient';
 import { StatusBarManager } from './statusBar';
 import { registerCommands } from './commands';
 import { DiagnosticManager } from './diagnostics';
+import { registerIntelligence } from './intelligence';
 import { SidebarPanel } from './sidebar';
 
 let mcpClient: MCPClient | null = null;
@@ -23,6 +24,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // Inline coherence diagnostics (previously dead code — now wired)
   diagnostics = new DiagnosticManager(mcpClient);
   context.subscriptions.push({ dispose: () => diagnostics?.dispose() });
+
+  // CodeLens ("N dependents · load X" + Show Impact) and hover intelligence.
+  registerIntelligence(context, mcpClient);
 
   // Register commands
   registerCommands(context, mcpClient, statusBar);

@@ -42,6 +42,7 @@ export async function buildProgram(): Promise<Command> {
     { path: './commands/git-insights.js', name: 'createGitInsightsCommand' },
     { path: './commands/refs.js', name: 'createRefsCommand' },
     { path: './commands/workspace.js', name: 'createWorkspaceCommand' },
+    { path: './commands/autopilot.js', name: 'createAutopilotCommand' },
     { path: './commands/api-surface.js', name: 'createApiSurfaceCommand' },
     { path: './commands/layers.js', name: 'createLayersCommand' },
     { path: './commands/coupling.js', name: 'createCouplingCommand' },
