@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-25
+
+Agent workflow enforcement and editor-native intelligence: ProjectMind stops
+being documentation agents should read and becomes a gate they cannot skip,
+while the knowledge graph surfaces directly inside the editor.
+
+### Added
+- **`pm autopilot pre-commit`**: enforced quality gate with real exit codes —
+  high-severity debt must be zero, architectural cycles zero, genome score at
+  or above threshold (`--min-genome`, default 70%). `--format json` for CI.
+- **`pm autopilot install-hooks [--uninstall]`**: installs a marked git
+  `pre-commit` hook running the gate — agents AND humans cannot skip it;
+  refuses to touch foreign hooks on uninstall.
+- **VSCode CodeLens**: file-level `🧠 N dependents · load X · ✍️ agent-touched`
+  lens plus cycle warnings and one-click **Show Impact**
+  (analyze_impact incl. impacted test count).
+- **VSCode Hover**: the same knowledge-graph context rendered over any line;
+  60-second per-file cache keeps typing smooth.
+- **Extension ↔ Resources/Prompts bridge**: MCP client gains
+  resources/list·read and prompts/list·get — the editor can now consume
+  `pm://schema|config|stats` and the workflow prompts the server exposes.
+- **Living Context Window (v1)**: `sync_context` pull automatically enriches
+  responses with the reported current file's dependency closure and similar
+  files from embeddings.
+- **Predictive refactoring signal**: refactor-roi compares 30-day vs 90-day
+  churn windows and flags candidates whose churn is *accelerating* before
+  they become hotspots.
+
+### Fixed
+- VSCode language-service Range construction for secondary CodeLens.
+
 ## [0.5.0] - 2026-08-25
 
 Three-sprint quality & capability release driven by external audits:

@@ -43,6 +43,10 @@ projectmind health
 - `projectmind workspace` — Monorepo analysis: packages, internal dependency edges, semver range checks
 - `projectmind impact <file> --tests` — List tests/specs inside the reverse-dependency closure
 
+### Agent Autopilot (enforcement)
+- `projectmind autopilot pre-commit` — Quality gate with exit codes: high-debt 0, cycles 0, genome ≥ threshold (`--format json` for CI)
+- `projectmind autopilot install-hooks [--uninstall]` — Install/remove a git pre-commit hook enforcing the gate for agents and humans alike
+
 ### Security & Quality
 - `projectmind audit` — Security audit: secrets, crypto patterns, OWASP checks
 - `projectmind license` — License compliance: installed-package license scan + per-license report
