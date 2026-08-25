@@ -58,18 +58,29 @@ export function createSkillRecommendCommand(): Command {
         
         // Get codebase patterns and required skills
         const codebaseSkills = extractCodebaseSkills(report.modules);
+        const hasEvidence = Object.values(codebaseSkills).some(s => s.files.length > 0);
+        if (!hasEvidence) {
+          output.warn('No scanned file data available — showing the generic catalog. Run a project scan first for repo-specific recommendations.');
+        }
         
         const allGaps: { agent: string; gaps: SkillGap[] }[] = [];
         
         for (const profile of agentsToAnalyze) {
           // Map the actual AgentProfile to our expected interface
           const mappedProfile = mapAgentProfile(profile);
+          // ScaleReporter returns filesTouched as a count; older callers may pass arrays.
+          const touchedCount = Array.isArray(mappedProfile.filesTouched)
+            ? mappedProfile.filesTouched.length
+            : Number(mappedProfile.filesTouched) || 0;
+          if (Object.keys(mappedProfile.skills).length === 0 && touchedCount === 0) {
+            output.warn(`Agent '${profile.name}' has no recorded session data — assuming 0 proficiency on every skill.`);
+          }
           const gaps = analyzeSkillGaps(mappedProfile, codebaseSkills, parseFloat(opts.gapThreshold));
           allGaps.push({ agent: profile.name, gaps });
         }
         
         if (opts.format === 'json') {
-          const result = { agents: allGaps, codebaseSkills: extractCodebaseSkills([]) };
+          const result = { agents: allGaps, codebaseSkills };
           const content = JSON.stringify(result, null, 2);
           if (opts.output) {
             writeFileSync(opts.output, content);
@@ -81,7 +92,7 @@ export function createSkillRecommendCommand(): Command {
         }
         
         if (opts.format === 'html') {
-          const content = generateHtmlSkillReport(allGaps, extractCodebaseSkills([]));
+          const content = generateHtmlSkillReport(allGaps, codebaseSkills);
           if (opts.output) {
             writeFileSync(opts.output, content);
             output.success(`Written to ${opts.output}`);
@@ -132,7 +143,7 @@ export function createSkillRecommendCommand(): Command {
         }
         
         if (opts.output) {
-          writeFileSync(opts.output, JSON.stringify({ agents: allGaps, codebaseSkills: extractCodebaseSkills([]) }, null, 2));
+          writeFileSync(opts.output, JSON.stringify({ agents: allGaps, codebaseSkills }, null, 2));
           output.success(`Written to ${opts.output}`);
         }
       });
@@ -153,7 +164,31 @@ function mapAgentProfile(profile: any): AgentProfile {
   };
 }
 
-function extractCodebaseSkills(_modules: any[]): Record<string, { description: string; files: string[]; importance: number }> {
+/** Path-signal → skill evidence map used against real scale-report file data. */
+const SKILL_INDICATORS: Record<string, RegExp[]> = {
+  'async-patterns': [/retry\.ts$/i],
+  'dependency-injection': [/(^|\/)services?(\.ts|\/)/i, /container/i],
+  'architectural-contracts': [/contracts?\//i, /(^|\/)layers?\.ts$/i],
+  'coherence-checking': [/(^|\/)coherence(\/|\.ts$)/i],
+  'debt-detection': [/(^|\/)debt(\/|\.ts$|-prioritize\.ts$)/i, /dedup/i],
+  'embedding-generation': [/embedding/i],
+  'ast-parsing': [/(^|\/)parser\//i, /structural-search/i],
+  'knowledge-graph': [/(^|\/)(kg|graph)(\/|\.ts$)/i],
+  'sqlite-persistence': [/(^|\/)(storage|database)(\/|\.ts$)/i, /schema\.ts$/i],
+  'mcp-protocol': [/(^|\/)mcp(\/|\.ts$|-server\.ts$)/i],
+  'llm-integration': [/(^|\/)llm(\/|\.ts$)/i, /providers?(\/|\.ts$)/i, /(^|\/)deep\.ts$/i],
+  'cli-design': [/(^|\/)cli\//i],
+  'testing-patterns': [/(^|\/)(tests?|__tests__)\//i, /\.(test|spec)\.tsx?$/i],
+  'security-auditing': [/(^|\/)(audit|secrets-life)\.ts$/i],
+  'license-compliance': [/(^|\/)(license|sbom|deps-fresh)\.ts$/i],
+  'architecture-analysis': [/(^|\/)(coupling|impact|layers)\.ts$/i, /(refactor-roi)/i],
+  'agent-session-management': [/(^|\/)(session|agent|memory)(\/|\.ts$)/i],
+  'pattern-extraction': [/(^|\/)patterns?(\/|-extractor\.ts$)/i],
+  'refactoring-automation': [/(^|\/)(refactor|organize-imports)/i],
+  'documentation-generation': [/(^|\/)(docgen|adr|onboard)\.ts$/i],
+};
+
+function extractCodebaseSkills(modules: any[]): Record<string, { description: string; files: string[]; importance: number }> {
   const skills: Record<string, { description: string; files: string[]; importance: number }> = {
     'typescript': { description: 'TypeScript type system and advanced types', files: [], importance: 0.9 },
     'async-patterns': { description: 'Async/await, promises, error handling', files: [], importance: 0.85 },
@@ -177,8 +212,49 @@ function extractCodebaseSkills(_modules: any[]): Record<string, { description: s
     'refactoring-automation': { description: 'AST transforms, safe code modifications', files: [], importance: 0.6 },
     'documentation-generation': { description: 'API docs, README, ADRs from code', files: [], importance: 0.5 },
   };
-  
+
+  // Evidence pass: map REAL files from the scale report onto skills via path signals.
+  // A skill with no matching files is not relevant to this codebase and is dropped,
+  // so recommendations reflect the actual repository instead of a static catalog.
+  const filePaths = collectModuleFilePaths(modules);
+  if (filePaths.length === 0) {
+    return skills; // No scan data available: catalog only (caller warns about it).
+  }
+
+  for (const { rel, lang } of filePaths) {
+    if (lang === 'typescript' && skills['typescript'].files.length < MAX_EVIDENCE_FILES) {
+      skills['typescript'].files.push(rel);
+    }
+    for (const [skill, patterns] of Object.entries(SKILL_INDICATORS)) {
+      if (!skills[skill]) continue;
+      if (skills[skill].files.length >= MAX_EVIDENCE_FILES) continue;
+      if (patterns.some(re => re.test(rel))) {
+        skills[skill].files.push(rel);
+      }
+    }
+  }
+
+  for (const [skill, info] of Object.entries(skills)) {
+    if (info.files.length === 0) {
+      delete skills[skill]; // No evidence in this repo — not recommendable here.
+    }
+  }
+
   return skills;
+}
+
+const MAX_EVIDENCE_FILES = 8;
+
+function collectModuleFilePaths(modules: any[]): Array<{ rel: string; lang: string }> {
+  const out: Array<{ rel: string; lang: string }> = [];
+  for (const m of modules ?? []) {
+    for (const f of m?.files ?? []) {
+      if (typeof f?.relativePath === 'string' && f.relativePath.length > 0) {
+        out.push({ rel: f.relativePath.replace(/\\/g, '/'), lang: String(f.language ?? '') });
+      }
+    }
+  }
+  return out;
 }
 
 function analyzeSkillGaps(profile: AgentProfile, codebaseSkills: Record<string, { description: string; files: string[]; importance: number }>, threshold: number): SkillGap[] {

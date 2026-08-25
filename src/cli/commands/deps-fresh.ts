@@ -1,9 +1,10 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { loadConfig } from '@/cli/utils/shared.js';
-import { writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from '@/cli/utils/shared.js';
+import { collectInstalledLicenses } from '@/cli/utils/license-scan.js';
 
 interface DependencyInfo {
   name: string;
@@ -255,42 +256,6 @@ function runNpmAudit(): AuditSummary | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Collect real license identifiers from installed packages under
- * node_modules (including @scope packages) by reading their package.json.
- */
-function collectInstalledLicenses(projectRoot: string): Map<string, string> {
-  const licenses = new Map<string, string>();
-  const nmRoot = join(projectRoot, 'node_modules');
-  if (!existsSync(nmRoot)) return licenses;
-
-  const readPkgLicense = (pkgDir: string): void => {
-    const pkgJsonPath = join(pkgDir, 'package.json');
-    if (!existsSync(pkgJsonPath)) return;
-    try {
-      const p = JSON.parse(readFileSync(pkgJsonPath, 'utf-8')) as { name?: string; license?: string | { type?: string } };
-      if (!p.name) return;
-      const lic = typeof p.license === 'string' ? p.license : typeof p.license === 'object' ? p.license?.type ?? '' : '';
-      licenses.set(p.name, lic);
-    } catch {
-      // unreadable package.json: skip
-    }
-  };
-
-  for (const entry of readdirSync(nmRoot, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    if (entry.name.startsWith('@')) {
-      const scopeDir = join(nmRoot, entry.name);
-      for (const sub of readdirSync(scopeDir, { withFileTypes: true })) {
-        if (sub.isDirectory()) readPkgLicense(join(scopeDir, sub.name));
-      }
-    } else {
-      readPkgLicense(join(nmRoot, entry.name));
-    }
-  }
-  return licenses;
 }
 
 interface OutdatedEntry { current?: string; wanted?: string; latest?: string }

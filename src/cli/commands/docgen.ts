@@ -126,25 +126,50 @@ projectmind agent status  # Agent sessions
   return docgenCmd;
 }
 
+import ts from 'typescript';
+
 function extractExports(content: string): Array<{ name: string; type: string; params: string; doc?: string }> {
+  const sourceFile = ts.createSourceFile('input.ts', content, ts.ScriptTarget.Latest, /* setParentNodes */ true, ts.ScriptKind.TS);
   const exports: Array<{ name: string; type: string; params: string; doc?: string }> = [];
-  
-  const funcRegex = /(?:^\s*\/\*\*[\s\S]*?\*\/\s*)?export\s+(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/gm;
-  let match;
-  while ((match = funcRegex.exec(content)) !== null) {
-    exports.push({ name: match[1], type: 'function', params: match[2], doc: match[0].includes('/**') ? match[0].match(/\*\*([\s\S]*?)\*\//)?.[1].trim() : undefined });
-  }
-  
-  const classRegex = /export\s+class\s+(\w+)/g;
-  while ((match = classRegex.exec(content)) !== null) {
-    exports.push({ name: match[1], type: 'class', params: '' });
-  }
-  
-  const interfaceRegex = /export\s+interface\s+(\w+)/g;
-  while ((match = interfaceRegex.exec(content)) !== null) {
-    exports.push({ name: match[1], type: 'interface', params: '' });
-  }
-  
+
+  const jsdocOf = (node: ts.Node): string | undefined => {
+    for (const d of ts.getJSDocCommentsAndTags(node)) {
+      if (ts.isJSDoc(d) && d.comment) {
+        const text = typeof d.comment === 'string' ? d.comment : d.comment.map(c => c.getText()).join('');
+        if (text.trim()) return text.trim();
+      }
+    }
+    return undefined;
+  };
+
+  const isExported = (node: ts.Node): boolean => {
+    if (!ts.canHaveModifiers(node)) return false;
+    return node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionDeclaration(node) && isExported(node)) {
+      const params = node.parameters.map(p => p.getText(sourceFile)).join(', ');
+      exports.push({ name: node.name?.text ?? 'anonymous', type: 'function', params, doc: jsdocOf(node) });
+    } else if (ts.isClassDeclaration(node) && isExported(node)) {
+      exports.push({ name: node.name?.text ?? 'anonymous', type: 'class', params: '', doc: jsdocOf(node) });
+    } else if (ts.isInterfaceDeclaration(node) && isExported(node)) {
+      exports.push({ name: node.name?.text ?? 'anonymous', type: 'interface', params: '', doc: jsdocOf(node) });
+    } else if (ts.isTypeAliasDeclaration(node) && isExported(node)) {
+      exports.push({ name: node.name?.text ?? 'anonymous', type: 'type', params: '', doc: jsdocOf(node) });
+    } else if (ts.isEnumDeclaration(node) && isExported(node)) {
+      exports.push({ name: node.name?.text ?? 'anonymous', type: 'enum', params: '', doc: jsdocOf(node) });
+    } else if (ts.isVariableStatement(node) && isExported(node)) {
+      for (const decl of node.declarationList.declarations) {
+        if (ts.isIdentifier(decl.name)) {
+          exports.push({ name: decl.name.text, type: 'const', params: '', doc: jsdocOf(node) });
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  ts.forEachChild(sourceFile, visit);
   return exports;
 }
 

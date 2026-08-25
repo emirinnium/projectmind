@@ -1,6 +1,7 @@
 import { Command } from 'commander';
-import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
-import { writeFileSync } from 'node:fs';
+import { withService, asyncHandler, output, loadConfig } from '@/cli/utils/shared.js';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { getStatement } from '../../storage/database.js';
 
 interface ModuleCoupling {
@@ -271,15 +272,9 @@ function calculateCoupling(modules: ModuleInfoWithFiles[], realEdges?: Array<{ f
     const total = Ca + Ce;
     const instability = total > 0 ? Ce / total : 0;
     
-    // Calculate abstractness
-    const abstractCount = 0;
-    let totalClasses = 0;
-    for (const _file of module.files || []) {
-      // We'd need to parse classes from the file
-      // This is a placeholder - in reality we'd use the parser
-      totalClasses += 1; // Placeholder
-    }
-    const abstractness = totalClasses > 0 ? abstractCount / totalClasses : 0;
+    // Real abstractness from source text:
+    // A = (interfaces + abstract classes) / (interfaces + abstract + concrete classes).
+    const abstractness = computeAbstractness(module.files || [], loadConfig().projectRoot);
     
     const distanceFromMain = Math.abs(abstractness + instability - 1);
     
@@ -382,4 +377,31 @@ function generateD3Coupling(modules: ModuleCoupling[]): string {
       }).filter(Boolean)
     ),
   }, null, 2);
+}
+
+/**
+ * Robert C. Martin abstractness computed from real source text:
+ * A = (interfaces + abstract classes) / (interfaces + abstract + concrete classes).
+ * Unreadable files are skipped; returns 0 when nothing measurable exists.
+ */
+function computeAbstractness(files: Array<{ relativePath?: string }>, projectRoot?: string): number {
+  let abstractCount = 0;
+  let totalCount = 0;
+  for (const file of files) {
+    if (!file?.relativePath) continue;
+    const absPath = projectRoot ? join(projectRoot, file.relativePath) : file.relativePath;
+    let content: string;
+    try {
+      content = readFileSync(absPath, 'utf-8');
+    } catch {
+      continue;
+    }
+    for (const m of content.matchAll(/\b(?:(abstract)\s+)?(class|interface)\b/g)) {
+      totalCount++;
+      if (m[1] === 'abstract' || m[2] === 'interface') {
+        abstractCount++;
+      }
+    }
+  }
+  return totalCount > 0 ? Math.round((abstractCount / totalCount) * 100) / 100 : 0;
 }

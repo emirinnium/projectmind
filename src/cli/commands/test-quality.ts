@@ -23,8 +23,10 @@ interface TestQualityReport {
   totalTests: number;
   totalAssertions: number;
   avgCoverage: number;
+  /** Real mutation score from a Stryker report artifact; -1 = unmeasured. */
   mutationScore?: number;
-  flakyTests: number;
+  /** Static stability signal: skipped/todo test count (true flakiness needs runtime reruns). */
+  skippedTests: number;
   slowTests: TestFile[];
   weakTests: TestFile[];
   missingCoverage: { file: string; uncoveredLines: string[] }[];
@@ -114,10 +116,12 @@ export function createTestQualityCommand(): Command {
         output.kv('Total tests', qualityReport.totalTests);
         output.kv('Total assertions', qualityReport.totalAssertions);
         output.kv('Avg coverage', `${qualityReport.avgCoverage.toFixed(1)}%`);
-        if (qualityReport.mutationScore !== undefined) {
+        if (qualityReport.mutationScore !== undefined && qualityReport.mutationScore >= 0) {
           output.kv('Mutation score', `${qualityReport.mutationScore.toFixed(1)}%`);
+        } else {
+          output.info('Mutation score unmeasured — no Stryker report artifact found (run "npx stryker run" to generate one)');
         }
-        output.kv('Flaky tests', qualityReport.flakyTests);
+        output.kv('Skipped/todo tests', qualityReport.skippedTests);
         output.kv('Slow tests', qualityReport.slowTests.length);
         output.kv('Weak tests (low assertions)', qualityReport.weakTests.length);
         output.kv('Files below coverage target', qualityReport.missingCoverage.length);
@@ -147,10 +151,10 @@ export function createTestQualityCommand(): Command {
           }
         }
         
-        // Flaky tests
-        if (qualityReport.flakyTests > 0) {
-          output.section(`Flaky Tests (detected)`);
-          output.warn(`${qualityReport.flakyTests} potentially flaky tests detected`);
+        // Skipped/todo tests (static stability signal)
+        if (qualityReport.skippedTests > 0) {
+          output.section(`Skipped/Todo Tests`);
+          output.warn(`${qualityReport.skippedTests} skipped/todo tests detected — review, stabilize or remove`);
         }
         
         // Recommendations
@@ -259,7 +263,7 @@ function generateQualityReport(testFiles: TestFile[], coverageTarget: number, sl
     .map(f => ({ file: f.path, uncoveredLines: [] as string[] }));
   
   // Real static stability signal: skipped/todo tests (flakiness needs runtime data).
-  const flakyTests = testFiles.reduce((sum, f) => sum + (f.skipped ?? 0), 0);
+  const skippedTests = testFiles.reduce((sum, f) => sum + (f.skipped ?? 0), 0);
   
   const recommendations: string[] = [];
   
@@ -283,25 +287,80 @@ function generateQualityReport(testFiles: TestFile[], coverageTarget: number, sl
     recommendations.push(`${missingCoverage.length} files below coverage target - prioritize adding tests for these`);
   }
   
-  if (flakyTests > 0) {
-    recommendations.push(`${flakyTests} skipped/todo tests detected - review and stabilize or remove`);
+  if (skippedTests > 0) {
+    recommendations.push(`${skippedTests} skipped/todo tests detected - review and stabilize or remove`);
   }
-  
-  // Mutation score cannot be derived statically — requires a mutator (e.g. Stryker).
-  const mutationScore = 0;
-  
+
+  // Real mutation score when a Stryker report artifact exists; otherwise -1.
+  const mutationScore = readStrykerMutationScore();
+
   return {
     totalFiles: testFiles.length,
     totalTests,
     totalAssertions,
     avgCoverage,
     mutationScore,
-    flakyTests,
+    skippedTests,
     slowTests,
     weakTests,
     missingCoverage,
     recommendations,
   };
+}
+
+/**
+ * Read the real mutation score from a Stryker JSON report when present.
+ * Mutation testing cannot be derived statically — without an artifact this
+ * returns -1 ('unmeasured'), never a fabricated number.
+ */
+function readStrykerMutationScore(): number {
+  const candidates = [
+    'reports/mutation/mutation.json',
+    'reports/mutation.json',
+    'reports/evaluation/mutation.json',
+  ];
+  for (const candidate of candidates) {
+    try {
+      const raw = JSON.parse(readFileSync(candidate, 'utf-8')) as unknown;
+      const score = extractStrykerScore(raw);
+      if (score !== null) return Math.max(0, Math.min(100, score));
+    } catch {
+      /* artifact not present / unreadable at this location */
+    }
+  }
+  return -1;
+}
+
+function extractStrykerScore(raw: unknown): number | null {
+  interface MutantLike { status?: string }
+  interface ReportLike {
+    files?: Record<string, { mutants?: MutantLike[] }>;
+    scores?: { mutationScore?: number };
+    metrics?: { mutationScore?: number };
+  }
+  const obj = raw as ReportLike;
+
+  if (typeof obj?.scores?.mutationScore === 'number') {
+    return obj.scores.mutationScore <= 1 ? obj.scores.mutationScore * 100 : obj.scores.mutationScore;
+  }
+  if (typeof obj?.metrics?.mutationScore === 'number') {
+    return obj.metrics.mutationScore <= 1 ? obj.metrics.mutationScore * 100 : obj.metrics.mutationScore;
+  }
+
+  // Standard Stryker JSON-API report: per-file mutant lists.
+  if (obj?.files && typeof obj.files === 'object') {
+    let detected = 0;
+    let total = 0;
+    for (const file of Object.values(obj.files)) {
+      if (!file || !Array.isArray(file.mutants)) continue;
+      for (const mutant of file.mutants) {
+        total++;
+        if (mutant.status === 'Killed' || mutant.status === 'Timeout') detected++;
+      }
+    }
+    if (total > 0) return (detected / total) * 100;
+  }
+  return null;
 }
 
 function generateHtmlTestReport(testFiles: TestFile[], report: TestQualityReport): string {
@@ -342,7 +401,7 @@ function generateHtmlTestReport(testFiles: TestFile[], report: TestQualityReport
     <div class="stat"><div class="value">${report.totalAssertions}</div><div class="label">Total Assertions</div></div>
     <div class="stat"><div class="value">${report.avgCoverage.toFixed(1)}%</div><div class="label">Avg Coverage</div></div>
     <div class="stat"><div class="value">${report.mutationScore?.toFixed(1) || 'N/A'}%</div><div class="label">Mutation Score</div></div>
-    <div class="stat"><div class="value">${report.flakyTests}</div><div class="label">Flaky Tests</div></div>
+    <div class="stat"><div class="value">${report.skippedTests}</div><div class="label">Skipped/Todo Tests</div></div>
   </div>
   <h2>Test Files</h2>
   <table>

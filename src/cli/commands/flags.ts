@@ -1,6 +1,8 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output, logger } from '@/cli/utils/shared.js';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { dirname } from 'node:path';
 
 interface FeatureFlag {
   name: string;
@@ -58,8 +60,19 @@ export function createFlagsCommand(): Command {
         
         // Analyze flags
         const staleThreshold = Date.now() - parseInt(opts.staleDays, 10) * 24 * 60 * 60 * 1000;
-        
+
+        // Resolve lastModified per source file (git last-commit date, fs mtime fallback).
+        // Lazy + cached: only files that actually contain flags are queried.
+        const lastModifiedCache = new Map<string, string | undefined>();
         for (const flag of flags) {
+          const absPath = tsFiles.find(f => f.relativePath === flag.file)?.path;
+          if (absPath !== undefined && !lastModifiedCache.has(absPath)) {
+            lastModifiedCache.set(absPath, resolveLastModified(absPath));
+          }
+          if (absPath !== undefined) {
+            flag.lastModified = lastModifiedCache.get(absPath);
+          }
+
           // Check if stale
           if (flag.lastModified) {
             const lastMod = new Date(flag.lastModified).getTime();
@@ -200,6 +213,28 @@ function findFeatureFlags(content: string, relativePath: string, _filePath: stri
   return flags;
 }
 
+/**
+ * Last-modified date for a file: git last-commit date when available,
+ * filesystem mtime as fallback. Never fabricates — undefined when both fail.
+ */
+function resolveLastModified(absolutePath: string): string | undefined {
+  try {
+    const out = execFileSync(
+      'git',
+      ['log', '-1', '--format=%cI', '--', absolutePath],
+      { cwd: dirname(absolutePath), encoding: 'utf-8' }
+    ).trim();
+    if (out) return out;
+  } catch {
+    // Not a git repo / git missing / file untracked: fall through to mtime.
+  }
+  try {
+    return statSync(absolutePath).mtime.toISOString();
+  } catch {
+    return undefined;
+  }
+}
+
 function extractConfigFlags(content: string, relativePath: string): FeatureFlag[] {
   const flags: FeatureFlag[] = [];
   
@@ -222,7 +257,6 @@ function extractConfigFlags(content: string, relativePath: string): FeatureFlag[
 }
 
 function countReferences(flagName: string, files: any[]): number {
-  const { readFileSync } = require('node:fs');
   let count = 0;
   
   for (const file of files.slice(0, 100)) {

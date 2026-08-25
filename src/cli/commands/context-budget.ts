@@ -86,11 +86,12 @@ export function createContextBudgetCommand(): Command {
         }
         
         // Text format
-        output.section(`Selected Context (${result.selected.length} items, ${result.totalTokens}/${budget} tokens = ${(result.utilization * 100).toFixed(1)}%)`);
-        
+        output.section(`Selected Context (~${result.totalTokens} tokens of ~${budget} budget, ${(result.utilization * 100).toFixed(1)}% used)`);
+        output.info('Token counts are heuristic estimates (language-aware chars/token), not exact tokenizer output.');
+
         for (const [i, item] of result.selected.entries()) {
           const typeIcon = item.type === 'file' ? '📄' : item.type === 'function' ? '⚙️' : item.type === 'class' ? '📦' : item.type === 'interface' ? '📐' : item.type === 'pattern' ? '🔄' : item.type === 'debt' ? '💰' : '🧪';
-          output.kv(`${i + 1}. ${typeIcon} ${item.file}`, `${item.tokens} tokens | Relevance: ${(item.relevance * 100).toFixed(0)}% | ${item.summary}`);
+          output.kv(`${i + 1}. ${typeIcon} ${item.file}`, `~${item.tokens} tokens | Relevance: ${(item.relevance * 100).toFixed(0)}% | ${item.summary}`);
         }
         
         output.section('Excluded (budget exceeded)');
@@ -185,8 +186,26 @@ function calculateRelevance(task: string, file: { relativePath: string; agentTou
   return Math.max(0, Math.min(1, relevance));
 }
 
-function estimateTokens(file: { sizeBytes: number }): number {
-  return Math.ceil(file.sizeBytes / 4);
+/**
+ * Approximate token count. Source code is denser than prose (more symbols and
+ * punctuation per token), so the chars/token ratio is language-aware:
+ *   - code files: ~3.4 chars/token
+ *   - everything else (docs/config prose): ~4.0 chars/token
+ * This is a deliberate heuristic — NOT an exact tokenizer count. All user-facing
+ * token numbers are prefixed with "~" to make the approximation explicit.
+ */
+const CODE_CHARS_PER_TOKEN = 3.4;
+const PROSE_CHARS_PER_TOKEN = 4.0;
+const CODE_LANGUAGES = new Set([
+  'typescript', 'javascript', 'tsx', 'jsx', 'json',
+  'python', 'go', 'rust', 'java', 'csharp', 'cpp', 'ruby',
+]);
+
+function estimateTokens(file: { sizeBytes: number; language?: string }): number {
+  const ratio = file.language && CODE_LANGUAGES.has(file.language)
+    ? CODE_CHARS_PER_TOKEN
+    : PROSE_CHARS_PER_TOKEN;
+  return Math.ceil(file.sizeBytes / ratio);
 }
 
 function selectWithinBudget(candidates: ContextItem[], budget: number, strategy: string): ContextBudgetResult {

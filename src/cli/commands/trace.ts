@@ -84,31 +84,74 @@ export function createTraceCommand(): Command {
 
   traceCmd
     .command('convert <input>')
-    .description('Normalize a trace-events JSON file into ProjectMind ingest format')
-    .option('--format <fmt>', 'Input format: json (cgr|pprof planned)', 'json')
+    .description('Normalize a trace-events file into ProjectMind ingest format')
+    .option('--format <fmt>', 'Input format: json|csv (cgr|pprof planned)', 'json')
     .option('-o, --output <file>', 'Output file path')
     .action(asyncHandler(async (input: string, opts: { format: string; output?: string }) => {
-      if (opts.format !== 'json') {
-        throw new Error(`Converter for '${opts.format}' is not implemented yet (supported: json).`);
-      }
       const { readFileSync, writeFileSync } = await import('node:fs');
-      const raw = JSON.parse(readFileSync(input, 'utf-8')) as
-        | unknown[]
-        | { events?: unknown[] };
-      const events = Array.isArray(raw) ? raw : (raw.events ?? []);
-      const normalized = (events as Array<Record<string, unknown>>)
-        .filter((e) => e && typeof e.fromFunctionName === 'string' && typeof e.toFunctionName === 'string')
-        .map((e) => ({
-          fromFunctionName: String(e.fromFunctionName),
-          toFunctionName: String(e.toFunctionName),
-          workloadId: typeof e.workloadId === 'string' ? e.workloadId : 'converted',
-          callCount: typeof e.callCount === 'number' ? e.callCount : 1,
-          staticMissed: Boolean(e.staticMissed),
-        }));
+
+      interface NormalizedEvent {
+        fromFunctionName: string;
+        toFunctionName: string;
+        workloadId: string;
+        callCount: number;
+        staticMissed: boolean;
+      }
+      let normalized: NormalizedEvent[] = [];
+
+      if (opts.format === 'json') {
+        const raw = JSON.parse(readFileSync(input, 'utf-8')) as
+          | unknown[]
+          | { events?: unknown[] };
+        const events = Array.isArray(raw) ? raw : (raw.events ?? []);
+        normalized = (events as Array<Record<string, unknown>>)
+          .filter((e) => e && typeof e.fromFunctionName === 'string' && typeof e.toFunctionName === 'string')
+          .map((e) => ({
+            fromFunctionName: String(e.fromFunctionName),
+            toFunctionName: String(e.toFunctionName),
+            workloadId: typeof e.workloadId === 'string' ? e.workloadId : 'converted',
+            callCount: typeof e.callCount === 'number' ? e.callCount : 1,
+            staticMissed: Boolean(e.staticMissed),
+          }));
+      } else if (opts.format === 'csv') {
+        // Real CSV edge-list reader:
+        // header: fromFunctionName,toFunctionName[,workloadId][,callCount][,staticMissed]
+        const text = readFileSync(input, 'utf-8').trim();
+        if (!text) throw new Error(`CSV input "${input}" is empty`);
+        const [rawHeader, ...rows] = text.split(/\r?\n/);
+        const header = rawHeader.split(',').map((h) => h.trim().toLowerCase());
+        const col = (name: string): number => header.indexOf(name.toLowerCase());
+        if (col('fromFunctionName') < 0 || col('toFunctionName') < 0) {
+          throw new Error('CSV must have at least "fromFunctionName" and "toFunctionName" columns');
+        }
+        const callCol = col('callCount');
+        const workloadCol = col('workloadId');
+        const missedCol = col('staticMissed');
+        normalized = rows
+          .filter((line) => line.trim().length > 0)
+          .map((line) => {
+            const cells = line.split(',');
+            const callCountRaw = callCol >= 0 ? Number(cells[callCol]?.trim()) : NaN;
+            return {
+              fromFunctionName: cells[col('fromFunctionName')]?.trim() ?? '',
+              toFunctionName: cells[col('toFunctionName')]?.trim() ?? '',
+              workloadId: workloadCol >= 0 && cells[workloadCol]?.trim() ? cells[workloadCol].trim() : 'converted',
+              callCount: Number.isFinite(callCountRaw) && callCountRaw > 0 ? Math.floor(callCountRaw) : 1,
+              staticMissed: missedCol >= 0 ? /^(true|1|yes)$/i.test(cells[missedCol]?.trim() ?? '') : false,
+            };
+          })
+          .filter((e) => e.fromFunctionName.length > 0 && e.toFunctionName.length > 0);
+      } else {
+        throw new Error(
+          `Converter for '${opts.format}' is not implemented. Supported input formats: json, csv. ` +
+          '(cgr/pprof converters are planned but not yet available.)'
+        );
+      }
+
       const out = JSON.stringify(normalized, null, 2);
       if (opts.output) {
         writeFileSync(opts.output, out);
-        output.success(`Converted ${normalized.length} events -> ${opts.output}`);
+        output.success(`Converted ${normalized.length} events (${opts.format}) -> ${opts.output}`);
       } else {
         console.log(out);
       }
