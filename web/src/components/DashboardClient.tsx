@@ -67,6 +67,16 @@ export default function DashboardClient() {
     fetchData();
   }, [fetchData]);
 
+  // SSE events source for live dashboard updates
+  useEffect(() => {
+    const eventsSource = new EventSource('/api/events');
+    eventsSource.addEventListener('report', (ev) => {
+      try { setData(JSON.parse((ev as MessageEvent).data)); setError(null); } catch {}
+    });
+    eventsSource.onerror = () => eventsSource.close();
+    return () => eventsSource.close();
+  }, []);
+
   // Run scan
   const handleScan = async () => {
     setScanning(true);

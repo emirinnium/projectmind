@@ -87,6 +87,10 @@ export class TaintAnalyzer {
     const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
     const flows: TaintFlow[] = [];
     const variables = new Map<string, TaintSource>();
+    // Inter-procedural seeds: "fnName.paramName" -> taint passed by callers.
+    const parameterTaint = new Map<string, TaintSource>();
+    // Local function registry for same-file propagation (v1 scope).
+    const localFns = new Map<string, { node: ts.Node; params: string[] }>();
 
     const getQualifiedName = (node: ts.Node): string => {
       if (ts.isIdentifier(node)) {
@@ -167,6 +171,20 @@ export class TaintAnalyzer {
           }
         }
 
+        // Inter-procedural seed: tainted argument flowing into a LOCAL function.
+        if (calleeText && !calleeText.includes('.') && !calleeText.includes('(')) {
+          const fn = localFns.get(calleeText);
+          if (fn) {
+            node.arguments.forEach((arg, idx) => {
+              const varSource = variables.get(arg.getText(sourceFile));
+              const paramName = fn.params[idx];
+              if (varSource && paramName && !parameterTaint.has(`${calleeText}.${paramName}`)) {
+                parameterTaint.set(`${calleeText}.${paramName}`, varSource);
+              }
+            });
+          }
+        }
+
         const sinkInfo = isSink(calleeText);
         if (sinkInfo) {
           const argNames = node.arguments.map((a) => a.getText(sourceFile));
@@ -186,6 +204,17 @@ export class TaintAnalyzer {
       ts.forEachChild(node, (child) => visit(child, currentFunctionName));
     };
 
+    // Collect local functions BEFORE the main pass so call sites can seed them.
+    ts.forEachChild(sourceFile, function collect(n: ts.Node): void {
+      if ((ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n)) && n.name) {
+        localFns.set(n.name.getText(sourceFile), {
+          node: n,
+          params: n.parameters.map((p) => (p.name && ts.isIdentifier(p.name) ? p.name.text : '')),
+        });
+      }
+      ts.forEachChild(n, collect);
+    });
+
     for (const statement of sourceFile.statements) {
       if (ts.isFunctionDeclaration(statement) || ts.isMethodDeclaration(statement)) {
         const fnName = statement.name?.getText(sourceFile);
@@ -193,6 +222,25 @@ export class TaintAnalyzer {
       } else {
         visit(statement, undefined);
       }
+    }
+
+    // Inter-procedural pass (v1, single hop): re-scan each local function that
+    // received tainted arguments from ANY call site discovered above. Newly
+    // surfaced sink flows are tagged with the callee chain.
+    for (const [fnName, fn] of localFns) {
+      const seeds = fn.params
+        .map((p) => ({ p, src: parameterTaint.get(`${fnName}.${p}`) }))
+        .filter((s): s is { p: string; src: TaintSource } => !!s.src);
+      if (seeds.length === 0) continue;
+
+      for (const s of seeds) variables.set(s.p, s.src);
+      const before = flows.length;
+      ts.forEachChild(fn.node, (child) => visit(child, fnName));
+      for (let i = before; i < flows.length; i++) {
+        flows[i] = { ...flows[i], viaFunction: `${fnName} → ${flows[i].viaFunction ?? '(body)'}` };
+      }
+      // Unseed to keep subsequent functions independent.
+      for (const s of seeds) variables.delete(s.p);
     }
 
     return flows;

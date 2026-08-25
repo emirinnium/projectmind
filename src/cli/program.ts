@@ -41,6 +41,7 @@ export async function buildProgram(): Promise<Command> {
     { path: './commands/churn.js', name: 'createChurnCommand' },
     { path: './commands/git-insights.js', name: 'createGitInsightsCommand' },
     { path: './commands/refs.js', name: 'createRefsCommand' },
+    { path: './commands/def.js', name: 'createDefCommand' },
     { path: './commands/workspace.js', name: 'createWorkspaceCommand' },
     { path: './commands/autopilot.js', name: 'createAutopilotCommand' },
     { path: './commands/api-surface.js', name: 'createApiSurfaceCommand' },

@@ -1,9 +1,10 @@
 import { Command } from 'commander';
 import { asyncHandler, output } from '@/cli/utils/shared.js';
 import { loadConfig } from '@/cli/utils/shared.js';
-import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import ts from 'typescript';
+import { createProjectLanguageService } from '@/cli/utils/language-service.js';
 
 /**
  * Symbol-level cross-reference ("find all references") backed by the real
@@ -24,61 +25,25 @@ export function createRefsCommand(): Command {
         return;
       }
 
-      const tsconfigPath = join(root, 'tsconfig.json');
-      if (!existsSync(tsconfigPath)) {
-        output.warn('No tsconfig.json at project root — language-service resolution needs it.');
-        return;
-      }
-
-      const configFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
-      if (configFile.error) {
-        output.warn(`tsconfig parse error: ${ts.flattenDiagnosticMessageText(configFile.error.messageText, ' ')}`);
-        return;
-      }
-      const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, root);
-      const options = { ...parsed.options, noEmit: true, skipLibCheck: true };
-
-      const scriptSnapshotCache = new Map<string, ts.IScriptSnapshot | undefined>();
-      // Normalize to forward slashes so language-service keys match on Windows.
-      const norm = (p: string): string => p.replace(/\\/g, '/');
-      const targetFile = norm(resolve(root, filePath));
-      const host: ts.LanguageServiceHost = {
-        getScriptFileNames: () => {
-          const names = new Set(parsed.fileNames.map(norm));
-          names.add(targetFile); // ensure queried file is always part of the program
-          return [...names];
-        },
-        getScriptVersion: () => '0',
-        getScriptSnapshot: (name) => {
-          const key = norm(name);
-          if (!scriptSnapshotCache.has(key)) {
-            const text = ts.sys.readFile(key);
-            scriptSnapshotCache.set(key, text === undefined ? undefined : ts.ScriptSnapshot.fromString(text));
-          }
-          return scriptSnapshotCache.get(key);
-        },
-        fileExists: ts.sys.fileExists,
-        readFile: ts.sys.readFile,
-        readDirectory: ts.sys.readDirectory,
-        getCompilationSettings: () => options,
-        getDefaultLibFileName: (o) => ts.getDefaultLibFileName(o),
-        getCurrentDirectory: () => root,
-      };
-
       output.section(`Finding references of "${symbol}"`);
       output.kv('File', filePath);
       output.info('Building language-service program (first run may take a few seconds)...');
 
-      const service = ts.createLanguageService(host);
+      const ls = createProjectLanguageService(root, [resolve(root, filePath)]);
+      if (!ls) {
+        output.warn('No usable tsconfig.json at project root — language-service unavailable.');
+        return;
+      }
       try {
-        const sourceText = readFileSync(resolve(root, filePath), 'utf-8');
+        const targetFile = ls.norm(resolve(root, filePath));
+        const sourceText = ts.sys.readFile(targetFile) ?? '';
         const position = pickDeclarationPosition(sourceText, symbol);
         if (position < 0) {
           output.warn(`Symbol "${symbol}" not found as a whole word in ${filePath}.`);
           return;
         }
 
-        const referencedSymbols = service.findReferences(targetFile, position) ?? [];
+        const referencedSymbols = ls.service.findReferences(targetFile, position) ?? [];
         let shown = 0;
         let total = 0;
 
@@ -102,7 +67,7 @@ export function createRefsCommand(): Command {
           output.info('No references found — symbol may be unused (candidate dead code).');
         }
       } finally {
-        service.dispose();
+        ls.dispose();
       }
     })
   );
