@@ -6,8 +6,9 @@ export function createImpactCommand(): Command {
     .description('Analyze change impact using dependency data')
     .argument('<file>', 'File path to analyze')
     .option('-d, --depth <n>', 'Dependency depth (informational)', '2')
-    .action(asyncHandler(async (filePath: string) => {
-      await withService(['scale'], async (_ctx, services) => {
+    .option('-t, --tests', 'List tests/specs inside the reverse-dependency closure (test impact)')
+    .action(asyncHandler(async (filePath: string, opts: { tests?: boolean }) => {
+      await withService(['scale'], async (ctx, services) => {
         const scale = services.scale!;
         
         output.section(`Change Impact: ${filePath}`);
@@ -25,6 +26,40 @@ export function createImpactCommand(): Command {
         output.kv('File', targetFile.path);
         output.kv('Cognitive load', targetFile.cognitiveLoad.toFixed(3));
         output.kv('Agent touched', targetFile.agentTouched ? 'yes' : 'no');
+
+        // Test impact: BFS over the reverse-dependency closure via the KG.
+        if (opts.tests) {
+          const kg = (ctx as { kg?: { getDependents(id: number): Array<{ id: number; relativePath: string }> } }).kg;
+          if (kg && typeof targetFile.id === 'number') {
+            const isTestPath = (p: string): boolean =>
+              /(^|\/)(tests?|__tests__)\//.test(p) || /\.(test|spec)\.[a-z]+$/i.test(p);
+            const visited = new Set<number>([targetFile.id]);
+            const queue: Array<{ id: number; rel: string; depth: number }> = [{ id: targetFile.id, rel: targetFile.relativePath, depth: 0 }];
+            const impactedTests: Array<{ rel: string; depth: number }> = [];
+            while (queue.length > 0) {
+              const cur = queue.shift()!;
+              for (const dep of kg.getDependents(cur.id)) {
+                if (visited.has(dep.id)) continue;
+                visited.add(dep.id);
+                if (isTestPath(dep.relativePath)) impactedTests.push({ rel: dep.relativePath, depth: cur.depth + 1 });
+                queue.push({ id: dep.id, rel: dep.relativePath, depth: cur.depth + 1 });
+              }
+            }
+            impactedTests.sort((a, b) => a.depth - b.depth);
+            output.section(`Impacted Tests (${impactedTests.length})`);
+            if (impactedTests.length === 0) {
+              output.info('No tests transitively import this file — changes are not covered by the test graph.');
+            } else {
+              for (const t of impactedTests.slice(0, 25)) {
+                output.kv(`  🧪 ${t.rel}`, `depth: ${t.depth}`);
+              }
+              if (impactedTests.length > 25) output.info(`...and ${impactedTests.length - 25} more`);
+              output.kv('Run these before committing', `${impactedTests.length} test file(s)`);
+            }
+          } else {
+            output.info('--tests requires a scanned knowledge graph (run "projectmind scan" first).');
+          }
+        }
         
         // Find module containing this file
         const targetModule = report.modules.find(m => m.files?.some(f => f.path === targetFile.path));

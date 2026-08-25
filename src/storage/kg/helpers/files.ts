@@ -101,9 +101,32 @@ export function resolveImportSource(ctx: KgContext, source: string, fromDir?: st
   return null;
 }
 
+/**
+ * Decode an embedding stored in either legacy JSON TEXT or new Float32 BLOB
+ * format. Empty array signals unreadable/corrupt value.
+ */
+function decodeEmbedding(raw: unknown): number[] {
+  if (raw instanceof Uint8Array) {
+    const floats = new Float32Array(raw.buffer, raw.byteOffset, Math.floor(raw.byteLength / 4));
+    return Array.from(floats);
+  }
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? parsed.map(Number) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export async function upsertFile(ctx: KgContext, fileStruct: FileStructure, relativePath: string): Promise<number> {
   const embedding = codeToEmbedding(fileStruct.functions.map((f) => f.signature).join('\n'));
-  const embeddingJson = JSON.stringify(embedding);
+  // Compact Float32 BLOB (~4 bytes/dim) instead of JSON text (~7+/bytes/dim).
+  // Readers accept BOTH formats, so pre-existing TEXT rows convert gradually
+  // on rescan without a destructive migration.
+  const embeddingBlob = Buffer.from(new Float32Array(embedding).buffer);
   const cognitiveLoad = calculateCognitiveLoad(fileStruct);
 
   return runWithRetry(async () => {
@@ -116,7 +139,7 @@ export async function upsertFile(ctx: KgContext, fileStruct: FileStructure, rela
         fileStruct.language,
         fileStruct.sizeBytes,
         fileStruct.hash,
-        embeddingJson,
+        embeddingBlob,
         cognitiveLoad,
         existing.id
       );
@@ -134,7 +157,7 @@ export async function upsertFile(ctx: KgContext, fileStruct: FileStructure, rela
         fileStruct.language,
         fileStruct.sizeBytes,
         fileStruct.hash,
-        embeddingJson,
+        embeddingBlob,
         cognitiveLoad
       );
       return Number(result.lastInsertRowid);
@@ -323,16 +346,13 @@ export function findSimilarFiles(ctx: KgContext, targetEmbedding: number[], thre
 
   const placeholders = ids.map(() => '?').join(',');
   const rows = getStatement(`SELECT id, embedding FROM files WHERE id IN (${placeholders})`)
-    .all(...ids) as { id: number; embedding: string | null }[];
+    .all(...ids) as { id: number; embedding: unknown }[];
 
   const embeddingMap = new Map<number, number[]>();
   for (const row of rows) {
     if (!row.embedding) continue;
-    try {
-      embeddingMap.set(row.id, JSON.parse(row.embedding) as number[]);
-    } catch {
-      // skip invalid embeddings
-    }
+    const decoded = decodeEmbedding(row.embedding);
+    if (decoded.length > 0) embeddingMap.set(row.id, decoded);
   }
 
   const candidates: { id: number; embedding: number[] }[] = [];
@@ -383,11 +403,8 @@ export function getImports(ctx: KgContext, fileId: number): { source: string; na
 }
 
 export function getFileEmbedding(ctx: KgContext, fileId: number): number[] | null {
-  const row = getStatement('SELECT embedding FROM files WHERE id = ?').get(fileId) as { embedding: string | null } | undefined;
+  const row = getStatement('SELECT embedding FROM files WHERE id = ?').get(fileId) as { embedding: unknown } | undefined;
   if (!row || !row.embedding) return null;
-  try {
-    return JSON.parse(row.embedding) as number[];
-  } catch {
-    return null;
-  }
+  const decoded = decodeEmbedding(row.embedding);
+  return decoded.length > 0 ? decoded : null;
 }

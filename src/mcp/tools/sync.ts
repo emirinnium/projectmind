@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { watch, type FSWatcher } from 'node:fs';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
+import { parseFile } from '../../parser/ast-parser.js';
+import { loadConfig } from '../../utils/config.js';
 
 // Session-scoped registry of live watchers + intent records.
 // Watchers perform REAL change detection: on any file event the file is
@@ -18,6 +20,21 @@ function startLiveWatch(deps: McpDependencies, filePath: string, agentId: string
         deps.kg.markAgentTouched(filePath, agentId);
       } catch {
         // Never let a watcher crash the server.
+      }
+      // Incremental single-file refresh: re-parse and upsert so functions,
+      // classes and dependents in the KG stay current without a full
+      // scan_project. Best-effort; embedding is intentionally NOT regenerated
+      // here (provider may be unavailable) — next full scan refreshes it.
+      try {
+        const struct = parseFile(filePath);
+        if (struct) {
+          const root = loadConfig().projectRoot.replace(/\\/g, '/');
+          const norm = filePath.replace(/\\/g, '/');
+          const rel = norm.startsWith(root) ? norm.slice(root.length + 1) : norm;
+          void Promise.resolve(deps.kg.upsertFile(struct, rel)).catch(() => {});
+        }
+      } catch {
+        // Refresh is opportunistic — never crash the watcher.
       }
     });
     w.on('error', () => liveWatchers.delete(key));

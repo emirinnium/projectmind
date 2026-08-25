@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output, logger } from '@/cli/utils/shared.js';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { getStatement } from '../../storage/database.js';
 
 interface TestFile {
   path: string;
@@ -86,7 +87,33 @@ export function createTestQualityCommand(): Command {
         
         // Generate report
         const qualityReport = generateQualityReport(testAnalysis, parseInt(opts.coverageTarget, 10), parseInt(opts.slowThreshold, 10), parseInt(opts.flakyThreshold, 10));
-        
+
+        // Coverage trend: persist this run and diff against the previous one.
+        try {
+          getStatement(`CREATE TABLE IF NOT EXISTS coverage_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            avg_coverage REAL NOT NULL,
+            total_tests INTEGER NOT NULL DEFAULT 0,
+            total_assertions INTEGER NOT NULL DEFAULT 0
+          )`).run();
+          const prev = getStatement('SELECT avg_coverage FROM coverage_snapshots ORDER BY id DESC LIMIT 1').get() as { avg_coverage: number } | undefined;
+          getStatement('INSERT INTO coverage_snapshots (avg_coverage, total_tests, total_assertions) VALUES (?, ?, ?)')
+            .run(qualityReport.avgCoverage, qualityReport.totalTests, qualityReport.totalAssertions);
+          if (prev && typeof prev.avg_coverage === 'number') {
+            const delta = Math.round((qualityReport.avgCoverage - prev.avg_coverage) * 10) / 10;
+            (qualityReport as { coverageTrend?: { previous: number; delta: number } }).coverageTrend = { previous: prev.avg_coverage, delta };
+            output.section('Coverage Trend');
+            output.kv('Previous run', `${prev.avg_coverage.toFixed(1)}%`);
+            output.kv('Delta', `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}% ${delta < 0 ? '📉 regression' : delta > 0 ? '📈 improvement' : '➖ flat'}`);
+            if (delta < -2) {
+              output.warn(`Coverage regressed by ${Math.abs(delta).toFixed(1)}% since the last recorded run`);
+            }
+          }
+        } catch {
+          // Snapshot persistence is best-effort; never block the report.
+        }
+
         if (opts.format === 'json') {
           const content = JSON.stringify({ testFiles: testAnalysis, report: qualityReport }, null, 2);
           if (opts.output) {

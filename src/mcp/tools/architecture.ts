@@ -118,6 +118,7 @@ export function registerAnalyzeImpactTool(server: McpServer, deps: McpDependenci
       inputSchema: {
         filePath: z.string().describe('Path of the file to analyze'),
         changeType: z.enum(['modify', 'delete', 'rename', 'refactor']).default('modify').describe('Type of change planned'),
+        tests: z.boolean().default(false).describe('Also list tests/specs inside the reverse-dependency closure (test impact analysis)'),
       },
     },
     async (args) => {
@@ -147,6 +148,16 @@ export function registerAnalyzeImpactTool(server: McpServer, deps: McpDependenci
 
       traceDependents(file.id, 1, [file.relativePath]);
 
+      // Test impact analysis: tests/specs that transitively import this file.
+      const isTestPath = (p: string): boolean =>
+        /(^|\/)(tests?|__tests__)\//.test(p) || /\.(test|spec)\.[a-z]+$/i.test(p);
+      const impactedTests = args.tests
+        ? [...allDependents.values()]
+            .filter((d) => isTestPath(d.file.relativePath))
+            .map((d) => ({ path: d.file.relativePath, depth: d.depth }))
+            .sort((a, b) => a.depth - b.depth)
+        : [];
+
       // Categorize impact
       const highImpact = Array.from(allDependents.values()).filter((d) => d.depth === 1);
       const mediumImpact = Array.from(allDependents.values()).filter((d) => d.depth === 2);
@@ -168,6 +179,8 @@ export function registerAnalyzeImpactTool(server: McpServer, deps: McpDependenci
               file: file.relativePath,
               changeType: args.changeType,
               riskLevel,
+              impactedTests,
+              impactedTestCount: impactedTests.length,
               summary: {
                 directDependents: highImpact.length,
                 transitiveDependents: allDependents.size,

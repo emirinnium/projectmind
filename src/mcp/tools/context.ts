@@ -15,6 +15,7 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
         includeImports: z.boolean().default(true).describe('Include import/dependency information'),
         includeDependents: z.boolean().default(true).describe('Include reverse dependencies (files that import this file)'),
         includeSimilar: z.boolean().default(true).describe('Include similar files based on embeddings'),
+        maxTokens: z.number().optional().describe('Soft token budget (~chars/4). When set, list sections are trimmed to fit.'),
       },
     },
     async (args) => {
@@ -36,15 +37,25 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
         const resolvedImports = imports.filter((i) => i.resolvedFile);
         const unresolvedImports = imports.filter((i) => !i.resolvedFile);
 
+        // Token-budget aware caps: when maxTokens is set, list sections are
+        // trimmed up-front so the serialized response stays within budget.
+        // ~4 chars/token heuristic, ~90 chars reserved per list entry.
+        let itemCap = args.limit;
+        if (args.maxTokens !== undefined && args.maxTokens > 0) {
+          const budgetItems = Math.floor((args.maxTokens * 4) / 90);
+          itemCap = Math.max(1, Math.min(args.limit, budgetItems));
+        }
+
         // Get dependents (reverse dependencies)
-        const dependents = args.includeDependents ? deps.kg.getDependents(file.id) : [];
+        const allDependents = args.includeDependents ? deps.kg.getDependents(file.id) : [];
+        const dependents = allDependents.slice(0, itemCap);
 
         // Get similar files
         let similarFiles: typeof file[] = [];
         if (args.includeSimilar) {
           const fileEmbedding = deps.kg.getFileEmbedding ? deps.kg.getFileEmbedding(file.id) : null;
           if (fileEmbedding) {
-            similarFiles = deps.kg.findSimilarFiles(fileEmbedding, 0.7, args.limit);
+            similarFiles = deps.kg.findSimilarFiles(fileEmbedding, 0.7, itemCap);
           }
         }
 
