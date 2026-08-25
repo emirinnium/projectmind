@@ -32,14 +32,20 @@ projectmind health
 ### Architecture
 - `projectmind graph` — Show module dependency graph (Mermaid format)
 - `projectmind layers` — Enforce architectural layer boundaries
-- `projectmind coupling` — Analyze module coupling metrics
+- `projectmind coupling` — Analyze module coupling metrics (real abstractness from source)
 - `projectmind api-surface` — Track public API surface changes
 - `projectmind dedup` — Find duplicate code using redundancy detection
 - `projectmind churn` — Analyze code churn and risk hotspots
 
+### Temporal & Symbol Intelligence
+- `projectmind git-insights <file>` — Temporal context from git: authors, rename history, recent commits
+- `projectmind refs <file> <symbol>` — Find all references of a symbol (TypeScript language service, type-aware)
+- `projectmind workspace` — Monorepo analysis: packages, internal dependency edges, semver range checks
+- `projectmind impact <file> --tests` — List tests/specs inside the reverse-dependency closure
+
 ### Security & Quality
 - `projectmind audit` — Security audit: secrets, crypto patterns, OWASP checks
-- `projectmind license` — License compliance (basic check)
+- `projectmind license` — License compliance: installed-package license scan + per-license report
 - `projectmind sbom` — Generate Software Bill of Materials
 - `projectmind flags` — Audit feature flags: usage, staleness, coverage, cleanup
 - `projectmind secrets-life` — Secrets lifecycle management

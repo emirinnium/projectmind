@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-25
+
+Three-sprint quality & capability release driven by external audits:
+real metrics replace every remaining placeholder, the MCP surface gains
+spec-alignment hardening, and agents get temporal/symbol intelligence.
+
+### Added
+- **`git-insights <file>`**: temporal context from git — author distribution,
+  rename/refactor history (`log --follow`), recent commit subjects.
+- **`refs <file> <symbol>`**: find-all-references via the TypeScript language
+  service (type-aware, alias-tolerant position picking).
+- **`workspace`**: pnpm/npm/yarn workspace discovery, internal package
+  dependency edges with semver range sanity checks, Nx/Turborepo detection.
+- **Test impact analysis**: `analyze_impact` (MCP) `tests` flag and
+  `impact --tests` (CLI) list tests/specs inside the reverse-dependency closure.
+- **Token budgeting**: `get_context` accepts `maxTokens` and trims list
+  sections to a soft budget (~chars/4 heuristic).
+- **MCP resources** (`pm://schema`, `pm://config` secrets-masked, `pm://stats`)
+  and workflow prompts (`impact-first-refactor`, `pre-commit-checklist`,
+  `debt-triage`, `explain-file-context`).
+- **Stateless Streamable HTTP transport**: set `PROJECTMIND_HTTP_PORT` to serve
+  `POST /mcp` (JSON responses) for remote/team deployments.
+- **Tool surface profiles**: `PROJECTMIND_TOOLS=core` skips generated parity
+  tools (~45 vs ~134 tools) for clients with small active-tool budgets.
+- **PR intelligence export**: `pr-preview --format github` emits GH-flavored
+  comment markdown ready for `gh pr comment --body-file`.
+- **Coverage trend**: `test-quality` persists snapshots and reports delta vs
+  the previous run with regression warnings.
+
+### Changed
+- **Agent fingerprints are real**: computed from the actual content of
+  agent-touched files (async preference, assertion density, error-handling
+  style, naming convention); `-1/'unknown'` sentinels when unmeasurable.
+- **skill-recommend analyzes the codebase**: maps real scanned files onto
+  skills via path signals and drops skills with no evidence in the repo.
+- **Feature-flag staleness works**: lastModified from git history with mtime
+  fallback.
+- **Coupling abstractness** is computed from source (interfaces + abstract
+  classes over all type artifacts) instead of a hardcoded zero.
+- **docgen** extracts exports/JSDoc through the TypeScript compiler AST.
+- **Embeddings storage**: files table writes compact Float32 BLOBs (~45%
+  smaller than JSON text); dual-format reader converts legacy rows on rescan.
+- **Hot file refresh**: watched-file change events incrementally re-parse and
+  upsert into the knowledge graph without a full scan.
+- **sync_context pull** ranks memories by current-file relevance + recency;
+  **suggest_refactor duplication** includes persisted cross-file redundancy
+  findings.
+
+### Fixed
+- `flags countReferences` crashed at runtime under ESM (`require()` call).
+- SBOM `escapeXml` was a no-op (entities stripped) — XML injection/corruption
+  risk eliminated; UUID generation now RFC4122 v4 via node:crypto.
+- Generated contract tests import the engine from the installed package
+  instead of unresolvable path aliases.
+
+### Security
+- Single enforcement guard across the MCP surface: destructive operations
+  (`project delete`, `debt clear*`, `data-flow clear`, `trace clear`,
+  `doctor rebuild-index`) blocked via `run_cli` bridge AND generated parity
+  tools.
+- Tool annotations: read-only dedicated tools carry `readOnlyHint` +
+  `idempotentHint`; read-only CLI-root parity tools annotated automatically —
+  compliant clients stop prompting for pure queries.
+- `init-mcp`: new `claude-desktop` profile (per-OS global config), Windsurf
+  moved to the official `~/.codeium/windsurf/mcp_config.json`, explicit
+  `type: "stdio"` entries.
+- SDK floor raised to `^1.30.0` (tracking the 2026-07-28 spec line).
+
 ## [0.4.0] - 2026-08-23
 
 Full agent integration release: MCP parity generator, CLI bridge tool,
