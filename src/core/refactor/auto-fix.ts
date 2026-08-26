@@ -39,6 +39,12 @@ const FIXERS: FixerMeta[] = [
   { id: 'organize-imports', description: 'Sort imports: externals before relatives, alphabetical; comments preserved' },
   { id: 'dedupe-imports', description: 'Merge duplicate import statements from the same module' },
   { id: 'remove-unused-imports', description: 'Remove imported bindings with zero references elsewhere in the file' },
+  {
+    id: 'add-return-types',
+    description:
+      'Add explicit return types to functions/methods missing one (checker-inferred; safe primitives/Promise-of-primitive only)',
+  },
+  { id: 'var-to-const', description: 'Convert var declarations to const where provably never reassigned' },
 ];
 
 interface ImportEntry {
@@ -158,7 +164,10 @@ export class AutoFixEngine {
 
     const abs = resolve(this.projectRoot, filePath);
     const original = readFileSync(abs, 'utf-8');
-    const ids = meta ? [meta.id] : FIXERS.map((f) => f.id);
+    // Deterministic execution order: type analysis must see pre-import-fix
+    // line numbers (it reads the on-disk file), so it runs FIRST.
+    const ORDER = ['add-return-types', 'organize-imports', 'dedupe-imports', 'remove-unused-imports', 'var-to-const'];
+    const ids = (meta ? [meta.id] : FIXERS.map((f) => f.id)).sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
 
     let current = original;
     for (const id of ids) {
@@ -189,19 +198,25 @@ export class AutoFixEngine {
     const sf = ts.createSourceFile(absPath, content, ts.ScriptTarget.Latest, /*setParentNodes*/ false);
     const imports = collectImports(sf);
 
-    if (imports.length === 0) return content;
+    // Import-region guard applies ONLY to import fixers — the type/keyword
+    // fixers operate on function bodies and must run on import-less files too.
+    let firstFullStart = 0;
+    let lastEnd = 0;
+    if (fixerId === 'organize-imports' || fixerId === 'dedupe-imports' || fixerId === 'remove-unused-imports') {
+      if (imports.length === 0) return content;
 
-    // Guard: imports must form a leading block so rebuilding the region
-    // cannot reorder code around interleaved statements.
-    const firstFullStart = Math.min(...imports.map((i) => i.fullStart));
-    const beforeBlock = content.slice(0, firstFullStart);
-    if (/[^\s;]/.test(beforeBlock.replace(/^#![^\n]*/, ''))) {
-      // Code/shebang precedes the first import — only safe when it's just
-      // comments. Anything else → bail honestly.
-      const stripped = beforeBlock.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-      if (/[^\s;]/.test(stripped)) return content;
+      // Guard: imports must form a leading block so rebuilding the region
+      // cannot reorder code around interleaved statements.
+      firstFullStart = Math.min(...imports.map((i) => i.fullStart));
+      const beforeBlock = content.slice(0, firstFullStart);
+      if (/[^\s;]/.test(beforeBlock.replace(/^#![^\n]*/, ''))) {
+        // Code/shebang precedes the first import — only safe when it's just
+        // comments. Anything else → bail honestly.
+        const stripped = beforeBlock.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+        if (/[^\s;]/.test(stripped)) return content;
+      }
+      lastEnd = Math.max(...imports.map((i) => i.end));
     }
-    const lastEnd = Math.max(...imports.map((i) => i.end));
 
     switch (fixerId) {
       case 'organize-imports': {
@@ -278,6 +293,133 @@ export class AutoFixEngine {
         }
         if (!removedAny) return content;
         return content.slice(0, firstFullStart) + survivors.join('\n') + content.slice(lastEnd);
+      }
+
+      case 'add-return-types': {
+        // Only safe, self-contained return types are written. Anything that
+        // would require an import (dotted names), resolve to any/unknown,
+        // or form complex unions is skipped rather than guessed.
+        const SAFE_RETURN =
+          /^(void|undefined|null|boolean|string|number|bigint|Promise<void>|Promise<undefined>|Promise<boolean>|Promise<string>|Promise<number>)$/;
+
+        // Pass A — checker over the on-disk file (this fixer runs first).
+        let diskSf: ts.SourceFile | undefined;
+        const inferred = new Map<string, string>(); // `${line}:${name}` -> type
+        try {
+          const program = ts.createProgram([absPath], {
+            strict: false,
+            noEmit: true,
+            allowJs: true,
+            target: ts.ScriptTarget.Latest,
+            skipLibCheck: true,
+          });
+          const checker = program.getTypeChecker();
+          diskSf = program.getSourceFile(absPath);
+          if (!diskSf) return content;
+
+          const record = (fn: ts.FunctionLikeDeclaration): void => {
+            if (!fn.name || ts.isComputedPropertyName(fn.name)) return;
+            const sig = checker.getSignatureFromDeclaration(fn);
+            if (!sig) return;
+            const rt = checker.getReturnTypeOfSignature(sig);
+            const typeStr = checker.typeToString(rt, undefined, ts.TypeFormatFlags.NoTruncation);
+            if (!SAFE_RETURN.test(typeStr)) return; // unsafe -> honest skip
+            const line = diskSf!.getLineAndCharacterOfPosition(fn.getStart(diskSf!)).line + 1;
+            inferred.set(`${line}:${fn.name.getText(diskSf!)}`, typeStr);
+          };
+          const collect = (node: ts.Node): void => {
+            if (
+              (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) &&
+              node.body &&
+              !node.type && // already annotated
+              node.name
+            ) {
+              record(node);
+            }
+            ts.forEachChild(node, collect);
+          };
+          collect(diskSf);
+        } catch {
+          return content; // compiler setup failed — never guess
+        }
+
+        // Pass B — apply insertions against CURRENT content positions.
+        const cur = ts.createSourceFile(absPath, content, ts.ScriptTarget.Latest, false);
+        const edits: Array<{ start: number; end: number; text: string }> = [];
+        const applyPositions = (node: ts.Node): void => {
+          if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) && node.body && !node.type && node.name && !ts.isComputedPropertyName(node.name)) {
+            const line = cur.getLineAndCharacterOfPosition(node.getStart(cur)).line + 1;
+            const t = inferred.get(`${line}:${node.name.getText(cur)}`);
+            if (t) {
+              // Insert right after the parameter list's closing paren.
+              let idx = node.parameters.end;
+              while (idx < content.length && content[idx] !== ')') idx++;
+              if (idx < content.length) edits.push({ start: idx + 1, end: idx + 1, text: `: ${t}` });
+            }
+          }
+          ts.forEachChild(node, applyPositions);
+        };
+        applyPositions(cur);
+
+        if (edits.length === 0) return content;
+        let out = content;
+        for (const e of edits.sort((a, b) => b.start - a.start)) {
+          out = out.slice(0, e.start) + e.text + out.slice(e.end);
+        }
+        return out;
+      }
+
+      case 'var-to-const': {
+        const cur = ts.createSourceFile(absPath, content, ts.ScriptTarget.Latest, false);
+        interface VarCandidate {
+          kwPos: number;
+          stmtStart: number;
+          stmtEnd: number;
+          names: string[];
+        }
+        const candidates: VarCandidate[] = [];
+        const visit = (node: ts.Node): void => {
+          if (ts.isVariableStatement(node) && !(node.declarationList.flags & ts.NodeFlags.BlockScoped)) {
+            // var only (let/const are BlockScoped). All bindings need an
+            // initializer and a plain identifier name.
+            const decls = node.declarationList.declarations;
+            if (decls.length > 0 && decls.every((d) => d.initializer !== undefined && ts.isIdentifier(d.name))) {
+              candidates.push({
+                kwPos: node.declarationList.getStart(cur),
+                stmtStart: node.getStart(cur),
+                stmtEnd: node.getEnd(),
+                names: decls.map((d) => d.name.getText(cur)),
+              });
+            }
+          }
+          ts.forEachChild(node, visit);
+        };
+        visit(cur);
+        if (candidates.length === 0) return content;
+
+        // Mask candidate statements themselves so their own initializer '='
+        // does not count as a reassignment of the declared name.
+        let masked = content.split('');
+        for (const c of candidates) {
+          for (let i = c.stmtStart; i < c.stmtEnd && i < masked.length; i++) masked[i] = ' ';
+        }
+        const maskedText = masked.join('');
+
+        const convertible = candidates.filter((c) =>
+          c.names.every((nm) => {
+            const reassign = new RegExp(`\\b${nm.replace(/\$/g, '\\$')}\\b\\s*(=[^=]|\\+=|-=|\\*=|/=|%=|\\+\\+|--)`);
+            return !reassign.test(maskedText);
+          })
+        );
+        if (convertible.length === 0) return content;
+
+        let out = content;
+        for (const c of convertible.sort((a, b) => b.kwPos - a.kwPos)) {
+          if (content.slice(c.kwPos, c.kwPos + 3) === 'var') {
+            out = out.slice(0, c.kwPos) + 'const' + out.slice(c.kwPos + 3);
+          }
+        }
+        return out !== content ? out : content;
       }
 
       default:

@@ -1,6 +1,7 @@
 import { getStatement } from '../database.js';
 import { getAllFiles } from './helpers/index.js';
 import type { KgContext } from './helpers/context.js';
+import { isTestPath } from '../../utils/test-detection.js';
 
 export interface GraphNode {
   id: number;
@@ -63,18 +64,23 @@ export class GraphTraversal {
   private adjacencyList: Map<number, Set<number>> = new Map();
   private reverseAdjacency: Map<number, Set<number>> = new Map();
   private nodeMap: Map<number, GraphNode> = new Map();
+  /** File ids that look like test/spec files (isTestPath). */
+  private testFiles: Set<number> = new Set();
   private built = false;
 
   constructor(private ctx: KgContext) {}
 
   /**
    * Build the in-memory graph from the database.
+   * Import edges originating FROM a test file are typed 'tested-by' —
+   * they represent "this source file is exercised by this test".
    */
   build(): void {
     if (this.built) return;
 
     const files = getAllFiles(this.ctx);
     for (const f of files) {
+      if (f.relativePath && isTestPath(f.relativePath)) this.testFiles.add(f.id);
       this.nodeMap.set(f.id, {
         id: f.id,
         path: f.path,
@@ -386,7 +392,7 @@ export class GraphTraversal {
       const nextFrontier = new Set<number>();
       for (const nodeId of frontier) {
         for (const neighborId of this.adjacencyList.get(nodeId) ?? []) {
-          edges.push({ from: nodeId, to: neighborId, type: 'imports', weight: 1 });
+          edges.push({ from: nodeId, to: neighborId, type: this.edgeTypeFor(nodeId), weight: 1 });
           if (!included.has(neighborId)) {
             included.add(neighborId);
             nextFrontier.add(neighborId);
@@ -410,6 +416,26 @@ export class GraphTraversal {
     }
 
     return { center, nodes, edges, radius: hops };
+  }
+
+  /** Edge semantic: imports from a test file mean "tested-by". */
+  private edgeTypeFor(fromId: number): GraphEdge['type'] {
+    return this.testFiles.has(fromId) ? 'tested-by' : 'imports';
+  }
+
+  /**
+   * Direct tests exercising a file = reverse-neighbors that are test files.
+   */
+  getTestsFor(fileId: number): GraphNode[] {
+    this.build();
+    const tests: GraphNode[] = [];
+    for (const dependentId of this.reverseAdjacency.get(fileId) ?? []) {
+      if (this.testFiles.has(dependentId)) {
+        const node = this.nodeMap.get(dependentId);
+        if (node) tests.push(node);
+      }
+    }
+    return tests;
   }
 
   /**

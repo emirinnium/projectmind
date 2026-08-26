@@ -116,6 +116,7 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
             if (args.action === 'impact') {
               await progress(50, 100, 'computing impact radius');
               const ir = g.getImpactRadius(f.id);
+              const tests = g.getTestsFor(f.id);
               await progress(100, 100, 'done');
               return json({
                 success: true,
@@ -124,6 +125,11 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
                 directDependents: ir.direct,
                 transitiveDependents: ir.transitive,
                 affected: ir.affected.slice(0, Math.max(1, args.limit)).map((n) => ({ path: n.relativePath || n.path, load: n.cognitiveLoad })),
+                tests: {
+                  count: tests.length,
+                  files: tests.slice(0, Math.max(1, args.limit)).map((n) => n.relativePath || n.path),
+                  note: 'Direct test files importing this source — run these after changing it.',
+                },
               });
             }
             await progress(50, 100, `BFS depth ${args.hops}`);

@@ -1,5 +1,6 @@
 import type { KnowledgeGraph } from '../../storage/knowledge-graph.js';
 import type { FileInfo } from '../../storage/kg/types.js';
+import { isTestPath } from '../../utils/test-detection.js';
 
 /**
  * Smart Context Assembler v1.
@@ -30,11 +31,6 @@ export interface SmartContextResult {
   items: SmartContextItem[];
   consideredFiles: number;
   note: string;
-}
-
-/** Test-file detection consistent with analyze_impact --tests. */
-function isTestPath(relPath: string): boolean {
-  return /(\.(test|spec)\.[tj]sx?$)|([\\/](tests?|__tests__)[\\/])|(\.spec\.)/i.test(relPath);
 }
 
 const MAX_TOKENS_PER_ITEM = 90; // ~chars reserved per serialized entry

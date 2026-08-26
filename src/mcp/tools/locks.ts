@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
+import { predictMergeRisk } from '../../core/coordination/risk.js';
 
 /**
  * agent_locks — multi-agent coordination surface.
@@ -82,10 +83,21 @@ export function registerAgentLocksTool(server: McpServer, deps: McpDependencies)
           case 'check': {
             if (!args.files || args.files.length === 0) return json({ success: false, error: "action='check' requires files (array)." });
             const report = kg.checkFileConflicts(args.files.slice(0, 100), args.agentName);
+            // Merge-risk prediction: even with zero lock conflicts, my edits
+            // can collide with another agent's territory through the
+            // dependency graph. Surface that before work starts.
+            const risk = predictMergeRisk(kg, {
+              myFiles: args.files.map((f) => f.split('\\').join('/')),
+              otherHeldFiles: report.conflicts.map((c) => c.filePath),
+            });
             return json({
               success: true,
               ...report,
-              verdict: report.conflicts.length === 0 ? 'clear — safe to proceed' : `${report.conflicts.length} conflict(s) — coordinate before editing`,
+              risk,
+              verdict:
+                report.conflicts.length === 0 && risk.level === 'low'
+                  ? 'clear — safe to proceed'
+                  : `conflicts: ${report.conflicts.length}, merge-risk: ${risk.level} — coordinate before editing`,
             });
           }
         }
