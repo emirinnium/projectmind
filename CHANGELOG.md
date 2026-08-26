@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-26
+
+From analysis to action: agents get progress feedback during long operations,
+real graph algorithms over the knowledge graph, live file watching, task-aware
+context ranking, code that actually changes (auto-fix), multi-agent file
+coordination with merge-risk prediction, a local web dashboard, and semantic
+team-memory search — plus a critical data-integrity migration.
+
+### Added
+- **MCP progress notifications** (`notifications/progress`): throttled stage
+  updates for `scan_project` and `debt_report resolveAfter`; clients that
+  pass `_meta.progressToken` see "import analysis 250/1000" style messages.
+- **`kg_query` MCP tool**: real graph algorithms — `pagerank` (critical
+  files), `communities`, N-hop `subgraph`, shortest import `path`,
+  `impact` (with direct test files via new tested-by edges), `bfs`, `stats`.
+- **`pm watch`**: recursive fs.watch daemon; debounced single-file re-parse +
+  knowledge-graph upsert + coherence-cache invalidation per touched file.
+- **Smart Context**: optional `task` parameter on `get_context` adds a ranked
+  `smartContext` section (direct dependents, blast radius, tests, semantic
+  neighbors, task keywords) with per-item reasons and token-budget capping.
+- **Auto-Fix Engine** (`pm refactor autofix <file> [--apply]`): five
+  AST-based fixers — organize-imports, dedupe-imports, remove-unused-imports,
+  add-return-types (checker-inferred, safe-primitive whitelist, honest skips),
+  var-to-const (provably never reassigned). Diff preview by default.
+- **Multi-agent coordination**: `agent_file_locks` table (TTL-expiring) and
+  the `agent_locks` MCP tool (`acquire`/`release`/`list`/`check`) so parallel
+  agents stop colliding silently.
+- **Merge-conflict prediction**: `agent_locks check` now returns a `risk`
+  verdict (low/medium/high) computed from blast-radius closure overlap and
+  shared-dependency direction between competing edit sets.
+- **AST clone detection** (`pm dedup --mode ast`): Type-2 fingerprinting
+  (rename-tolerant function-level clones) across indexed files.
+- **`pm serve`**: zero-dependency local web dashboard — live metrics cards,
+  PageRank list, SVG graph mini-map on http://127.0.0.1:7788.
+- **Semantic team-memory search**: `pm memory search "<query>"` and the
+  `search_team_memories` MCP tool — cosine-ranked RAG v1 over team memories,
+  offline-capable, auto-upgrades with stronger embedding providers.
+
+### Changed
+- `scan_project` uses full scan profiles (real duration/files-per-second/
+  memory stats persisted) and honors its previously-dead `full` parameter.
+- Tool annotations completed: human-readable `title` fallback,
+  `destructiveHint: false` + `openWorldHint: false` for read-only tools
+  (LLM/network tools keep conservative defaults).
+- Resource/prompt registration retries once with detailed error reporting.
+- Graceful shutdown ends exactly the session this server process opened
+  (no more multi-instance session leaks).
+- Deterministic auto-fixer execution order; type analysis reads pre-fix lines.
+
+### Fixed
+- **Critical (migration v6)**: `store_team_memory` upsert never worked on
+  databases created before the `UNIQUE(scope, key)` constraint existed —
+  every call failed with "ON CONFLICT clause does not match". Automatic
+  rebuild-with-dedup migration applied on startup.
+- Knowledge-graph direction bugs: `extractSubgraph` now expands BOTH
+  directions (dependents were invisible before — 1 node became 69 on real
+  data); `getImpactRadius` traverses reverse dependencies instead of
+  counting the file's own imports; SQL double-negative typo cleaned.
+- Statement cache no longer hands out statements prepared against a closed/
+  previous database after re-initialization (per-instance WeakMap LRU).
+- HTTP mode: optional `PROJECTMIND_HTTP_TOKEN` auth (timing-safe compare)
+  and per-IP sliding-window rate limiting (`PROJECTMIND_HTTP_RATE_LIMIT`,
+  default 120/min, 429 + Retry-After).
+
+### Security
+- Loopback-bound HTTP endpoint warns loudly when unauthenticated and rejects
+  oversized payloads as before; tokens compared in constant time.
+
 ## [0.6.0] - 2026-08-25
 
 Agent workflow enforcement and editor-native intelligence: ProjectMind stops
