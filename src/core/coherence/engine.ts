@@ -44,6 +44,15 @@ export class CoherenceEngine {
     return this.offline;
   }
 
+  /**
+   * Drop every cached coherence verdict for a file path (any code hash,
+   * fast and deep). Call when a file changes on disk so the next check
+   * analyzes fresh content instead of serving a stale verdict.
+   */
+  invalidateFileCache(filePath: string): number {
+    return this.cache.invalidateFile(filePath);
+  }
+
   async checkCoherence(options: CoherenceCheckOptions): Promise<CoherenceResult> {
     const cacheKey = this.cache.makeKey(options.code, options.filePath, options.deepAnalysis ?? false);
 

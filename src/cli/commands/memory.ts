@@ -1,8 +1,9 @@
 import { Command } from 'commander';
 import { withContext, asyncHandler, output } from '@/cli/utils/shared.js';
+import { searchTeamMemoriesSemantic } from '@/core/memory/semantic-memory.js';
 
 export function createMemoryCommand(): Command {
-  return new Command('memory')
+  const memoryCmd = new Command('memory')
     .description('Read or write agent memory')
     .argument('[scope]', 'Memory scope (e.g., module name, file path)')
     .argument('[key]', 'Memory key')
@@ -12,6 +13,7 @@ export function createMemoryCommand(): Command {
       await withContext(async (ctx) => {
         if (!scope) {
           output.info('Usage: projectmind memory <scope> [key] [-s "value"] [-S session-id]');
+          output.info('       projectmind memory search "<natural language query>" [--limit N] [--agent name]');
           return;
         }
 
@@ -36,4 +38,36 @@ export function createMemoryCommand(): Command {
         }
       });
     }));
+
+  memoryCmd
+    .command('search <query>')
+    .description('Semantic search over team memories (RAG-style, works offline)')
+    .option('--limit <n>', 'Max hits', '5')
+    .option('--threshold <n>', 'Cosine floor (lower = broader)', '0.05')
+    .option('--agent <name>', 'Filter by author agent after ranking')
+    .action(asyncHandler(async (query: string, opts: { limit?: string; threshold?: string; agent?: string }) => {
+      await withContext(async (ctx) => {
+        const result = await searchTeamMemoriesSemantic(
+          () => ctx.kg.getAllTeamMemories(opts.agent || 'unknown'),
+          {
+            query,
+            limit: Math.max(1, parseInt(opts.limit ?? '5', 10) || 5),
+            threshold: parseFloat(opts.threshold ?? '0.05') || 0.05,
+            ...(opts.agent ? { agentName: opts.agent } : {}),
+          }
+        );
+        output.section(`Semantic Memory Search`);
+        output.kv('Query', result.query);
+        output.kv('Scanned / returned', `${result.scanned} / ${result.returned}`);
+        if (result.hits.length === 0) {
+          output.info('No memories above threshold.');
+          return;
+        }
+        for (const hit of result.hits) {
+          output.kv(`${hit.score.toFixed(3)} [${hit.scope}/${hit.key}] by ${hit.agentName}`, hit.preview);
+        }
+      });
+    }));
+
+  return memoryCmd;
 }

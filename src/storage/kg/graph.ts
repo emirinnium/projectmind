@@ -4,6 +4,7 @@ import { SCHEMA_SQL } from '../schema.js';
 import { FileStructure } from '../../parser/ast-parser.js';
 import type { FileInfo, MemoryEntry, AgentSession } from './types.js';
 import type { KgContext } from './helpers/context.js';
+import { createGraphTraversal } from './graph-traversal.js';
 
 import {
   ensureDefaultProject,
@@ -47,8 +48,21 @@ import {
   getMemory,
   storeTeamMemory,
   getTeamMemories,
+  getAllTeamMemories,
   getAgentSessions,
 } from './helpers/agents.js';
+
+import {
+  purgeExpiredLocks,
+  acquireFileLock,
+  releaseFileLock,
+  getActiveLocks,
+  checkFileConflicts,
+  type FileLock,
+  type AcquireResult,
+  type ReleaseResult,
+  type ConflictReport,
+} from './helpers/locks.js';
 
 import {
   getDependents,
@@ -71,6 +85,8 @@ import {
 export class KnowledgeGraph {
   readonly db: DatabaseSync;
   protected currentProjectId: number = 1;
+  /** Cached in-memory traversal engine (invalidated via getGraphTraversal(true)). */
+  private _traversal: ReturnType<typeof createGraphTraversal> | null = null;
 
   private get ctx(): KgContext {
     return { db: this.db, currentProjectId: this.currentProjectId };
@@ -81,6 +97,19 @@ export class KnowledgeGraph {
     this.db.exec(SCHEMA_SQL);
     this.ensureDefaultProject();
     this.loadCurrentProjectId();
+  }
+
+  /**
+   * In-memory graph algorithms (BFS, shortest path, PageRank, community
+   * detection, N-hop subgraph) over the current import graph.
+   * The adjacency build is cached; pass forceRebuild=true after bulk graph
+   * mutations (full scan, watcher refresh) so results never read stale edges.
+   */
+  getGraphTraversal(forceRebuild = false): ReturnType<typeof createGraphTraversal> {
+    if (!this._traversal || forceRebuild) {
+      this._traversal = createGraphTraversal(this.ctx);
+    }
+    return this._traversal;
   }
 
   ensureDefaultProject(): void {
@@ -251,8 +280,38 @@ export class KnowledgeGraph {
     return getTeamMemories(this.ctx, params);
   }
 
+  /** Cross-scope team memories visible to the viewer (public + own). */
+  getAllTeamMemories(viewerAgentName: string): { id: number; agentName: string; scope: string; key: string; value: string; isPublic: boolean; createdAt: string; updatedAt: string }[] {
+    return getAllTeamMemories(this.ctx, viewerAgentName);
+  }
+
   getAgentSessions(agentName?: string, limit: number = 50): AgentSession[] {
     return getAgentSessions(this.ctx, agentName, limit);
+  }
+
+  // ===== Multi-Agent File Locks (advisory, TTL-expiring) =====
+  purgeExpiredLocks(): number {
+    return purgeExpiredLocks(this.ctx);
+  }
+
+  acquireFileLock(
+    filePath: string,
+    agentName: string,
+    options: { ttlMinutes?: number; reason?: string } = {}
+  ): AcquireResult {
+    return acquireFileLock(this.ctx, filePath, agentName, options);
+  }
+
+  releaseFileLock(filePath: string, agentName: string): ReleaseResult {
+    return releaseFileLock(this.ctx, filePath, agentName);
+  }
+
+  getActiveLocks(agentName?: string): FileLock[] {
+    return getActiveLocks(this.ctx, agentName);
+  }
+
+  checkFileConflicts(filePaths: string[], agentName: string): ConflictReport {
+    return checkFileConflicts(this.ctx, filePaths, agentName);
   }
 
   // ===== Import/Dependency Analysis Methods =====

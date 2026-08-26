@@ -250,6 +250,17 @@ CREATE INDEX IF NOT EXISTS idx_data_flows_from ON data_flows(from_resource_id);
 CREATE INDEX IF NOT EXISTS idx_data_flows_to ON data_flows(to_resource_id);
 CREATE INDEX IF NOT EXISTS idx_data_flows_kind ON data_flows(kind);
 
+-- Multi-agent coordination: advisory file locks (soft, TTL-expiring).
+CREATE TABLE IF NOT EXISTS agent_file_locks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_path TEXT NOT NULL,
+  agent_name TEXT NOT NULL,
+  reason TEXT,
+  acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP NOT NULL,
+  UNIQUE(file_path)
+);
+
 CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
 CREATE INDEX IF NOT EXISTS idx_files_hash ON files(hash);
 CREATE INDEX IF NOT EXISTS idx_files_touched ON files(agent_touched);

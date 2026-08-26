@@ -64,7 +64,20 @@ export function getTeamMemories(ctx: KgContext, params: { scope: string; agentNa
      WHERE scope = ? AND (is_public = 1 OR agent_name = ?)
      ORDER BY updated_at DESC`).all(params.scope, params.agentName) as Record<string, unknown>[];
 
-  return rows.map((r) => ({
+  return rows.map(mapTeamMemoryRow);
+}
+
+/** Cross-scope retrieval for semantic search: everything the viewer may see. */
+export function getAllTeamMemories(ctx: KgContext, viewerAgentName: string): { id: number; agentName: string; scope: string; key: string; value: string; isPublic: boolean; createdAt: string; updatedAt: string }[] {
+  const rows = getStatement(`SELECT * FROM team_memories
+     WHERE is_public = 1 OR agent_name = ?
+     ORDER BY updated_at DESC
+     LIMIT 2000`).all(viewerAgentName) as Record<string, unknown>[];
+  return rows.map(mapTeamMemoryRow);
+}
+
+function mapTeamMemoryRow(r: Record<string, unknown>): { id: number; agentName: string; scope: string; key: string; value: string; isPublic: boolean; createdAt: string; updatedAt: string } {
+  return {
     id: r.id as number,
     agentName: r.agent_name as string,
     scope: r.scope as string,
@@ -73,7 +86,7 @@ export function getTeamMemories(ctx: KgContext, params: { scope: string; agentNa
     isPublic: (r.is_public as number) === 1,
     createdAt: r.created_at as string,
     updatedAt: r.updated_at as string,
-  }));
+  };
 }
 
 export function getAgentSessions(ctx: KgContext, agentName?: string, limit: number = 50): AgentSession[] {

@@ -14,10 +14,22 @@ import type { McpDependencies } from './tools/types.js';
 
 let _db: DatabaseSync | null = null;
 let _deps: McpDependencies | null = null;
+/** Session row created by THIS server process (ended on graceful shutdown). */
+let _mcpSessionId: number | null = null;
 
 export function getDependencies(): McpDependencies {
   if (!_deps) throw new Error('Dependencies not initialized');
   return _deps;
+}
+
+/**
+ * The agent-session id this server process opened at startup
+ * ('mcp-client'). Graceful shutdown ends exactly this row instead of
+ * "the latest mcp-client session", which leaked sessions when multiple
+ * server instances shared one database.
+ */
+export function getMcpSessionId(): number | null {
+  return _mcpSessionId;
 }
 
 export async function initializeDependencies(): Promise<McpDependencies> {
@@ -51,6 +63,7 @@ export async function initializeDependencies(): Promise<McpDependencies> {
   }
 
   const sessionId = kg.startAgentSession('mcp-client');
+  _mcpSessionId = sessionId;
   logger.info(`MCP agent session started: ${sessionId}`);
 
   if (config.scanOnStartup !== false) {

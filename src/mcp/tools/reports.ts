@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
+import { createProgressReporter } from './progress.js';
 
 export function registerDebtReportTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -12,12 +13,16 @@ export function registerDebtReportTool(server: McpServer, deps: McpDependencies)
         resolveAfter: z.boolean().default(false).describe('Also run analysis before reporting'),
       },
     },
-    async (args) => {
+    async (args, extra) => {
+      const progress = createProgressReporter(extra, 'debt_report');
       try {
         if (args.resolveAfter) {
+          await progress(5, 100, 'running full debt detection (redundancy, pattern drift, architecture)');
           await deps.debt.detectDebt();
+          await progress(90, 100, 'detection complete, building report');
         }
         const report = deps.debt.getReport();
+        await progress(100, 100, 'done');
         return {
           content: [{ type: 'text', text: JSON.stringify(report, null, 2) }],
         };

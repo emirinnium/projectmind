@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { trackAgentAccess } from './types.js';
+import { assembleSmartContext } from '../../core/context/smart-assembler.js';
 
 export function registerGetContextTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -21,6 +22,7 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
         includeDependents: z.boolean().default(true).describe('Include reverse dependencies (files that import this file)'),
         includeSimilar: z.boolean().default(true).describe('Include similar files based on embeddings'),
         maxTokens: z.number().optional().describe('Soft token budget (~chars/4). When set, list sections are trimmed to fit.'),
+        task: z.string().optional().describe('What you are about to do (e.g. "add rate limiting to login endpoint"). When set, a ranked smartContext section is added — files to look at next, with per-item reasons.'),
       },
     },
     async (args) => {
@@ -128,6 +130,20 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
                 },
                 circularDependencies: fileCycles,
                 patterns: file.patterns || [],
+                // Task-aware ranked "what to look at next" section. Only
+                // present when the caller passed a task string.
+                ...(args.task
+                  ? {
+                      smartContext: assembleSmartContext(deps.kg, {
+                        fileId: file.id,
+                        relativePath: file.relativePath,
+                        cognitiveLoad: file.cognitiveLoad,
+                        task: args.task,
+                        maxTokens: args.maxTokens,
+                        limit: Math.max(itemCap, 8),
+                      }),
+                    }
+                  : {}),
               }, null, 2),
             },
           ],

@@ -53,7 +53,9 @@ const DEDICATED_READ_ONLY = new Set([
   'get_memory',
   'get_resource_flows',
   'get_team_memories',
+  'kg_query',
   'list_projects',
+  'search_team_memories',
   'resolve_import',
   'resolve_path',
   'scale_report',
@@ -62,8 +64,36 @@ const DEDICATED_READ_ONLY = new Set([
 ]);
 
 /**
+ * Read-only tools that may reach the OUTSIDE world (cloud LLM, external
+ * embedding providers). Per MCP spec openWorldHint defaults to true, so we
+ * simply skip setting it false for these instead of special-casing later.
+ */
+const READ_ONLY_OPEN_WORLD_EXCEPTIONS = new Set(['check_coherence', 'generate_embedding']);
+
+/** Parity roots that may reach the outside world (deps-fresh --audit → npm registry). */
+const PARITY_OPEN_WORLD_EXCEPTIONS = new Set(['deps-fresh']);
+
+/** 'analyze_impact' -> 'Analyze Impact' (annotation title fallback). */
+function humanizeToolName(name: string): string {
+  return name
+    .split(/[_-]/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/**
  * Wrap server.registerTool so every DEDICATED registration made after this
  * call receives correct annotations without touching each tool file.
+ *
+ * Read-only tools get the full hint set:
+ * - readOnlyHint + idempotentHint  → clients can skip approval dialogs
+ * - destructiveHint: false         → explicitly non-destructive (spec default
+ *                                    is true when readOnlyHint is false!)
+ * - openWorldHint: false           → local-only analysis (except LLM/network
+ *                                    tools listed in READ_ONLY_OPEN_WORLD_EXCEPTIONS)
+ * - title                          → human-readable label when the tool file
+ *                                    did not define one
  */
 export function annotateToolRegistration(server: McpServer): void {
   const target = server as unknown as {
@@ -72,7 +102,15 @@ export function annotateToolRegistration(server: McpServer): void {
   const original = target.registerTool.bind(server);
   target.registerTool = (name, cfg, ...rest) => {
     if (DEDICATED_READ_ONLY.has(name)) {
-      cfg.annotations = { readOnlyHint: true, idempotentHint: true, ...(cfg.annotations ?? {}) };
+      const openWorld = !READ_ONLY_OPEN_WORLD_EXCEPTIONS.has(name);
+      cfg.annotations = {
+        ...(cfg.title ? {} : { title: humanizeToolName(name) }),
+        readOnlyHint: true,
+        idempotentHint: true,
+        destructiveHint: false,
+        ...(openWorld ? { openWorldHint: false } : {}),
+        ...(cfg.annotations ?? {}),
+      };
     }
     return original(name, cfg, ...rest);
   };
@@ -94,22 +132,34 @@ const PARITY_READ_ONLY_ROOTS = new Set([
   'sbom', 'deps-fresh', 'secrets-life',
 ]);
 
-/** Annotations for a parity tool identified by its CLI path, if read-only. */
-export function parityAnnotations(path: string[]): { readOnlyHint: boolean; idempotentHint: boolean } | undefined {
+/** Full annotation set for a parity tool identified by its CLI path, if read-only. */
+export function parityAnnotations(path: string[]): {
+  readOnlyHint: boolean;
+  idempotentHint: boolean;
+  destructiveHint: boolean;
+  openWorldHint?: boolean;
+} | undefined {
   if (path.length > 0 && PARITY_READ_ONLY_ROOTS.has(path[0])) {
-    return { readOnlyHint: true, idempotentHint: true };
+    const openWorld = !PARITY_OPEN_WORLD_EXCEPTIONS.has(path[0]);
+    return {
+      readOnlyHint: true,
+      idempotentHint: true,
+      destructiveHint: false,
+      ...(openWorld ? { openWorldHint: false } : {}),
+    };
   }
   return undefined;
 }
 
 /**
- * Tool surface profile. `PROJECTMIND_TOOLS=all` (default) registers the full
- * surface including generated pm_* parity tools (~130 total).
- * `PROJECTMIND_TOOLS=core` skips parity tools (~45 tools) so clients with a
- * small active-tool budget (e.g. Cursor's limit) can use ProjectMind.
+ * Tool surface profile. `PROJECTMIND_TOOLS=all` registers the full surface
+ * including generated pm_* parity tools (~130 total).
+ * `PROJECTMIND_TOOLS=core` (DEFAULT) skips parity tools (~45 tools) so clients
+ * with a small active-tool budget (e.g. Cursor's limit) can use ProjectMind.
  * The run_cli bridge always remains available as escape hatch.
+ * Set `PROJECTMIND_TOOLS=all` to enable the full parity surface.
  */
 export function shouldRegisterParityTools(): boolean {
-  const profile = (process.env.PROJECTMIND_TOOLS || 'all').trim().toLowerCase();
-  return profile !== 'core';
+  const profile = (process.env.PROJECTMIND_TOOLS || 'core').trim().toLowerCase();
+  return profile === 'all';
 }

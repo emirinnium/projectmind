@@ -68,7 +68,9 @@ export async function buildProgram(): Promise<Command> {
     { path: './commands/structural-search.js', name: 'createStructuralSearchCommand' },
     { path: './commands/embed.js', name: 'createEmbedCommand' },
     { path: './commands/taint.js', name: 'createTaintCommand' },
-    { path: './commands/init-mcp.js', name: 'createInitMcpCommand' }
+    { path: './commands/init-mcp.js', name: 'createInitMcpCommand' },
+    { path: './commands/watch.js', name: 'createWatchCommand' },
+    { path: './commands/serve.js', name: 'createServeCommand' }
   ];
 
   for (const { path, name } of modules) {

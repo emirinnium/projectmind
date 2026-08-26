@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { asyncHandler, output } from '@/cli/utils/shared.js';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { AutoFixEngine } from '@/core/refactor/auto-fix.js';
 
 export function createRefactorCommand(): Command {
   const refactorCmd = new Command('refactor')
@@ -86,6 +87,36 @@ export function createRefactorCommand(): Command {
       } else {
         output.warn(`Potentially unused: ${unused.join(', ')}`);
         output.info('Verify manually before removing');
+      }
+    }));
+
+  refactorCmd
+    .command('autofix <file>')
+    .description('AST-based mechanical fixes with diff preview (preview-only unless --apply)')
+    .option('--fixer <id>', 'organize-imports | dedupe-imports | remove-unused-imports | all', 'all')
+    .option('--apply', 'Write changes to disk (default: preview only)')
+    .action(asyncHandler(async (file: string, opts: { fixer?: string; apply?: boolean }) => {
+      const engine = new AutoFixEngine(process.cwd());
+
+      if (!opts.fixer || opts.fixer === 'list') {
+        output.section('Available Fixers');
+        for (const f of engine.listFixers()) output.kv(f.id, f.description);
+        return;
+      }
+
+      const result = engine.run(opts.fixer ?? 'all', file, { write: !!opts.apply });
+
+      output.section(`AutoFix: ${file}`);
+      output.kv('Fixer', result.fixer);
+      if (!result.changed) {
+        output.success(result.reason ?? 'nothing to do');
+        return;
+      }
+      console.log(result.diff ?? '');
+      if (result.written) {
+        output.success('Applied (written to disk). Review with your VCS before committing.');
+      } else {
+        output.warn('PREVIEW ONLY — re-run with --apply to persist.');
       }
     }));
 

@@ -162,6 +162,45 @@ export const migrations: Migration[] = [
       db.exec('DROP TABLE IF EXISTS team_memories;');
     },
   },
+  {
+    version: 6,
+    name: 'team_memories_unique_scope_key',
+    up: (db: DatabaseSync) => {
+      // Databases created by migration v5 lack the UNIQUE(scope, key)
+      // constraint declared in SCHEMA_SQL, which storeTeamMemory's
+      // upsert relies on ("ON CONFLICT clause does not match..." error).
+      // SQLite cannot ADD CONSTRAINT — rebuild the table:
+      // dedupe (keep newest updated_at), recreate with constraint, copy back.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS team_memories_migrated (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          agent_name TEXT NOT NULL,
+          scope TEXT NOT NULL,
+          key TEXT NOT NULL,
+          value TEXT NOT NULL,
+          is_public BOOLEAN DEFAULT 1,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(scope, key)
+        );
+        INSERT OR REPLACE INTO team_memories_migrated (id, agent_name, scope, key, value, is_public, created_at, updated_at)
+          SELECT id, agent_name, scope, key, value, is_public, created_at, updated_at FROM team_memories
+          WHERE id IN (
+            SELECT id FROM (
+              SELECT id, ROW_NUMBER() OVER (PARTITION BY scope, key ORDER BY updated_at DESC, id DESC) AS rn FROM team_memories
+            ) WHERE rn = 1
+          );
+        DROP TABLE team_memories;
+        ALTER TABLE team_memories_migrated RENAME TO team_memories;
+        CREATE INDEX IF NOT EXISTS idx_team_memories_scope ON team_memories(scope);
+        CREATE INDEX IF NOT EXISTS idx_team_memories_agent ON team_memories(agent_name);
+      `);
+    },
+    down: (db: DatabaseSync) => {
+      // Cannot restore pre-constraint duplicates; keep data as-is.
+      void db;
+    },
+  },
 ];
 
 export function getCurrentSchemaVersion(db: DatabaseSync): number {

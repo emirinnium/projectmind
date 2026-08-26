@@ -6,9 +6,11 @@ import { registerStoreMemoryTool, registerGetMemoryTool } from '../memory.js';
 import { registerDebtReportTool, registerScaleReportTool, registerGenomeScoreTool } from '../reports.js';
 import { registerScanProjectTool, registerStartSessionTool, registerEndSessionTool, registerGetAgentSessionsTool } from '../project.js';
 import { registerTraceImportsTool, registerFindCircularDepsTool, registerResolveImportTool, registerGetDependentsTool, registerGetDependencyGraphTool } from '../imports.js';
+import { registerGraphQueryTool } from '../graph.js';
 import { registerResolvePathTool, registerFindFileByImportTool } from '../paths.js';
 import { registerCheckArchitectureTool, registerAnalyzeImpactTool, registerSuggestRefactorTool } from '../architecture.js';
 import { registerFileWatchTool, registerGetFileStatusTool, registerSyncContextTool, registerUnregisterFileWatchTool } from '../sync.js';
+import { registerAgentLocksTool } from '../locks.js';
 import { registerIngestTraceTool } from '../trace.js';
 import { registerStructuralSearchTool } from '../structural-search.js';
 import { registerProjectTools } from '../projects.js';
@@ -47,6 +49,9 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   registerGetDependentsTool(server, deps);
   registerGetDependencyGraphTool(server, deps);
 
+  // Graph algorithms (PageRank, communities, subgraph, shortest path)
+  registerGraphQueryTool(server, deps);
+
   // Path resolution tools
   registerResolvePathTool(server, deps);
   registerFindFileByImportTool(server, deps);
@@ -61,6 +66,9 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   registerGetFileStatusTool(server, deps);
   registerSyncContextTool(server, deps);
   registerUnregisterFileWatchTool(server, deps);
+
+  // Multi-agent coordination (advisory file locks)
+  registerAgentLocksTool(server, deps);
 
   // Dynamic tracing tools
   registerIngestTraceTool(server, deps);
@@ -92,12 +100,12 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   registerCliBridgeTool(server, deps);
 
   // Auto-generated 1:1 CLI-parity tools (pm_<command>[_<sub>]).
-  // Skipped when PROJECTMIND_TOOLS=core so clients with a small active-tool
-  // budget (e.g. Cursor) get the dedicated surface (~45 tools) only.
+  // Registered when PROJECTMIND_TOOLS=all. Default is `core` (~45 tools)
+  // for clients with a small active-tool budget (e.g. Cursor).
   if (shouldRegisterParityTools()) {
     const parityCount = await registerCliParityTools(server, deps);
-    console.info(`[mcp] dedicated tools + ${parityCount} CLI-parity tools registered`);
+    console.info(`[mcp] dedicated tools + ${parityCount} CLI-parity tools registered (PROJECTMIND_TOOLS=all)`);
   } else {
-    console.info('[mcp] PROJECTMIND_TOOLS=core — CLI-parity tools skipped (run_cli bridge still available)');
+    console.info('[mcp] PROJECTMIND_TOOLS=core (default) — CLI-parity tools skipped. Set PROJECTMIND_TOOLS=all for full surface. run_cli bridge still available.');
   }
 }
