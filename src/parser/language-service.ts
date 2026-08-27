@@ -60,6 +60,28 @@ export function detectLanguageFromPath(filePath: string): StructuralLanguage | n
 }
 
 /**
+ * Parser pool — one tree-sitter Parser per grammar, reused across every
+ * `createLangParser` call.
+ *
+ * Constructing a Parser + `setLanguage` loads/copies the grammar into the
+ * parser; doing it per file creates needless churn (allocation + grammar
+ * wiring) on every scan of a multi-language project. tree-sitter parsers are
+ * synchronous single-threaded objects, so pooling is safe: `parse()` is
+ * re-entrant, each call returns a fresh independent Tree.
+ */
+const PARSER_POOL = new Map<Parser.Language, Parser>();
+
+function getParserFor(grammar: Parser.Language): Parser {
+  let parser = PARSER_POOL.get(grammar);
+  if (!parser) {
+    parser = new Parser();
+    parser.setLanguage(grammar);
+    PARSER_POOL.set(grammar, parser);
+  }
+  return parser;
+}
+
+/**
  * Create a tree-sitter parser for the given file path (or explicit content).
  *
  * Returns null when the extension is unsupported or parsing fails — callers
@@ -78,8 +100,7 @@ export function createLangParser(filePath: string, content?: string): { language
     return null;
   }
 
-  const parser = new Parser();
-  parser.setLanguage(entry.grammar);
+  const parser = getParserFor(entry.grammar);
 
   let tree: Parser.Tree;
   try {
