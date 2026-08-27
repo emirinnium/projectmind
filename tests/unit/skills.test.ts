@@ -173,7 +173,7 @@ describe('generateSkillDoc — personalized SKILL.md', () => {
     agentName: 'kilo-code',
     sessionCount: 12,
     filesTouchedCount: 34,
-    fingerprint: { asyncPreference: 0.8, typeAssertionUsage: 0.1, errorHandlingStyle: 'try-catch', namingConvention: 'camelCase' },
+    fingerprint: { asyncPreference: 0.8, typeStrictness: 0.1, errorHandlingStyle: 'try-catch', namingConvention: 'camelCase', testPattern: 'bdd', favoriteAbstractions: ['interface'] },
     touchedPaths: ['src/parser/language-service.ts', 'src/auth/registry.ts'],
     gaps,
     generatedAt: '2026-08-27T00:00:00.000Z',

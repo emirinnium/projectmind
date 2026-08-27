@@ -1,30 +1,18 @@
-// Context Window Budget Optimizer - Knapsack Solver
-// Solves the 0/1 knapsack problem for selecting files within a token budget
-
-interface ContextItem {
-  path: string;
-  tokens: number;
-  relevanceScore: number;
-}
-
-interface ContextBudgetPlan {
-  totalTokens: number;
-  totalRelevance: number;
-  selectedItems: ContextItem[];
-  excludedItems: ContextItem[];
-}
+// Context Window Budget Optimizer - Greedy Selector
+import type { ContextItem, ContextBudgetPlan } from './types.js';
 
 /**
- * Solves the 0/1 knapsack problem for context selection
- * @param items Array of context items with their token cost and relevance score
+ * Greedy selector for context items within a token budget.
+ * Sorts by relevance density (relevance / tokens) descending and picks
+ * items until the budget is exhausted.
+ * @param items Array of context items with token cost and relevance score
  * @param budget Maximum token budget
- * @returns Optimal selection of items within budget
+ * @returns Selection of items within budget
  */
-export function selectWithinBudget(
+export function greedySelector(
   items: ContextItem[],
   budget: number
 ): ContextBudgetPlan {
-  // Sort by value density (relevance per token) descending
   const sortedItems = [...items].sort((a, b) => {
     const densityA = a.relevanceScore / Math.max(a.tokens, 1);
     const densityB = b.relevanceScore / Math.max(b.tokens, 1);
@@ -45,63 +33,6 @@ export function selectWithinBudget(
       excludedItems.push(item);
     }
   }
-
-  return {
-    totalTokens,
-    totalRelevance,
-    selectedItems,
-    excludedItems,
-  };
-}
-
-/**
- * Dynamic programming solution for knapsack (more accurate but slower)
- * @param items Array of context items
- * @param budget Maximum token budget
- */
-export function knapsackDp(
-  items: ContextItem[],
-  budget: number
-): ContextBudgetPlan {
-  const n = items.length;
-  const dp: number[][] = Array(n + 1)
-    .fill(0)
-    .map(() => Array(budget + 1).fill(0));
-
-  // Build DP table
-  for (let i = 1; i <= n; i++) {
-    for (let w = 1; w <= budget; w++) {
-      if (items[i - 1].tokens <= w) {
-        dp[i][w] = Math.max(
-          dp[i - 1][w],
-          dp[i - 1][w - items[i - 1].tokens] + items[i - 1].relevanceScore
-        );
-      } else {
-        dp[i][w] = dp[i - 1][w];
-      }
-    }
-  }
-
-  // Traceback to find selected items
-  let w = budget;
-  let i = n;
-  const selectedItems: ContextItem[] = [];
-  let totalTokens = 0;
-  let totalRelevance = dp[n][budget];
-
-  while (i > 0 && w > 0) {
-    if (dp[i][w] !== dp[i - 1][w]) {
-      selectedItems.push(items[i - 1]);
-      w -= items[i - 1].tokens;
-      i--;
-    } else {
-      i--;
-    }
-  }
-
-  // Find excluded items
-  const selectedPaths = new Set(selectedItems.map((item) => item.path));
-  const excludedItems = items.filter((item) => !selectedPaths.has(item.path));
 
   return {
     totalTokens,

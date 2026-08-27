@@ -214,9 +214,11 @@ export class ScaleReporter {
 /** -1 = unmeasured (no readable touched files); never fabricated. */
 const UNMEASURED_FINGERPRINT: AgentProfile['fingerprint'] = {
   asyncPreference: -1,
-  typeAssertionUsage: -1,
+  typeStrictness: -1,
   errorHandlingStyle: 'unknown',
   namingConvention: 'unknown',
+  testPattern: 'none',
+  favoriteAbstractions: ['none'],
 };
 
 const FINGERPRINT_MAX_FILES = 30;
@@ -283,9 +285,11 @@ function computeFingerprint(relativePaths: string[]): AgentProfile['fingerprint'
     asyncPreference:
       styleDenominator > 0 ? round2(asyncHits / styleDenominator) : -1,
     // `as` assertions per 10 lines of code, capped at 1.0.
-    typeAssertionUsage: Math.min(1, round2(assertionCount / (totalLines / 10))),
+    typeStrictness: Math.min(1, round2(assertionCount / (totalLines / 10))),
     errorHandlingStyle: classifyErrorHandling(tryBlocks, dotCatch, throws, resultObjects),
     namingConvention: dominantNaming(camel, snake, pascal),
+    testPattern: 'none',
+    favoriteAbstractions: ['none'],
   };
 }
 

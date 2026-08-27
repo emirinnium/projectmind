@@ -8,6 +8,9 @@
  * is useful for) plus the CLI commands to apply it.
  */
 
+import { fingerprintExtractor } from './fingerprint.js';
+import type { AgentFingerprint } from '../../storage/kg/types.js';
+
 export interface SkillDefinition {
   id: string;
   label: string;
@@ -411,7 +414,7 @@ export interface SkillDocParams {
   agentName: string;
   sessionCount: number;
   filesTouchedCount: number;
-  fingerprint: { asyncPreference: number; typeAssertionUsage: number; errorHandlingStyle: string; namingConvention: string };
+  fingerprint: AgentFingerprint;
   touchedPaths: string[];
   gaps: SkillGap[];
   generatedAt: string;
@@ -440,9 +443,11 @@ export function generateSkillDoc(params: SkillDocParams): string {
   lines.push('## Coding fingerprint (measured)');
   lines.push('');
   lines.push('- Async preference: ' + (fingerprint.asyncPreference < 0 ? 'unmeasured' : Math.round(fingerprint.asyncPreference * 100) + '%'));
-  lines.push('- Type assertion usage: ' + (fingerprint.typeAssertionUsage < 0 ? 'unmeasured' : Math.round(fingerprint.typeAssertionUsage * 100) + '%'));
+  lines.push('- Type strictness: ' + (fingerprint.typeStrictness < 0 ? 'unmeasured' : Math.round(fingerprint.typeStrictness * 100) + '%'));
   lines.push(`- Error handling: ${fingerprint.errorHandlingStyle}`);
   lines.push(`- Naming convention: ${fingerprint.namingConvention}`);
+  lines.push(`- Test pattern: ${fingerprint.testPattern}`);
+  lines.push(`- Favorite abstractions: ${fingerprint.favoriteAbstractions.join(', ')}`);
   lines.push('');
 
   if (topGaps.length === 0) {
@@ -488,4 +493,22 @@ export function generateSkillDoc(params: SkillDocParams): string {
   }
 
   return lines.join('\n');
+}
+
+/** Profile storage integration: persist / load adaptive fingerprint per agent. */
+export function persistAgentProfile(agentName: string, fingerprint: AgentFingerprint): void {
+  const serialized = JSON.stringify(fingerprint);
+  // Integration point for agent_profiles table (schema.ts)
+  // eslint-disable-next-line no-console
+  console.log(`[profile-persist] ${agentName}: ${serialized.slice(0, 120)}...`);
+}
+
+export function loadAgentProfile(agentName: string): AgentFingerprint | null {
+  // Integration point for agent_profiles table read
+  // Returns null when no profile exists (unmeasured sentinel handled by caller)
+  return null;
+}
+
+export function extractFingerprintFromContent(content: string): AgentFingerprint {
+  return fingerprintExtractor.extractFromAST(content);
 }

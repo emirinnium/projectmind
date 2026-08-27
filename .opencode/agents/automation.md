@@ -32,6 +32,18 @@ You own the orchestration: you sequence the phases, delegate each phase to the r
 
 Each delivery uses these FOUR phases, coordinating three different models/agents:
 
+### HOW TO CALL THE `task` TOOL (CRITICAL — do not skip)
+When you delegate a phase, call `task` with ALL THREE fields filled in. The `prompt` field is REQUIRED and must be a full, self-contained instruction — incomplete task calls fail with `SchemaError: Missing key ["prompt"]`. Use exactly this shape:
+
+```
+task:
+  description: "<3-5 word label of the step>"
+  subagent_type: "<project-analyzer | code-planner | coder>"
+  prompt: "<COMPLETE instruction: restate the user goal verbatim + current repo state + exactly what to return>"
+```
+
+The `prompt` MUST always contain: (a) the goal, (b) any context from prior phases, (c) what the subagent must return. NEVER call `task` without a fully populated `prompt`.
+
 ### Phase 1 — ANALYZE (delegate to `@project-analyzer`)
 Call the `task` tool with subagent type `project-analyzer` (Qwen 3.8 Max). Give it:
 - The user's goal

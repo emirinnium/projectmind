@@ -31,9 +31,11 @@ export interface AgentProfile {
   patterns: string[];
   fingerprint: {
     asyncPreference: number;
-    typeAssertionUsage: number;
+    typeStrictness: number;
     errorHandlingStyle: string;
     namingConvention: string;
+    testPattern: string;
+    favoriteAbstractions: string[];
   };
 }
 

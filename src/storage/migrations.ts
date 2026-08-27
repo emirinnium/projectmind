@@ -365,6 +365,34 @@ export const migrations: Migration[] = [
       db.exec('DROP INDEX IF EXISTS idx_circular_deps_cycle_path');
     },
   },
+  {
+    version: 92,
+    name: 'add_pattern_origin_and_collaboration',
+    up: (db: DatabaseSync) => {
+      db.exec(`ALTER TABLE patterns ADD COLUMN project_id INTEGER;`);
+      db.exec(`ALTER TABLE team_memories ADD COLUMN project_id INTEGER;`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_patterns_project ON patterns(project_id);`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_team_memories_project ON team_memories(project_id);`);
+      db.exec(`CREATE TABLE IF NOT EXISTS pending_intents (
+        id VARCHAR(36) PRIMARY KEY,
+        agent_id VARCHAR(255) NOT NULL,
+        intent_type VARCHAR(20) NOT NULL,
+        target_files TEXT,
+        expected_changes JSONB,
+        timestamp INTEGER DEFAULT (unixepoch()),
+        ttl_seconds INTEGER DEFAULT 300
+      );`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_intents_agent ON pending_intents(agent_id);`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_intents_timestamp ON pending_intents(timestamp);`);
+    },
+    down: (db: DatabaseSync) => {
+      db.exec('DROP INDEX IF EXISTS idx_patterns_project;');
+      db.exec('DROP INDEX IF EXISTS idx_team_memories_project;');
+      db.exec('ALTER TABLE patterns DROP COLUMN project_id;');
+      db.exec('ALTER TABLE team_memories DROP COLUMN project_id;');
+      db.exec('DROP TABLE IF EXISTS pending_intents;');
+    },
+  },
 ];
 
 export function getCurrentSchemaVersion(db: DatabaseSync): number {

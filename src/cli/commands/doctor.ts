@@ -3,6 +3,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getStatement } from '../../storage/database.js';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
+import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
+import type { PredictorConfig } from '../../core/predictive/types.js';
+import { IntegrityGuard } from '../../core/kg/integrity-guard.js';
 
 export function createDoctorCommand(): Command {
   const doctorCmd = new Command('doctor')
@@ -74,6 +77,15 @@ export function createDoctorCommand(): Command {
         // Analysis mode: we report precisely; automatic code rewriting is
         // intentionally out of scope (risk of breaking source files).
         output.info('Analysis mode — auto-editing source imports is not performed.');
+
+        // Real repair: use IntegrityGuard to resolve stale imports
+        const guard = new IntegrityGuard();
+        const repaired = guard.repairStaleNodes();
+        if (repaired > 0) {
+          output.success(`Repaired ${repaired} stale import(s) via IntegrityGuard.`);
+        } else {
+          output.info('No stale imports repaired.');
+        }
       });
     }));
 
@@ -152,6 +164,19 @@ export function createDoctorCommand(): Command {
         
         output.kv('Total records', totalRecords);
         
+        // Integrity Guard: auto-repair before destructive rebuild
+        const guard = new IntegrityGuard();
+        const report = guard.generateReport();
+        output.section('Integrity Guard Report');
+        output.kv('Violations', report.violations.length);
+        output.kv('Repaired', report.repaired);
+        output.kv('Orphans', report.orphans.length);
+        if (report.violations.length > 0) {
+          for (const v of report.violations.slice(0, 5)) {
+            output.warn(`  ${v.type}: ${v.filePath}`);
+          }
+        }
+
         if (!_opts.dryRun) {
           output.info('Clearing tables...');
           for (const table of tables) {
@@ -203,6 +228,21 @@ export function createDoctorCommand(): Command {
         output.kv('Score', `${(genome.coherenceScore * 100).toFixed(1)}%`);
         output.kv('Genome data available', genome.genomeData.length > 0 ? 'Yes' : 'No');
         
+        output.section('Predictive Impact Analysis');
+        const predictorConfig: PredictorConfig = {
+          bayesianPrior: 0.5,
+          crossModuleWeight: 0.8,
+          confidenceThreshold: 0.7,
+          modelUpdateRate: 0.1,
+        };
+        const predictor = new ImpactPredictor(predictorConfig);
+        const sampleChange = { filePath: 'src/core/index.ts', moduleName: 'core', changeType: 'modify' as const, crossModule: true };
+        const prediction = predictor.predictImpact(sampleChange);
+        output.kv('Prediction ID', prediction.predictionId);
+        output.kv('Predicted impact', `${(prediction.predictedImpact * 100).toFixed(1)}%`);
+        output.kv('Total confidence', `${(prediction.totalConfidence * 100).toFixed(1)}%`);
+        output.kv('Cross-module', prediction.change.crossModule ? 'Yes' : 'No');
+
         output.section('Summary');
         if (genome.coherenceScore > 0.85 && debtReport.bySeverity.high === 0) {
           output.success('Project is healthy!');

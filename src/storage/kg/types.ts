@@ -48,7 +48,9 @@ export interface CoherenceDecision {
 
 export interface AgentFingerprint {
   asyncPreference: number;
-  typeAssertionUsage: number;
+  typeStrictness: number;
   errorHandlingStyle: string;
   namingConvention: string;
+  testPattern: string;
+  favoriteAbstractions: string[];
 }

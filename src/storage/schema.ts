@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS projects (
   root_path TEXT NOT NULL,
   description TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  last_scanned TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  last_scanned TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_impact_scan TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -22,13 +23,26 @@ CREATE TABLE IF NOT EXISTS team_memories (
   value TEXT NOT NULL,
   base_value TEXT,
   is_public BOOLEAN DEFAULT 1,
+  project_id INTEGER,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(scope, key)
 );
 
+CREATE TABLE IF NOT EXISTS test_failure_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  prediction_id TEXT NOT NULL,
+  file_path TEXT,
+  module_name TEXT,
+  failure_occurred BOOLEAN DEFAULT 0,
+  severity TEXT CHECK(severity IN ('low', 'medium', 'high')) DEFAULT 'medium',
+  logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_test_failure_pred ON test_failure_log(prediction_id);
+
 CREATE INDEX IF NOT EXISTS idx_team_memories_scope ON team_memories(scope);
 CREATE INDEX IF NOT EXISTS idx_team_memories_agent ON team_memories(agent_name);
+CREATE INDEX IF NOT EXISTS idx_team_memories_project ON team_memories(project_id);
 
 CREATE TABLE IF NOT EXISTS files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -120,6 +134,7 @@ CREATE TABLE IF NOT EXISTS patterns (
   last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   usage_count INTEGER DEFAULT 1,
   embedding TEXT,
+  project_id INTEGER,
   UNIQUE(code_hash, name)
 );
 
@@ -155,6 +170,16 @@ CREATE TABLE IF NOT EXISTS agent_memory (
   expires_at TIMESTAMP,
   FOREIGN KEY (session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS agent_profiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_name TEXT NOT NULL UNIQUE,
+  fingerprint TEXT NOT NULL DEFAULT '{}',
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_profiles_name ON agent_profiles(agent_name);
 
 CREATE TABLE IF NOT EXISTS coherence_decisions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -264,6 +289,23 @@ CREATE TABLE IF NOT EXISTS agent_file_locks (
   UNIQUE(file_path)
 );
 
+CREATE INDEX IF NOT EXISTS idx_agent_file_locks_path ON agent_file_locks(file_path);
+
+-- Collaborative agent intent tracking (live broadcast + conflict prediction)
+CREATE TABLE IF NOT EXISTS pending_intents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  agent_id TEXT NOT NULL,
+  intent_type TEXT NOT NULL CHECK(intent_type IN ('read','write','refactor','delete')),
+  target_files TEXT NOT NULL,
+  session_id TEXT,
+  description TEXT,
+  broadcast_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP NOT NULL DEFAULT (datetime('now', '+5 minutes'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_intents_agent ON pending_intents(agent_id);
+CREATE INDEX IF NOT EXISTS idx_pending_intents_type ON pending_intents(intent_type);
+
 CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
 CREATE INDEX IF NOT EXISTS idx_files_hash ON files(hash);
 CREATE INDEX IF NOT EXISTS idx_files_touched ON files(agent_touched);
@@ -274,6 +316,7 @@ CREATE INDEX IF NOT EXISTS idx_classes_file ON classes(file_id);
 CREATE INDEX IF NOT EXISTS idx_patterns_category ON patterns(category);
 CREATE INDEX IF NOT EXISTS idx_patterns_confidence ON patterns(confidence);
 CREATE INDEX IF NOT EXISTS idx_patterns_name_hash ON patterns(name, code_hash);
+CREATE INDEX IF NOT EXISTS idx_patterns_project ON patterns(project_id);
 CREATE INDEX IF NOT EXISTS idx_imports_file ON imports(file_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_agent ON agent_sessions(agent_name, started_at);
 CREATE INDEX IF NOT EXISTS idx_memory_scope ON agent_memory(scope);
