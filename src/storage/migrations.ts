@@ -369,19 +369,36 @@ export const migrations: Migration[] = [
     version: 92,
     name: 'add_pattern_origin_and_collaboration',
     up: (db: DatabaseSync) => {
-      db.exec(`ALTER TABLE patterns ADD COLUMN project_id INTEGER;`);
-      db.exec(`ALTER TABLE team_memories ADD COLUMN project_id INTEGER;`);
+      // Check if columns exist before adding (schema may already include them)
+      const patternsCols = db.prepare("PRAGMA table_info(patterns)").all() as Array<{name: string}>;
+      const teamCols = db.prepare("PRAGMA table_info(team_memories)").all() as Array<{name: string}>;
+      if (!patternsCols.find(c => c.name === 'project_id')) {
+        db.exec(`ALTER TABLE patterns ADD COLUMN project_id INTEGER;`);
+      }
+      if (!teamCols.find(c => c.name === 'project_id')) {
+        db.exec(`ALTER TABLE team_memories ADD COLUMN project_id INTEGER;`);
+      }
       db.exec(`CREATE INDEX IF NOT EXISTS idx_patterns_project ON patterns(project_id);`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_team_memories_project ON team_memories(project_id);`);
-      db.exec(`CREATE TABLE IF NOT EXISTS pending_intents (
-        id VARCHAR(36) PRIMARY KEY,
-        agent_id VARCHAR(255) NOT NULL,
-        intent_type VARCHAR(20) NOT NULL,
-        target_files TEXT,
-        expected_changes JSONB,
-        timestamp INTEGER DEFAULT (unixepoch()),
-        ttl_seconds INTEGER DEFAULT 300
-      );`);
+      // Ensure pending_intents table exists with correct schema
+      const pendingExists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pending_intents'").get();
+      if (!pendingExists) {
+        db.exec(`CREATE TABLE pending_intents (
+          id VARCHAR(36) PRIMARY KEY,
+          agent_id VARCHAR(255) NOT NULL,
+          intent_type VARCHAR(20) NOT NULL,
+          target_files TEXT,
+          expected_changes TEXT,
+          timestamp INTEGER DEFAULT (strftime('%s', 'now')),
+          ttl_seconds INTEGER DEFAULT 300
+        );`);
+      } else {
+        // If table exists but missing timestamp column, add it
+        const pendingCols = db.prepare("PRAGMA table_info(pending_intents)").all() as Array<{name: string}>;
+        if (!pendingCols.find(c => c.name === 'timestamp')) {
+          db.exec(`ALTER TABLE pending_intents ADD COLUMN timestamp INTEGER DEFAULT (strftime('%s', 'now'));`);
+        }
+      }
       db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_intents_agent ON pending_intents(agent_id);`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_intents_timestamp ON pending_intents(timestamp);`);
     },
