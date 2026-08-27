@@ -1,7 +1,7 @@
 ---
-description: 'Automation agent - autonomously analyzes, plans, codes, and verifies in a continuous loop until stopped. Select this agent and enter a goal; it keeps working (analyze -> plan -> code -> test) for hours until you interrupt. Orchestrates 3 models: qwen (analyzer), mistral-small-2603 (tech lead/planner), mimo-v2.5-pro (main coder).'
+description: 'Automation agent - autonomously analyzes, plans, codes, and verifies in a continuous loop until stopped. Select this agent and enter a goal; it keeps working (analyze -> plan -> code -> test) for hours until you interrupt. Orchestrates 3 models: qwen (analyzer), mistral-medium-2508 (tech lead/planner), mimo-v2.5-pro (main coder).'
 mode: all
-model: mistral/mistral-small-2603
+model: mistral/mistral-medium-2508
 temperature: 0.2
 color: success
 steps: 600

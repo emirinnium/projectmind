@@ -1,7 +1,7 @@
 ---
-description: 'Tech lead / code planner. Takes a deep codebase analysis and produces a detailed, implementation-ready plan plus a precise execution prompt that a coder model can follow verbatim. Model: Mistral Small 4 (2603) via native Mistral.'
+description: 'Tech lead / code planner. Takes a deep codebase analysis and produces a detailed, implementation-ready plan plus a precise execution prompt that a coder model can follow verbatim. Model: Mistral Medium 3.1 (2508) via native Mistral.'
 mode: subagent
-model: mistral/mistral-small-2603
+model: mistral/mistral-medium-2508
 temperature: 0.1
 permission:
   edit: deny

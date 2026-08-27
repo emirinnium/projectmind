@@ -73,7 +73,7 @@
     },
     "automation": {
       "mode": "all",
-      "model": "mistral/mistral-small-2603",
+      "model": "mistral/mistral-medium-2508",
       "steps": 600,
       "permission": {
         "task": {
@@ -95,7 +95,7 @@
     },
     "code-planner": {
       "mode": "subagent",
-      "model": "mistral/mistral-small-2603",
+      "model": "mistral/mistral-medium-2508",
       "steps": 60,
       "permission": {
         "edit": "deny",
