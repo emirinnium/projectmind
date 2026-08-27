@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildModuleSizeChart, buildLanguageChart, buildDebtChart, buildScanForm, buildGenomeSummary } from '../../src/mcp/apps/builders.js';
 import { attachApps, buildAppsPayload } from '../../src/mcp/apps/content.js';
-import type { AppComponent } from '../../src/mcp/apps/types.js';
+import type { AppComponent, BarChartOptions, PieChartOptions } from '../../src/mcp/apps/types.js';
 import type { ScaleReport } from '../../src/core/scale/reporting/types.js';
 import type { DebtReport } from '../../src/core/debt/detection/persistence.js';
 
@@ -57,8 +57,9 @@ describe('apps builders', () => {
     if (chart.kind !== 'chart') return;
     expect(chart.chartType).toBe('bar');
     if (chart.chartType !== 'bar') return;
-    expect(chart.options.labels).toEqual(['src', 'tests']);
-    expect(chart.options.series[0].data).toEqual([2, 1]);
+    const barOptions = chart.options as BarChartOptions;
+    expect(barOptions.labels).toEqual(['src', 'tests']);
+    expect(barOptions.series[0].data).toEqual([2, 1]);
   });
 
   it('buildLanguageChart flattens the language record into pie data', () => {
@@ -67,7 +68,8 @@ describe('apps builders', () => {
     if (chart.kind !== 'chart') return;
     expect(chart.chartType).toBe('pie');
     if (chart.chartType !== 'pie') return;
-    expect(chart.options.data).toEqual([{ name: 'typescript', value: 2 }]);
+    const pieOptions = chart.options as PieChartOptions;
+    expect(pieOptions.data).toEqual([{ name: 'typescript', value: 2 }]);
   });
 
   it('buildDebtChart reflects the severity breakdown', () => {
@@ -76,8 +78,9 @@ describe('apps builders', () => {
     if (chart.kind !== 'chart') return;
     expect(chart.chartType).toBe('bar');
     if (chart.chartType !== 'bar') return;
-    expect(chart.options.labels).toEqual(['high', 'medium', 'low']);
-    expect(chart.options.series[0].data).toEqual([1, 3, 6]);
+    const barOptions = chart.options as BarChartOptions;
+    expect(barOptions.labels).toEqual(['high', 'medium', 'low']);
+    expect(barOptions.series[0].data).toEqual([1, 3, 6]);
   });
 
   it('buildScanForm exposes root and full fields', () => {

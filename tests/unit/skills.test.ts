@@ -9,7 +9,15 @@ import {
   type SkillEvidence,
 } from '../../src/core/skills/engine.js';
 
-type ModuleLike = Array<{ files?: Array<{ relativePath?: string; language?: string }> }>;
+type ModuleLike = Array<{
+  path?: string;
+  name?: string;
+  fileCount?: number;
+  totalBytes?: number;
+  cognitiveLoad?: number;
+  agentCoverage?: number;
+  files?: Array<{ relativePath?: string; language?: string }>;
+}>;
 
 function moduleWith(...paths: string[]): ModuleLike {
   return [

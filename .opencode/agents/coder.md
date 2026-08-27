@@ -1,7 +1,7 @@
 ---
-description: 'Main implementation engine. Executes the tech lead plan verbatim, writes production-quality code, runs typecheck/lint/tests, and uses ProjectMind MCP for context and coherence. Model: Xiaomi MiMo-v2.5 Pro via OpenRouter.'
+description: 'Main implementation engine. Executes the tech lead plan verbatim, writes production-quality code, runs typecheck/lint/tests, and uses ProjectMind MCP for context and coherence. Model: Thinking Machines Inkling Small via OpenRouter.'
 mode: subagent
-model: openrouter/xiaomi/mimo-v2.5-pro
+model: openrouter/thinkingmachines/inkling-small:free
 temperature: 0.2
 permission:
   edit: allow

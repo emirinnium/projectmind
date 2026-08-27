@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
+import type { ClientRegistrationResponse } from '../../src/auth/types.js';
 import { AuthError, ClientRegistry } from '../../src/auth/registry.js';
 import { TokenService, hashToken } from '../../src/auth/tokens.js';
 import { handleOauthRoute } from '../../src/auth/http.js';
