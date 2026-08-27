@@ -20,9 +20,6 @@ import { registerTaintTools } from '../taint.js';
 import { registerTeamMemoryTools } from '../team-memory.js';
 import { registerCliBridgeTool } from '../cli-bridge.js';
 import { registerCliParityTools } from '../cli-parity.js';
-import { registerClaudeCodeTools } from '../clients/claude-code.js';
-import { registerCursorTools } from '../clients/cursor.js';
-import { registerOpenCodeTools } from '../clients/opencode.js';
 import { annotateToolRegistration, shouldRegisterParityTools } from '../guard.js';
 
 /**
@@ -93,15 +90,6 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
 
   // Team memory tools
   registerTeamMemoryTools(server, deps);
-
-  // Register Claude Code tools
-  registerClaudeCodeTools(server, deps);
-
-  // Register Cursor tools
-  registerCursorTools(server, deps);
-
-  // Register OpenCode tools
-  registerOpenCodeTools(server, deps);
 
   // CLI bridge — exposes the full CLI surface to agents that need a
   // capability without a dedicated tool (doctor, health, report, layers,

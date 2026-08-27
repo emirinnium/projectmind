@@ -15,6 +15,7 @@ const DESTRUCTIVE_SUBCOMMANDS: Record<string, Set<string>> = {
   debt: new Set(['clear', 'clear-patterns']),
   'data-flow': new Set(['clear']),
   trace: new Set(['clear']),
+  layers: new Set(['--auto-fix']), // writes generated fixes back to entry files
 };
 
 /**

@@ -10,7 +10,6 @@ import { initializeDependencies, getDependencies, getMcpSessionId } from './mcp/
 import { closeDatabase } from './storage/database.js';
 import { resolvePackageVersion, currentModuleDir } from './utils/version.js';
 import { pathToFileURL } from 'node:url';
-import { ClaudeCodeClient } from './mcp/tools/clients/claude-code-client.js';
 import { registerResourceSubscriptionTool } from './mcp/resources.js';
 import { validateRequestMeta, MetaValidationError } from './mcp/tools/types.js';
 import { ClientRegistry } from './auth/registry.js';
@@ -161,12 +160,6 @@ function jsonError(res: http.ServerResponse, status: number, payload: Record<str
 export async function initMcpServer(): Promise<void> {
   try {
     await ensureInitialized();
-
-    // Initialize Claude Code client
-    const claudeCodeClient = new ClaudeCodeClient({
-      apiKey: process.env.CLAUDE_CODE_API_KEY,
-      model: process.env.CLAUDE_CODE_MODEL || 'claude-3-opus-20240229',
-    });
 
     const server = new McpServer({
       name: 'projectmind',
