@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS circular_dependencies (
   detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   resolved BOOLEAN DEFAULT 0
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_circular_deps_cycle_path ON circular_dependencies(cycle_path);
 
 CREATE TABLE IF NOT EXISTS patterns (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

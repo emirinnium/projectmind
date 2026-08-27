@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { runMigrations, getCurrentSchemaVersion } from './migrations.js';
 import { SCHEMA_SQL } from './schema.js';
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { logger } from '../utils/logger.js';
 import { clearStatementCache } from './database-statements.js';
 
@@ -116,24 +116,24 @@ export class DatabaseManager {
     db.exec('PRAGMA cache_size = -64000');
   }
 
+  /**
+   * K7: Never DELETE -wal/-shm files. A WAL file can hold committed-but-
+   * uncheckpointed transactions; unlinking it silently DROPS that data.
+   * SQLite replays the WAL automatically on the next open, so a failed
+   * checkpoint is not a problem — the files are simply left in place.
+   */
   private handleWalFiles(dbPath: string): void {
+    const walPath = dbPath + '-wal';
+    const shmPath = dbPath + '-shm';
+    if (!existsSync(walPath) && !existsSync(shmPath)) return;
     try {
-      const walPath = dbPath + '-wal';
-      const shmPath = dbPath + '-shm';
-      if (existsSync(walPath) || existsSync(shmPath)) {
-        const tempDb = new DatabaseSync(dbPath);
-        tempDb.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-        tempDb.close();
-      }
-    } catch {
-      try {
-        const walPath = dbPath + '-wal';
-        const shmPath = dbPath + '-shm';
-        if (existsSync(walPath)) unlinkSync(walPath);
-        if (existsSync(shmPath)) unlinkSync(shmPath);
-      } catch {
-        // Ignore cleanup errors
-      }
+      const tempDb = new DatabaseSync(dbPath);
+      tempDb.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+      tempDb.close();
+    } catch (e) {
+      logger.warn(
+        `WAL files present for ${dbPath} but checkpoint failed — left untouched; SQLite will recover on next open: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
   }
 
@@ -172,15 +172,9 @@ export function initDatabase(dbPath: string): DatabaseSync {
       tempDb.close();
     }
   } catch (e) {
-    logger.warn(`WAL checkpoint failed for ${dbPath}, attempting cleanup: ${e instanceof Error ? e.message : String(e)}`);
-    try {
-      const walPath = dbPath + '-wal';
-      const shmPath = dbPath + '-shm';
-      if (existsSync(walPath)) unlinkSync(walPath);
-      if (existsSync(shmPath)) unlinkSync(shmPath);
-    } catch (cleanupError) {
-      logger.warn(`WAL cleanup failed for ${dbPath}: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`);
-    }
+    // K7: never unlink -wal/-shm here — they may hold committed transactions.
+    // SQLite replays them on the next open; a checkpoint failure is benign.
+    logger.warn(`WAL checkpoint failed for ${dbPath} — files left untouched: ${e instanceof Error ? e.message : String(e)}`);
   }
 
   _instance = new DatabaseSync(dbPath, { allowExtension: true });

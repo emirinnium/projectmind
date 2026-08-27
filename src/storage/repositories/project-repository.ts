@@ -1,5 +1,6 @@
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { getDatabase } from '../database.js';
+import { getVecIndex } from '../../core/embeddings/vector-index.js';
 
 export interface Project {
   id: number;
@@ -55,6 +56,8 @@ export class ProjectRepository {
     if (!project) {
       return { success: false, deletedFiles: 0, error: `Project ${id} not found` };
     }
+    // K9: prune vec embeddings BEFORE the files rows vanish.
+    getVecIndex(this.db).removeByProject(id);
     const result = this.db.prepare('DELETE FROM files WHERE project_id = ?').run(id);
     const deletedFiles = Number(result.changes);
     this.db.prepare('DELETE FROM projects WHERE id = ?').run(id);

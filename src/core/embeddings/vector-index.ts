@@ -161,6 +161,22 @@ export class VecIndex {
     }
   }
 
+  /**
+   * Remove every embedding that belongs to a project (K9). The vec table
+   * spans ALL projects (file IDs are globally unique), so `project delete`
+   * must prune it or the orphaned vectors keep surfacing in ANN search.
+   */
+  removeByProject(projectId: number): void {
+    if (!this._available) return;
+    try {
+      this.db
+        .prepare(`DELETE FROM ${VEC_TABLE_NAME} WHERE rowid IN (SELECT id FROM files WHERE project_id = ?)`)
+        .run(projectId);
+    } catch {
+      // Non-fatal.
+    }
+  }
+
   // -- Read operations -----------------------------------------------------
 
   /**
@@ -168,14 +184,23 @@ export class VecIndex {
    *
    * Returns results sorted by **cosine distance** (0 = identical, 2 = opposite).
    * The caller converts to similarity via `1 - distance` if needed.
+   *
+   * K9: when `projectId` is given, candidates are restricted to that project's
+   * files (`rowid IN (SELECT id FROM files WHERE project_id = ?)`) so search
+   * never leaks vectors from other projects.
    */
-  findSimilar(queryEmbedding: number[], limit: number = 10): Array<{ id: number; distance: number }> {
+  findSimilar(queryEmbedding: number[], limit: number = 10, projectId?: number): Array<{ id: number; distance: number }> {
     if (!this._available || queryEmbedding.length !== this.dim) return [];
     try {
       const vec = new Float32Array(queryEmbedding);
-      const rows = this.db.prepare(
-        `SELECT rowid, distance FROM ${VEC_TABLE_NAME} WHERE embedding MATCH ? ORDER BY distance LIMIT ?`,
-      ).all(vec, limit) as Array<{ rowid: bigint; distance: number }>;
+      const sql =
+        projectId === undefined
+          ? `SELECT rowid, distance FROM ${VEC_TABLE_NAME} WHERE embedding MATCH ? ORDER BY distance LIMIT ?`
+          : `SELECT rowid, distance FROM ${VEC_TABLE_NAME} WHERE embedding MATCH ? AND rowid IN (SELECT id FROM files WHERE project_id = ?) ORDER BY distance LIMIT ?`;
+      const rows =
+        projectId === undefined
+          ? (this.db.prepare(sql).all(vec, limit) as Array<{ rowid: bigint; distance: number }>)
+          : (this.db.prepare(sql).all(vec, projectId, limit) as Array<{ rowid: bigint; distance: number }>);
       return rows.map((r) => ({ id: Number(r.rowid), distance: r.distance }));
     } catch {
       return [];

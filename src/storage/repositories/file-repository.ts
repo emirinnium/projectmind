@@ -159,7 +159,17 @@ export class FileRepository {
     this.db.prepare('DELETE FROM functions WHERE file_id = ?').run(fileId);
     this.db.prepare('DELETE FROM classes WHERE file_id = ?').run(fileId);
     this.db.prepare('DELETE FROM imports WHERE file_id = ?').run(fileId);
-    this.db.prepare('DELETE FROM circular_dependencies WHERE cycle_path LIKE ?').run('%' + fileId + '%');
+    // K10: match cycles by FILE PATH, not by integer id. The old
+    // `cycle_path LIKE '%<fileId>%'` matched ANY path containing those
+    // digits (id 5 → "src/lib5/x.ts" or "15.ts") and deleted unrelated
+    // cycles. A path substring is the correct (if coarse) signal.
+    const file = this.db.prepare('SELECT path, relative_path FROM files WHERE id = ?').get(fileId) as
+      | { path: string; relative_path: string | null }
+      | undefined;
+    if (file) {
+      const needle = (file.relative_path || file.path).replace(/\\/g, '/');
+      this.db.prepare('DELETE FROM circular_dependencies WHERE cycle_path LIKE ?').run(`%${needle}%`);
+    }
   }
 
   storeFileDetails(fileId: number, functions: Array<{

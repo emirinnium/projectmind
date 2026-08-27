@@ -1,11 +1,32 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { DatabaseSync } from 'node:sqlite';
 import { AuthError, ClientRegistry } from '../../src/auth/registry.js';
-import { TokenService } from '../../src/auth/tokens.js';
+import { TokenService, hashToken } from '../../src/auth/tokens.js';
 import { handleOauthRoute } from '../../src/auth/http.js';
+import { runMigrations } from '../../src/storage/migrations.js';
+import { SCHEMA_SQL } from '../../src/storage/schema.js';
+
+let db: DatabaseSync;
+
+beforeAll(() => {
+  db = new DatabaseSync(':memory:');
+  db.exec(SCHEMA_SQL); // base tables; migrations extend them (mirrors initDatabase)
+  runMigrations(db);
+});
+
+beforeEach(() => {
+  // Isolated test cases: wipe persisted OAuth state (tokens first — FK).
+  db.exec('DELETE FROM oauth_tokens');
+  db.exec('DELETE FROM oauth_clients');
+});
+
+afterAll(() => {
+  db.close();
+});
 
 describe('ClientRegistry — RFC 7591 dynamic client registration', () => {
   it('issues client_id + one-time secret; only the hash is stored', () => {
-    const reg = new ClientRegistry();
+    const reg = new ClientRegistry(db);
 
     const client = reg.register({
       client_name: 'Smoke Client',
@@ -31,7 +52,7 @@ describe('ClientRegistry — RFC 7591 dynamic client registration', () => {
   });
 
   it('rejects non-https / non-loopback redirect_uris', () => {
-    const reg = new ClientRegistry();
+    const reg = new ClientRegistry(db);
     expect(() =>
       reg.register({ client_name: 'Bad', redirect_uris: ['http://evil.example.com/cb'] }),
     ).toThrowError(AuthError);
@@ -41,25 +62,25 @@ describe('ClientRegistry — RFC 7591 dynamic client registration', () => {
   });
 
   it('rejects unknown fields (strict metadata validation)', () => {
-    const reg = new ClientRegistry();
+    const reg = new ClientRegistry(db);
     expect(() => reg.parse({ client_name: 'X', bogus_field: 1 })).toThrowError(/Unrecognized key.*bogus_field/);
     expect(() => reg.register(regOwnSafe())).not.toThrow();
   });
 
   it('rejects client_credentials with auth method "none"', () => {
-    const reg = new ClientRegistry();
+    const reg = new ClientRegistry(db);
     expect(() =>
       reg.register({ grant_types: ['client_credentials'], token_endpoint_auth_method: 'none' }),
     ).toThrowError(/client_credentials/);
   });
 
   it('rejects implicit grants without a redirect_uri', () => {
-    const reg = new ClientRegistry();
+    const reg = new ClientRegistry(db);
     expect(() => reg.register({ grant_types: ['implicit'] })).toThrowError(/redirect_uri/);
   });
 
   it('returns the established client for identical re-registration (RFC 7591 §2.2)', () => {
-    const reg = new ClientRegistry();
+    const reg = new ClientRegistry(db);
     const first = reg.register({ client_name: 'Dup', redirect_uris: ['https://app.example.com/cb'] });
     const second = reg.register({ client_name: 'Dup', redirect_uris: ['https://app.example.com/cb'] });
 
@@ -69,7 +90,7 @@ describe('ClientRegistry — RFC 7591 dynamic client registration', () => {
   });
 
   it('stores MCP clientInfo and clientCapabilities extensions', () => {
-    const reg = new ClientRegistry();
+    const reg = new ClientRegistry(db);
     const client = reg.register({
       client_name: 'Cursor clone',
       redirect_uris: ['https://localhost:3000'],
@@ -84,9 +105,20 @@ describe('ClientRegistry — RFC 7591 dynamic client registration', () => {
 });
 
 describe('TokenService — client-credentials access tokens', () => {
+  // Tokens FK to oauth_clients: issue() requires a previously-registered
+  // client (this mirrors http.ts, which authenticates before issuing).
+  function tokenClient(): ClientRegistrationResponse {
+    return new ClientRegistry(db).register({
+      client_name: 'token-svc',
+      redirect_uris: ['https://tok.example.com/cb'],
+      grant_types: ['client_credentials'],
+    });
+  }
+
   it('issues and verifies tokens with scope', () => {
-    const ts = new TokenService(3600);
-    const res = ts.issue('pm_abc', 'registry:read');
+    const client = tokenClient();
+    const ts = new TokenService(db, 3600);
+    const res = ts.issue(client.client_id, 'registry:read');
 
     expect(res.token_type).toBe('Bearer');
     expect(res.expires_in).toBe(3600);
@@ -94,17 +126,23 @@ describe('TokenService — client-credentials access tokens', () => {
     expect(res.scope).toBe('registry:read');
 
     const entry = ts.verify(res.access_token)!;
-    expect(entry.clientId).toBe('pm_abc');
+    expect(entry.clientId).toBe(client.client_id);
     expect(entry.scope).toBe('registry:read');
   });
 
   it('rejects unknown tokens', () => {
-    expect(new TokenService().verify('pm_madeup')).toBeNull();
+    expect(new TokenService(db).verify('pm_madeup')).toBeNull();
+  });
+
+  it('rejects tokens for unregistered clients (FK integrity)', () => {
+    const ts = new TokenService(db, 3600);
+    expect(() => ts.issue('pm_no_such_client')).toThrowError(/FOREIGN KEY/);
   });
 
   it('evicts expired tokens', () => {
-    const ts = new TokenService(0); // instantly expired
-    const res = ts.issue('pm_abc');
+    const client = tokenClient();
+    const ts = new TokenService(db, 0); // instantly expired
+    const res = ts.issue(client.client_id);
     expect(ts.verify(res.access_token)).toBeNull();
   });
 });
@@ -112,8 +150,8 @@ describe('TokenService — client-credentials access tokens', () => {
 describe('handleOauthRoute — HTTP surface', () => {
   function ctx(overrides?: { registry?: ClientRegistry; tokens?: TokenService; authorization?: string }) {
     return {
-      registry: overrides?.registry ?? new ClientRegistry(),
-      tokens: overrides?.tokens ?? new TokenService(3600),
+      registry: overrides?.registry ?? new ClientRegistry(db),
+      tokens: overrides?.tokens ?? new TokenService(db, 3600),
       authorization: overrides?.authorization,
     };
   }
@@ -150,10 +188,10 @@ describe('handleOauthRoute — HTTP surface', () => {
   });
 
   it('issues a client_credentials token (secret_post)', () => {
-    const reg = new ClientRegistry();
+    const reg = new ClientRegistry(db);
     const c = ctx({
       registry: reg,
-      tokens: new TokenService(3600),
+      tokens: new TokenService(db, 3600),
     });
     const client = reg.register({ client_name: 'svc', redirect_uris: ['https://a.example.com/cb'], grant_types: ['client_credentials'] });
 
@@ -181,7 +219,7 @@ describe('handleOauthRoute — HTTP surface', () => {
   });
 
   it('accepts client_secret_basic on the token endpoint', () => {
-    const reg = new ClientRegistry();
+    const reg = new ClientRegistry(db);
     const client = reg.register({ client_name: 'basic', redirect_uris: ['https://b.example.com/cb'], token_endpoint_auth_method: 'client_secret_basic', grant_types: ['client_credentials'] });
     const basic = Buffer.from(`${client.client_id}:${client.client_secret}`).toString('base64');
 
@@ -189,7 +227,7 @@ describe('handleOauthRoute — HTTP surface', () => {
       '/oauth/token',
       JSON.stringify({ grant_type: 'client_credentials' }),
       'application/json',
-      { registry: reg, tokens: new TokenService(), authorization: `Basic ${basic}` },
+      { registry: reg, tokens: new TokenService(db), authorization: `Basic ${basic}` },
     );
     expect(result.handled).toBe(true);
     if (!result.handled) return;
@@ -198,7 +236,7 @@ describe('handleOauthRoute — HTTP surface', () => {
   });
 
   it('rejects bad credentials with invalid_client', () => {
-    const reg = new ClientRegistry();
+    const reg = new ClientRegistry(db);
     const client = reg.register({ client_name: 'svc2', redirect_uris: ['https://c.example.com/cb'], grant_types: ['client_credentials'] });
     const result = handleOauthRoute(
       '/oauth/token',
@@ -229,7 +267,7 @@ describe('handleOauthRoute — HTTP surface', () => {
   });
 
   it('accepts urlencoded bodies on the token endpoint', () => {
-    const reg = new ClientRegistry();
+    const reg = new ClientRegistry(db);
     const client = reg.register({ client_name: 'form', redirect_uris: ['https://d.example.com/cb'], grant_types: ['client_credentials'] });
     const body = new URLSearchParams({
       grant_type: 'client_credentials',
@@ -247,6 +285,89 @@ describe('handleOauthRoute — HTTP surface', () => {
   it('returns handled:false for unknown paths', () => {
     const result = handleOauthRoute('/oauth/nope', '{}', 'application/json', ctx());
     expect(result.handled).toBe(false);
+  });
+});
+
+describe('SQLite persistence — OAuth data survives service restarts', () => {
+  it('migration 9 created oauth_clients and oauth_tokens tables', () => {
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+    expect(tables.some((t) => t.name === 'oauth_clients')).toBe(true);
+    expect(tables.some((t) => t.name === 'oauth_tokens')).toBe(true);
+  });
+
+  it('persists client registrations across registry instances (not RAM)', () => {
+    const r1 = new ClientRegistry(db);
+    const client = r1.register({
+      client_name: 'Persist',
+      redirect_uris: ['https://p.example.com/cb'],
+      grant_types: ['client_credentials'],
+    });
+
+    // Fresh instance on the same DB — as after a server restart.
+    const r2 = new ClientRegistry(db);
+    const stored = r2.get(client.client_id)!;
+    expect(stored.client_name).toBe('Persist');
+    expect(stored.client_secret_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(r2.authenticate(client.client_id, client.client_secret!)).toBeDefined();
+    expect(r2.size).toBe(1);
+  });
+
+  it('persists tokens across service instances (not RAM)', () => {
+    const client = new ClientRegistry(db).register({
+      client_name: 'tok-persist',
+      redirect_uris: ['https://tp.example.com/cb'],
+      grant_types: ['client_credentials'],
+    });
+    const t1 = new TokenService(db, 3600);
+    const res = t1.issue(client.client_id, 'registry:read');
+
+    const t2 = new TokenService(db, 3600);
+    const entry = t2.verify(res.access_token)!;
+    expect(entry.clientId).toBe(client.client_id);
+    expect(entry.scope).toBe('registry:read');
+    expect(entry.expiresAt).toBeGreaterThan(entry.issuedAt);
+  });
+
+  it('rejects expired tokens via the SQL WHERE expires_at clause', () => {
+    const client = new ClientRegistry(db).register({
+      client_name: 'tok-expiring',
+      redirect_uris: ['https://te.example.com/cb'],
+      grant_types: ['client_credentials'],
+    });
+    const ts = new TokenService(db, 0); // instant expiry
+    const res = ts.issue(client.client_id);
+    expect(ts.verify(res.access_token)).toBeNull();
+
+    // The row still exists; expiry is enforced in the read query
+    // (expires_at > now) — proving the guard is SQL-side, not eviction.
+    // K6: look up by the STORED sha256 hash, not the plaintext.
+    const row = db
+      .prepare('SELECT token, expires_at FROM oauth_tokens WHERE token = ?')
+      .get(hashToken(res.access_token)) as { token: string; expires_at: number } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.expires_at).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('persists only the sha256 token hash — plaintext is NEVER written (K6)', () => {
+    const client = new ClientRegistry(db).register({
+      client_name: 'tok-hash',
+      redirect_uris: ['https://th.example.com/cb'],
+      grant_types: ['client_credentials'],
+    });
+    const ts = new TokenService(db, 3600);
+    const res = ts.issue(client.client_id, 'registry:write');
+
+    const row = db
+      .prepare('SELECT token FROM oauth_tokens WHERE client_id = ?')
+      .get(client.client_id) as { token: string } | undefined;
+    expect(row).toBeDefined();
+    expect(row!.token).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(row!.token).not.toContain(res.access_token); // no plaintext leak
+    expect(row!.token).toBe(hashToken(res.access_token)); // deterministic mapping
+
+    // A DB reader cannot replay the token because the plaintext is absent.
+    const rows = db.prepare('SELECT COUNT(*) AS n FROM oauth_tokens WHERE token = ?').get(res.access_token) as { n: number };
+    expect(rows.n).toBe(0);
   });
 });
 

@@ -79,7 +79,7 @@ export async function initializeDependencies(): Promise<McpDependencies> {
     }
   }
 
-  _deps = { kg, coherence, debt, scale, llmProvider };
+  _deps = { kg, coherence, debt, scale, projectRoot: config.projectRoot, llmProvider };
   return _deps;
 }
 

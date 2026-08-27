@@ -123,15 +123,17 @@ export function registerCliBridgeTool(server: McpServer, deps: McpDependencies):
     {
       title: 'Run ProjectMind CLI',
       description: [
-        'Run ANY ProjectMind CLI command programmatically and capture its output.',
-        'Escape hatch for capabilities without a dedicated tool (doctor, health,',
-        'report, layers, audit, license, sbom, churn, api-surface, dedup, heatmap,',
-        'ownership, adr, testgen, docgen, migrate, skill-recommend, context-budget,',
-        'contract-test, trace convert/show/clear, refactor-roi, deps-fresh, flags,',
-        'secrets-life, onboard, embed ...). Prefer dedicated / pm_* parity tools.',
+        'Run a ProjectMind CLI command programmatically and capture its output.',
+        'Escape hatch for capabilities without a dedicated tool.',
+        'Root-command whitelist (default-deny):',
+        `  ${Array.from(ALLOWLISTED_CLI_COMMANDS).sort().join(', ')}.`,
+        'Subcommands: per-root whitelist (e.g. doctor: only scan-health;',
+        'license: check/report). Flags are allowed on whitelisted roots.',
         'shell disabled; cwd pinned to the active project root.',
-        'BLOCKED: root commands "mcp"/"init" plus destructive subcommands',
-        '(project delete, debt clear*, data-flow clear, trace clear, doctor rebuild-index).',
+        'BLOCKED: root commands "mcp"/"init"; destructive subcommands',
+        '(project delete, debt clear*, data-flow clear, trace clear,',
+        'doctor rebuild-index/clean-debt, layers --auto-fix); path-valued',
+        'flags (-o/--output/--config) may not escape the project root.',
       ].join(' '),
       inputSchema: {
         args: z.array(z.string()).min(1).describe(
@@ -153,7 +155,7 @@ export function registerCliBridgeTool(server: McpServer, deps: McpDependencies):
           trackAgentAccess(deps.kg, deps.agentName, `cli:${argv[0]}`);
         }
 
-        const res = await runCliCapture(argv, { timeoutMs: args.timeoutMs });
+        const res = await runCliCapture(argv, { timeoutMs: args.timeoutMs, projectRoot: deps.projectRoot });
 
         return {
           content: [

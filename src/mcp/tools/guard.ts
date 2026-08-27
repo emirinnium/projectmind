@@ -11,7 +11,7 @@ export const BLOCKED_ROOT_COMMANDS = new Set(['mcp', 'init']);
  */
 const DESTRUCTIVE_SUBCOMMANDS: Record<string, Set<string>> = {
   project: new Set(['delete']),
-  doctor: new Set(['rebuild-index']),
+  doctor: new Set(['rebuild-index', 'clean-debt']),
   debt: new Set(['clear', 'clear-patterns']),
   'data-flow': new Set(['clear']),
   trace: new Set(['clear']),

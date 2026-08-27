@@ -68,11 +68,29 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
           }
           for (const p of a.args ?? []) argv.push(String(p));
 
+          // RUNTIME guard (K3): the registration-time check above only sees the
+          // static CLI path. The client can pass anything in `args`/`options`,
+          // so re-validate the fully-reconstructed argv before execution —
+          // e.g. pm_debt {args:["clear"]} must never reach `debt clear`.
+          if (isBlockedCliInvocation(argv)) {
+            return {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  cliCommand: `projectmind ${path.join(' ')}`,
+                  ok: false,
+                  exitCode: 1,
+                  error: 'Blocked by guard: destructive command is not allowed through the MCP surface.',
+                }, null, 2),
+              }],
+            };
+          }
+
           if (deps.agentName) {
             try { deps.kg.markAgentTouched(argv.filter(x => !x.startsWith('-')).join(' '), deps.agentName); } catch {}
           }
 
-          const res = await runCliCapture(argv, { timeoutMs: 180_000 });
+          const res = await runCliCapture(argv, { timeoutMs: 180_000, projectRoot: deps.projectRoot });
           return {
             content: [{
               type: 'text',

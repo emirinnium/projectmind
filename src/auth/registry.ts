@@ -1,7 +1,10 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
+import { getDatabase } from '../storage/database.js';
 import type {
   ApplicationType,
+  ClientMetadata,
   ClientRegistrationInput,
   ClientRegistrationResponse,
   GrantType,
@@ -96,15 +99,21 @@ function sameUriSet(a: string[], b: string[]): boolean {
 }
 
 /**
- * In-memory dynamic client registry (RFC 7591).
+ * Dynamic client registry (RFC 7591), persisted in SQLite (`oauth_clients`).
  *
- * Secrets are never stored in plaintext: only a SHA-256 hash is kept, and the
- * plaintext secret is returned exactly once in the registration response.
- * Duplicate registration (same client_name + redirect_uris) returns the
- * previously-established client record instead of creating a second one.
+ * Survives server restarts: client records are stored with their SHA-256
+ * secret hash (never plaintext); the plaintext secret is returned exactly once
+ * in the registration response. Duplicate registration (same client_name +
+ * redirect_uris) returns the previously-established client record instead of
+ * creating a second one — duplicate lookup and insert run inside a single
+ * transaction so the RFC 7591 §2.2 idempotency guarantee holds under
+ * concurrent registrations.
+ *
+ * Writes use explicit BEGIN/COMMIT/ROLLBACK transactions (guardrail: no
+ * partial writes on failure).
  */
 export class ClientRegistry {
-  private readonly clients = new Map<string, StoredClient>();
+  constructor(private readonly db: DatabaseSync = getDatabase()) {}
 
   /** Validate an RFC 7591 registration payload (throws {@link AuthError}). */
   parse(input: unknown): ClientRegistrationInput {
@@ -137,18 +146,12 @@ export class ClientRegistry {
       throw new AuthError('grant_type "implicit" requires at least one redirect_uri');
     }
 
-    // RFC 7591 §2.2: identical metadata again → return the established client.
-    for (const existing of this.clients.values()) {
-      if ((existing.client_name ?? '') === (input.client_name ?? '') && sameUriSet(existing.redirect_uris, redirectUris)) {
-        return this.toResponse(existing);
-      }
-    }
-
     const now = Math.floor(Date.now() / 1000);
     const clientId = `pm_${randomBytes(16).toString('hex')}`;
     const clientSecret = authMethod === 'none' ? undefined : randomBytes(32).toString('hex');
+    const secretHash = clientSecret !== undefined ? hashSecret(clientSecret) : undefined;
 
-    const stored: StoredClient = {
+    const metadata: ClientMetadata = {
       client_id: clientId,
       client_id_issued_at: now,
       client_secret_expires_at: 0,
@@ -162,27 +165,64 @@ export class ClientRegistry {
       contacts: input.contacts ?? [],
       client_info: input.client_info,
       client_capabilities: input.client_capabilities,
-      ...(clientSecret !== undefined ? { client_secret_hash: hashSecret(clientSecret) } : {}),
     };
-    this.clients.set(clientId, stored);
 
+    try {
+      this.db.exec('BEGIN');
+
+      // RFC 7591 §2.2: identical metadata again → return the established client.
+      const rows = this.db.prepare('SELECT client_id, secret_hash, metadata FROM oauth_clients').all() as Array<{
+        client_id: string;
+        secret_hash: string | null;
+        metadata: string;
+      }>;
+      for (const row of rows) {
+        const existing = JSON.parse(row.metadata) as ClientMetadata;
+        if ((existing.client_name ?? '') === (input.client_name ?? '') && sameUriSet(existing.redirect_uris, redirectUris)) {
+          const stored: StoredClient =
+            row.secret_hash !== null ? { ...existing, client_secret_hash: row.secret_hash } : existing;
+          this.db.exec('COMMIT');
+          return this.toResponse(stored);
+        }
+      }
+
+      this.db
+        .prepare('INSERT INTO oauth_clients (client_id, secret_hash, metadata, created_at) VALUES (?, ?, ?, ?)')
+        .run(clientId, secretHash ?? null, JSON.stringify(metadata), now);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      try {
+        this.db.exec('ROLLBACK');
+      } catch {
+        // ignore rollback failure — original error is the one to surface
+      }
+      throw error;
+    }
+
+    const stored: StoredClient = secretHash !== undefined ? { ...metadata, client_secret_hash: secretHash } : metadata;
     const response = this.toResponse(stored);
     return clientSecret !== undefined ? { ...response, client_secret: clientSecret } : response;
   }
 
   get(clientId: string): StoredClient | undefined {
-    return this.clients.get(clientId);
+    const row = this.db
+      .prepare('SELECT client_id, secret_hash, metadata FROM oauth_clients WHERE client_id = ?')
+      .get(clientId) as { client_id: string; secret_hash: string | null; metadata: string } | undefined;
+    if (row === undefined) return undefined;
+    const meta = JSON.parse(row.metadata) as ClientMetadata;
+    return row.secret_hash !== null ? { ...meta, client_secret_hash: row.secret_hash } : meta;
   }
 
   /** Authenticate client_id + client_secret via constant-time digest comparison. */
   authenticate(clientId: string, clientSecret: string): StoredClient | undefined {
-    const stored = this.clients.get(clientId);
+    const stored = this.get(clientId);
     if (stored === undefined || stored.client_secret_hash === undefined) return undefined;
     return safeDigestEqual(stored.client_secret_hash, hashSecret(clientSecret)) ? stored : undefined;
   }
 
   get size(): number {
-    return this.clients.size;
+    const row = this.db.prepare('SELECT COUNT(*) AS n FROM oauth_clients').get() as { n: number };
+    return row.n;
   }
 
   /** Public response form — secret hash is never exposed. */

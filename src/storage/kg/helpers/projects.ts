@@ -1,6 +1,7 @@
 import { getStatement } from '../../database.js';
 import type { SQLOutputValue } from 'node:sqlite';
 import type { KgContext } from './context.js';
+import { getVecIndex } from '../../../core/embeddings/vector-index.js';
 
 export function ensureDefaultProject(_ctx: KgContext): void {
   const existing = getStatement('SELECT id FROM projects WHERE id = 1').get() as { id: number } | undefined;
@@ -93,6 +94,10 @@ export function deleteProject(ctx: KgContext, projectId: number): { success: boo
   if (!project) {
     return { success: false, deletedFiles: 0, error: `Project ${projectId} not found` };
   }
+  // K9: prune vec embeddings BEFORE the files rows vanish (removeByProject
+  // joins back to `files` to find candidate rowids).
+  getVecIndex(ctx.db).removeByProject(projectId);
+
   const result = getStatement('DELETE FROM files WHERE project_id = ?').run(projectId);
   const deletedFiles = Number(result.changes);
   getStatement('DELETE FROM projects WHERE id = ?').run(projectId);

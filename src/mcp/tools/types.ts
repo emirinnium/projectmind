@@ -9,6 +9,9 @@ export interface McpDependencies {
   coherence: CoherenceEngine;
   debt: DebtTracker;
   scale: ScaleManager;
+  /** Absolute path of the active project root — CLI children are pinned to it
+   *  and every user-supplied path is confined to it (K4/K5). */
+  projectRoot: string;
   agentName?: string;
   /** Optional LLM provider for deep/heuristic suggestions (e.g. team-memory conflict resolution). */
   llmProvider?: LLMProvider | null;

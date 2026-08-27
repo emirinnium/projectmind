@@ -289,6 +289,82 @@ export const migrations: Migration[] = [
       void db;
     },
   },
+{
+    version: 9,
+    name: 'add_oauth_persistence',
+    up: (db: DatabaseSync) => {
+      // OAuth 2.0 (RFC 7591 / RFC 6749) persistence: dynamic client
+      // registrations and bearer access tokens move out of RAM (Map) into
+      // SQLite so authorizations survive server restarts.
+      //   oauth_clients: client_id PK, SHA-256 secret hash (never plaintext),
+      //     metadata = JSON of ClientMetadata (RFC 7591 §2 form), epoch seconds.
+      //   oauth_tokens: opaque bearer token PK, FK to client, epoch ms timestamps.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS oauth_clients (
+          client_id TEXT PRIMARY KEY,
+          secret_hash TEXT,
+          metadata TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS oauth_tokens (
+          token TEXT PRIMARY KEY,
+          client_id TEXT NOT NULL,
+          scope TEXT,
+          issued_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL,
+          FOREIGN KEY (client_id) REFERENCES oauth_clients(client_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_oauth_tokens_client ON oauth_tokens(client_id);
+        CREATE INDEX IF NOT EXISTS idx_oauth_tokens_expires ON oauth_tokens(expires_at);
+      `);
+    },
+    down: (db: DatabaseSync) => {
+      db.exec('DROP TABLE IF EXISTS oauth_tokens;');
+      db.exec('DROP TABLE IF EXISTS oauth_clients;');
+    },
+  },
+  {
+    version: 10,
+    name: 'hash_oauth_tokens',
+    up: (db: DatabaseSync) => {
+      // K6: bearer access tokens were persisted PLAINTEXT (prefix `pm_<hex>`).
+      // A DB read (backup, crash dump, shared filesystem) leaked live
+      // credentials. From here on `oauth_tokens.token` stores only
+      // `sha256:<hex>` — the plaintext is returned to the client exactly once
+      // at issuance and never written. Any reader of the DB file can no longer
+      // mint requests.
+      // Migration: existing plaintext rows cannot be re-hashed (the plaintext
+      // is gone), so they are terminated — clients simply re-authenticate.
+      db.exec("DELETE FROM oauth_tokens WHERE token NOT LIKE 'sha256:%'");
+    },
+    down: (db: DatabaseSync) => {
+      // Irreversible by design: hashes cannot be turned back into tokens.
+      void db;
+    },
+  },
+  {
+    version: 11,
+    name: 'circular_dependencies_unique',
+    up: (db: DatabaseSync) => {
+      // K10: circular_dependencies had NO unique constraint, so the
+      // `INSERT OR IGNORE` fast-path (imports.ts / import-repository.ts)
+      // silently duplicated cycle rows forever. Dedupe (keep the earliest
+      // row per cycle_path), then enforce uniqueness at the DB level.
+      const hasTable = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'circular_dependencies'")
+        .get();
+      if (!hasTable) return; // pre-schema DB — SCHEMA_SQL creates the table fresh.
+      db.exec(`
+        DELETE FROM circular_dependencies
+        WHERE id NOT IN (SELECT MIN(id) FROM circular_dependencies GROUP BY cycle_path);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_circular_deps_cycle_path
+          ON circular_dependencies(cycle_path);
+      `);
+    },
+    down: (db: DatabaseSync) => {
+      db.exec('DROP INDEX IF EXISTS idx_circular_deps_cycle_path');
+    },
+  },
 ];
 
 export function getCurrentSchemaVersion(db: DatabaseSync): number {

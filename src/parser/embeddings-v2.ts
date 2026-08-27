@@ -60,9 +60,21 @@ function getDefaultModelPath(provider: 'unixcoder' | 'codebert'): string {
 
 /**
  * Initialize the embedding provider
+ *
+ * K11/R15: idempotent for the SAME provider. Re-initializing mid-process
+ * (e.g. two MCP tools both call init) silently switched providers before,
+ * changing the embedding DIMENSION and corrupting the shared vec index
+ * (split-brain). Only an explicit provider CHANGE re-initializes.
  */
 export async function initEmbeddingProvider(options: EmbeddingOptions = {}): Promise<void> {
   const provider = options.provider || 'simple';
+
+  if (provider === currentProvider) {
+    if (provider !== 'simple') {
+      logger.debug(`Embedding provider already initialized: ${provider} (skipping re-init)`);
+    }
+    return;
+  }
 
   if (provider === 'simple') {
     currentProvider = 'simple';
@@ -180,6 +192,34 @@ export async function generateEmbedding(text: string, dim: number = 768, indexId
   }
   
   return embedding;
+}
+
+/**
+ * K11/R15: hard cap for one batch — keeps the greedy scan/dedupe worker from
+ * buffering an unbounded number of texts (and thus unbounded memory).
+ */
+export const MAX_EMBEDDING_BATCH = 32;
+
+/**
+ * K11/R15: batch embedding generation.
+ *
+ * Callers that produce N texts (scan, dedupe, coordination) MUST use this
+ * instead of looping `generateEmbedding` themselves: ONNX/transformers
+ * sessions are re-entered per call, and a naive loop defeats the single
+ * provider/session architecture and can balloon memory. The batch is hard
+ * capped at {@link MAX_EMBEDDING_BATCH}.
+ */
+export async function generateEmbeddingBatch(
+  texts: readonly string[],
+  dim: number = 768,
+  opts: { indexIds?: string[]; metadata?: Record<string, string | number | boolean | null> } = {}
+): Promise<number[][]> {
+  const chunk = texts.slice(0, MAX_EMBEDDING_BATCH);
+  const out: number[][] = [];
+  for (let i = 0; i < chunk.length; i++) {
+    out.push(await generateEmbedding(chunk[i]!, dim, opts.indexIds?.[i], opts.metadata));
+  }
+  return out;
 }
 
 /**

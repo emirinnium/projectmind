@@ -71,7 +71,7 @@ export function detectLanguageFromPath(filePath: string): StructuralLanguage | n
  */
 const PARSER_POOL = new Map<Parser.Language, Parser>();
 
-function getParserFor(grammar: Parser.Language): Parser {
+export function getParserFor(grammar: Parser.Language): Parser {
   let parser = PARSER_POOL.get(grammar);
   if (!parser) {
     parser = new Parser();

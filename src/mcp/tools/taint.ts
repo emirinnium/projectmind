@@ -4,6 +4,7 @@ import type { McpDependencies } from './types.js';
 import { trackAgentAccess } from './types.js';
 import { TaintAnalyzer } from '@/parser/taint-analyzer.js';
 import { detectLanguageFromPath } from '@/parser/language-service.js';
+import { confineToProject } from './_shared.js';
 
 export function registerTaintTools(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -24,15 +25,19 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
         const analyzer = new TaintAnalyzer(deps.kg);
         const { readFileSync, existsSync } = await import('node:fs');
 
-        if (!existsSync(args.filePath)) {
+        // K5: never read outside the project root — relative paths resolve
+        // against the project; `../` and absolute escapes are rejected.
+        const absPath = confineToProject(args.filePath, deps.projectRoot);
+
+        if (!existsSync(absPath)) {
           return {
             content: [{ type: 'text', text: JSON.stringify({ success: false, error: `File not found: ${args.filePath}` }, null, 2) }],
           };
         }
 
-        const content = readFileSync(args.filePath, 'utf-8');
-        const lang = detectLanguageFromPath(args.filePath) ?? 'typescript';
-        const flows = analyzer.analyzeSource(args.filePath, content, lang);
+        const content = readFileSync(absPath, 'utf-8');
+        const lang = detectLanguageFromPath(absPath) ?? 'typescript';
+        const flows = analyzer.analyzeSource(absPath, content, lang);
 
         return {
           content: [
@@ -86,15 +91,18 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
         const analyzer = new TaintAnalyzer(deps.kg);
         const { readFileSync, existsSync } = await import('node:fs');
 
-        if (!existsSync(args.filePath)) {
+        // K5: confine to the project root before reading.
+        const absPath = confineToProject(args.filePath, deps.projectRoot);
+
+        if (!existsSync(absPath)) {
           return {
             content: [{ type: 'text', text: JSON.stringify({ success: false, error: `File not found: ${args.filePath}` }, null, 2) }],
           };
         }
 
-        const content = readFileSync(args.filePath, 'utf-8');
-        const lang = detectLanguageFromPath(args.filePath) ?? 'typescript';
-        const recorded = analyzer.recordFlows(args.filePath, content, lang);
+        const content = readFileSync(absPath, 'utf-8');
+        const lang = detectLanguageFromPath(absPath) ?? 'typescript';
+        const recorded = analyzer.recordFlows(absPath, content, lang);
 
         return {
           content: [

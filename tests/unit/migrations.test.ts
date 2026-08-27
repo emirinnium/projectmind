@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { getCurrentSchemaVersion, rollbackMigrations, rollbackLast, setSchemaVersion, removeSchemaVersion, runMigrations } from '../../src/storage/migrations.js';
+import { SCHEMA_SQL } from '../../src/storage/schema.js';
 
 function createTestDbWithoutMigrations(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
@@ -202,7 +203,7 @@ describe('Legacy DB upgrades', () => {
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(8);
+    expect(getCurrentSchemaVersion(db)).toBe(11);
 
     // last_synced added as a NULLABLE column (no non-constant default —
     // SQLite forbids DEFAULT CURRENT_TIMESTAMP in ADD COLUMN)
@@ -221,5 +222,79 @@ describe('Legacy DB upgrades', () => {
       .run(1, 'complexity', 'new type allowed', 'medium');
     const count = db.prepare('SELECT COUNT(*) as c FROM debt_items').get() as { c: number };
     expect(count.c).toBe(2);
+  });
+
+  it('migration 10 wipes legacy PLAINTEXT oauth tokens (K6)', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(SCHEMA_SQL);
+    // Simulate a v9 DB with a plaintext token already persisted.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS oauth_tokens (
+        token TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL,
+        scope TEXT,
+        issued_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS oauth_clients (
+        client_id TEXT PRIMARY KEY,
+        secret_hash TEXT,
+        metadata TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS schema_version (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    setSchemaVersion(db, 9, 'add_oauth_persistence');
+    db.prepare('INSERT INTO oauth_clients (client_id, secret_hash, metadata, created_at) VALUES (?, ?, ?, ?)')
+      .run('c1', 'x', '{}', 1);
+    db.prepare('INSERT INTO oauth_tokens (token, client_id, scope, issued_at, expires_at) VALUES (?, ?, ?, ?, ?)')
+      .run('pm_legacy_plaintext_abc', 'c1', null, 1, 9999999999999);
+
+    runMigrations(db);
+
+    const leftover = db.prepare('SELECT COUNT(*) AS n FROM oauth_tokens').get() as { n: number };
+    expect(leftover.n).toBe(0);
+    // New-style rows (already hashed) are untouched — idempotent re-runs safe.
+    setSchemaVersion(db, 10, 'hash_oauth_tokens');
+    runMigrations(db);
+    expect(getCurrentSchemaVersion(db)).toBe(11);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM oauth_tokens').get()).toEqual({ n: 0 });
+    db.close();
+  });
+
+  it('migration 11 dedupes duplicate cycle rows and enforces UNIQUE (K10)', () => {
+    const db = new DatabaseSync(':memory:');
+    // Legacy table WITHOUT the unique index, holding duplicates.
+    db.exec(`
+      CREATE TABLE circular_dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cycle_path TEXT NOT NULL,
+        file_count INTEGER NOT NULL,
+        detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        resolved BOOLEAN DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS schema_version (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    setSchemaVersion(db, 10, 'hash_oauth_tokens');
+    db.prepare('INSERT INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)').run('a -> b -> a', 3);
+    db.prepare('INSERT INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)').run('a -> b -> a', 3); // dup
+    db.prepare('INSERT INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)').run('x -> y -> x', 3);
+
+    runMigrations(db);
+
+    const left = db.prepare('SELECT COUNT(*) AS n FROM circular_dependencies').get() as { n: number };
+    expect(left.n).toBe(2);
+    // Uniqueness is now enforced at the DB level — INSERT OR IGNORE is real.
+    db.prepare('INSERT OR IGNORE INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)').run('a -> b -> a', 3);
+    expect((db.prepare('SELECT COUNT(*) AS n FROM circular_dependencies').get() as { n: number }).n).toBe(2);
+    db.close();
   });
 });

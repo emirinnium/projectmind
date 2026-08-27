@@ -7,7 +7,7 @@ import { registerAllTools } from './mcp/tools/registry/index.js';
 import { registerCoreResources, registerWorkflowPrompts } from './mcp/resources.js';
 import { logger } from './cli/utils/logger.js';
 import { initializeDependencies, getDependencies, getMcpSessionId } from './mcp/dependencies.js';
-import { closeDatabase } from './storage/database.js';
+import { closeDatabase, getDatabase } from './storage/database.js';
 import { resolvePackageVersion, currentModuleDir } from './utils/version.js';
 import { pathToFileURL } from 'node:url';
 import { registerResourceSubscriptionTool } from './mcp/resources.js';
@@ -82,8 +82,27 @@ const HTTP_RATE_LIMIT_PER_MIN = Math.max(1, parseInt(process.env.PROJECTMIND_HTT
 const OAUTH_ENABLED =
   process.env.PROJECTMIND_OAUTH_ENABLED === '1' || process.env.PROJECTMIND_OAUTH_ENABLED === 'true';
 const OAUTH_TOKEN_TTL = Math.max(1, parseInt(process.env.PROJECTMIND_OAUTH_TOKEN_TTL ?? '3600', 10) || 3600);
-const oauthRegistry = new ClientRegistry();
-const oauthTokens = new TokenService(OAUTH_TOKEN_TTL);
+
+// S1: the ONLY scope whose bearer token may reach /mcp. Tokens issued for
+// other scopes (e.g. "registry:read") verify fine but are rejected here —
+// scope is meaningful only if the /mcp boundary enforces it.
+const MCP_ACCESS_SCOPE = 'projectmind:mcp';
+
+// Lazy OAuth singletons — never touch the database at module load time.
+// `pm mcp` (and any consumer of the package root re-export) imports this
+// module BEFORE initializeDependencies() has run; eager `getDatabase()` here
+// would throw "Database not initialized" and crash the import. These getters
+// only run once an /oauth/* or /mcp request arrives, i.e. after init.
+let _oauthRegistry: ClientRegistry | null = null;
+let _oauthTokens: TokenService | null = null;
+
+function getOauthRegistry(): ClientRegistry {
+  return (_oauthRegistry ??= new ClientRegistry(getDatabase()));
+}
+
+function getOauthTokens(): TokenService {
+  return (_oauthTokens ??= new TokenService(getDatabase(), OAUTH_TOKEN_TTL));
+}
 
 /** Length-safe, timing-attack-resistant string comparison. */
 function safeTokenEqual(a: string, b: string): boolean {
@@ -116,10 +135,16 @@ function isStaticTokenValid(req: http.IncomingMessage): boolean {
 function isHttpAuthorized(req: http.IncomingMessage): boolean {
   // Static bearer (admin) token wins when configured.
   if (HTTP_AUTH_TOKEN && isStaticTokenValid(req)) return true;
-  // Dual mode: a valid OAuth access token also authorizes /mcp.
+  // Dual mode: a valid OAuth access token also authorizes /mcp — but only
+  // when it carries the MCP-access scope (S1). Expiry is checked inside
+  // verify(); scope is checked here so a "registry:read" token cannot be
+  // replayed against the /mcp surface.
   if (OAUTH_ENABLED) {
     const presented = extractBearerOrHeaderToken(req);
-    if (presented !== undefined && presented.length > 0 && oauthTokens.verify(presented) !== null) return true;
+    if (presented !== undefined && presented.length > 0) {
+      const entry = getOauthTokens().verify(presented);
+      if (entry !== null && entry.scope === MCP_ACCESS_SCOPE) return true;
+    }
   }
   // Open loopback mode ONLY when no authentication is configured at all.
   if (!HTTP_AUTH_TOKEN && !OAUTH_ENABLED) return true;
@@ -260,8 +285,8 @@ export async function initMcpServer(): Promise<void> {
                 return;
               }
               const result = handleOauthRoute(req.url, bodyText, req.headers['content-type'] ?? '', {
-                registry: oauthRegistry,
-                tokens: oauthTokens,
+                registry: getOauthRegistry(),
+                tokens: getOauthTokens(),
                 authorization: req.headers['authorization'],
               });
               if (!result.handled) {

@@ -10,9 +10,6 @@ export * from './storage/index.js';
 // Utilities
 export * from './utils/index.js';
 
-// Tracer
-export * from './tracer/index.js';
-
 // Parser
 export { 
   parseFile, 

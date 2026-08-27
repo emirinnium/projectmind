@@ -356,7 +356,9 @@ export function findSimilarFiles(ctx: KgContext, targetEmbedding: number[], thre
   const vecIndex = getVecIndex(ctx.db);
   if (vecIndex.isAvailable()) {
     const overfetch = Math.max(limit * 3, 30);
-    const rawMatches = vecIndex.findSimilar(targetEmbedding, overfetch);
+    // K9: project-scoped search — the vec table spans ALL projects, so an
+    // unfiltered MATCH can surface files from other projects.
+    const rawMatches = vecIndex.findSimilar(targetEmbedding, overfetch, ctx.currentProjectId);
 
     // Convert cosine distance → similarity score and apply threshold.
     const goodIds: number[] = [];

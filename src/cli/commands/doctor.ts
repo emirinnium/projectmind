@@ -159,7 +159,13 @@ export function createDoctorCommand(): Command {
           }
           // Reset auto-increment
           db.exec('DELETE FROM sqlite_sequence');
-          
+
+          // K9: the vec index MUST follow the wipe, or it keeps returning
+          // rowids for now-nonexistent files. Drop the virtual table and
+          // recreate it (empty, embeddings return on the next scan).
+          const { getVecIndex } = await import('../../core/embeddings/vector-index.js');
+          getVecIndex(db).rebuild();
+
           output.success('Tables cleared. Run "projectmind scan" to rebuild.');
         } else {
           output.info('Dry run complete. Run without --dry-run to execute.');

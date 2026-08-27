@@ -5,6 +5,7 @@ import { FileStructure } from '../../parser/ast-parser.js';
 import type { FileInfo, MemoryEntry, AgentSession } from './types.js';
 import type { KgContext } from './helpers/context.js';
 import { createGraphTraversal } from './graph-traversal.js';
+import { getVecIndex } from '../../core/embeddings/vector-index.js';
 import { stat } from 'node:fs/promises';
 
 import {
@@ -555,6 +556,9 @@ export class KnowledgeGraph {
             // Remove the file entry from the KG (best-effort — file may not exist in DB).
             const fileInfo = this.getFileByPath(filePath);
             if (fileInfo) {
+              // K9: prune the vec index so deleted files stop surfacing in
+              // embedding search.
+              getVecIndex(this.db).remove(fileInfo.id);
               this.db.prepare('DELETE FROM files WHERE id = ?').run(fileInfo.id);
             }
             actions.push({ action, filePath, details, timestamp: memory.createdAt });

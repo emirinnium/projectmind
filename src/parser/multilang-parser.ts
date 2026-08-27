@@ -9,6 +9,7 @@ import CSharp from 'tree-sitter-c-sharp';
 import CPP from 'tree-sitter-cpp';
 import Ruby from 'tree-sitter-ruby';
 import { logger } from '../utils/logger.js';
+import { getParserFor } from './language-service.js';
 import type { Language, FileStructure, FunctionInfo, ClassInfo } from './types.js';
 
 const LANGUAGE_MAP: Record<string, { language: Parser.Language; name: Language }> = {
@@ -51,7 +52,10 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
     return null;
   }
 
-  const parser = new Parser();
+  // K12/R14: reuse the pooled parser per grammar instead of allocating a new
+  // Parser per file (each carries an expensive native grammar — pooling fixed
+  // the RSS leak for language-service and applies to this hot path too).
+  const parser = getParserFor(entry.language);
   parser.setLanguage(entry.language);
 
   let tree: Parser.Tree;

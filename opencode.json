@@ -29,6 +29,15 @@
       "models": {
         "llama-3.3-70b-versatile": { "name": "Llama 3.3 70B Versatile" }
       }
+    },
+    "tokenrouter": {
+      "options": {
+        "apiKey": "sk-RtytAH4o4HoK41B0LcCQTBz5gwUG8uzXypjO9L9AQAbrLhgv",
+        "baseURL": "https://api.tokenrouter.com/v1"
+      },
+      "models": {
+        "qwen/qwen3.8-max-free": { "name": "Qwen 3.8 Max Free" }
+      }
     }
   },
   "permission": {
@@ -40,10 +49,63 @@
     "grep": "allow",
     "task": "allow"
   },
-  "model": "openai/gemini-2.5-flash",
+  "model": "tokenrouter/qwen/qwen3.8-max-free",
   "small_model": "groq/llama-3.3-70b-versatile",
   "instructions": [
     ".kilo/instructions/projectmind-auto.md"
   ],
-  "autoupdate": "notify"
+  "autoupdate": "notify",
+  "agent": {
+    "build": {
+      "steps": 500
+    },
+    "plan": {
+      "steps": 500
+    },
+    "general": {
+      "steps": 500
+    },
+    "explore": {
+      "steps": 500
+    },
+    "projectmind": {
+      "steps": 500
+    },
+    "automation": {
+      "mode": "all",
+      "model": "mistral/mistral-small-2603",
+      "steps": 600,
+      "permission": {
+        "task": {
+          "*": "allow",
+          "project-analyzer": "allow",
+          "code-planner": "allow",
+          "coder": "allow"
+        }
+      }
+    },
+    "project-analyzer": {
+      "mode": "subagent",
+      "model": "tokenrouter/qwen/qwen3.8-max-free",
+      "steps": 60,
+      "permission": {
+        "edit": "deny",
+        "write": "deny"
+      }
+    },
+    "code-planner": {
+      "mode": "subagent",
+      "model": "mistral/mistral-small-2603",
+      "steps": 60,
+      "permission": {
+        "edit": "deny",
+        "write": "deny"
+      }
+    },
+    "coder": {
+      "mode": "subagent",
+      "model": "openrouter/xiaomi/mimo-v2.5-pro",
+      "steps": 300
+    }
+  }
 }
