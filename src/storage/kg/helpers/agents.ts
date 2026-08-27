@@ -42,7 +42,7 @@ export function getMemory(ctx: KgContext, scope: string, key?: string): MemoryEn
     sessionId: r.session_id as number,
     scope: r.scope as string,
     key: r.key as string,
-    value: r.value as string,
+    value: (() => { try { return JSON.parse(r.value as string); } catch { return r.value as string; } })(),
     createdAt: r.created_at as string,
   }));
 }
@@ -105,7 +105,7 @@ function mapTeamMemoryRow(r: Record<string, SQLOutputValue>): TeamMemoryRowView 
     agentName: r.agent_name as string,
     scope: r.scope as string,
     key: r.key as string,
-    value: r.value as string,
+    value: (() => { try { return JSON.parse(r.value as string); } catch { return r.value as string; } })(),
     baseValue: r.base_value as string | null,
     isPublic: (r.is_public as number) === 1,
     createdAt: r.created_at as string,

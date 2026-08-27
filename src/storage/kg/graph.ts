@@ -522,7 +522,7 @@ export class KnowledgeGraph {
 
     for (const memory of memories) {
       try {
-        const parsed = JSON.parse(memory.value) as AgentAction;
+        const parsed = JSON.parse(memory.value as string) as AgentAction;
         const { action, filePath, details } = parsed;
 
         // Replay the action — update the knowledge graph to reflect what the agent did.

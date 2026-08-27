@@ -19,7 +19,7 @@ export interface MemoryEntry {
   sessionId: number;
   scope: string;
   key: string;
-  value: string;
+  value: unknown;
   createdAt: string;
 }
 

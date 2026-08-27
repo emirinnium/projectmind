@@ -159,7 +159,7 @@ export class MemoryRepository {
       sessionId: row.session_id as number,
       scope: row.scope as string,
       key: row.key as string,
-      value: row.value as string,
+      value: (() => { try { return JSON.parse(row.value as string); } catch { return row.value as string; } })(),
       createdAt: row.created_at as string,
       expiresAt: (row.expires_at as string | null) ?? null,
     };
