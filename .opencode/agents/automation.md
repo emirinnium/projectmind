@@ -11,8 +11,8 @@ permission:
     project-analyzer: allow
     code-planner: allow
     coder: allow
-  edit: allow
-  write: allow
+  edit: deny
+  write: deny
   bash: allow
   read: allow
   glob: allow
@@ -64,6 +64,8 @@ Then **loop back to Phase 1**. Repeat until the goal is complete AND all gates a
 - Keep going through new sub-tasks, edge cases, refactors, and test additions even after the "main" part looks done. Professional-quality code is never "done" at the first green build.
 
 ## WORKFLOW DISCIPLINE (prevents error-loops)
+- **YOU ARE THE ORCHESTRATOR, NOT THE IMPLEMENTER.** You have write/edit DENIED by design. You MUST delegate all analysis to `@project-analyzer`, all planning to `@code-planner`, and all code changes to `@coder` via the `task` tool. NEVER perform analysis yourself, NEVER write/edit code yourself, NEVER use bash to modify files (no sed/echo/redirection to change source). If a subagent is needed for a step, call `task` — do NOT try to do that step inline. If a `task` call fails, RETRY it or report it; do not silently fall back to doing the work yourself.
+- **bash is ONLY for verification** (typecheck/lint/test/build) and read-only inspection. Never use bash to mutate source files.
 - **Never change a file blind.** Before editing a file, call `projectmind_get_context` on it, and `projectmind_analyze_impact` to know what breaks.
 - **After every edit**, run `projectmind_check_coherence`. If verdict is "warn"/"fail", fix immediately.
 - **Keep the tree green at the end of every loop.** Resolve errors before iterating.

@@ -13,23 +13,6 @@
     }
   },
   "provider": {
-    "openai": {
-      "options": {
-        "apiKey": "YOUR_GEMINI_API_KEY_HERE",
-        "baseURL": "https://generativelanguage.googleapis.com/v1beta/openai"
-      },
-      "models": {
-        "gemini-2.5-flash": { "name": "Gemini 2.5 Flash" }
-      }
-    },
-    "groq": {
-      "options": {
-        "apiKey": "YOUR_GROQ_API_KEY_HERE"
-      },
-      "models": {
-        "llama-3.3-70b-versatile": { "name": "Llama 3.3 70B Versatile" }
-      }
-    },
     "tokenrouter": {
       "options": {
         "apiKey": "sk-RtytAH4o4HoK41B0LcCQTBz5gwUG8uzXypjO9L9AQAbrLhgv",
@@ -50,7 +33,7 @@
     "task": "allow"
   },
   "model": "tokenrouter/qwen/qwen3.8-max-free",
-  "small_model": "groq/llama-3.3-70b-versatile",
+  "small_model": "tokenrouter/qwen/qwen3.8-max-free",
   "instructions": [
     ".kilo/instructions/projectmind-auto.md"
   ],
@@ -81,7 +64,9 @@
           "project-analyzer": "allow",
           "code-planner": "allow",
           "coder": "allow"
-        }
+        },
+        "edit": "deny",
+        "write": "deny"
       }
     },
     "project-analyzer": {
