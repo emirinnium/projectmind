@@ -1,9 +1,102 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { SQLOutputValue } from 'node:sqlite';
 import type { McpDependencies } from './tools/types.js';
 import { getStatement } from '../storage/database.js';
 import { loadConfig } from '../utils/config.js';
 import { logger } from '../cli/utils/logger.js';
+import { watch as fsWatch, type FSWatcher } from 'node:fs';
+import { toolCacheHintMeta } from './tools/list.js';
+
+/**
+ * Manages resource subscriptions and notifications.
+ */
+class ResourceSubscriptionManager {
+  private subscriptions = new Map<string, Set<string>>(); // resourceId -> Set<clientId>
+  private server: McpServer | null = null;
+  private watchers: FSWatcher[] = [];
+  private lastNotifyAt = 0;
+  private static readonly WATCH_THROTTLE_MS = 400;
+
+  setServer(server: McpServer): void {
+    this.server = server;
+  }
+
+  /**
+   * Subscribe a client to a resource.
+   */
+  subscribe(resourceId: string, clientId: string): void {
+    if (!this.subscriptions.has(resourceId)) {
+      this.subscriptions.set(resourceId, new Set());
+    }
+    this.subscriptions.get(resourceId)?.add(clientId);
+    logger.info(`Client ${clientId} subscribed to resource ${resourceId}.`);
+  }
+
+  /**
+   * Unsubscribe a client from a resource.
+   */
+  unsubscribe(resourceId: string, clientId: string): void {
+    this.subscriptions.get(resourceId)?.delete(clientId);
+    logger.info(`Client ${clientId} unsubscribed from resource ${resourceId}.`);
+  }
+
+  /**
+   * Notify all connected clients that a resource has been updated.
+   *
+   * Emits a standard `notifications/resources/updated` message for `resourceId`.
+   * Per MCP this is a broadcast hint (clients cache resources locally and
+   * refresh on receipt), so it fires regardless of explicit subscription
+   * interest. It is a safe no-op when no transport is connected.
+   */
+  async notifyResourceUpdated(resourceId: string): Promise<void> {
+    if (!this.server || !this.server.isConnected()) return;
+    try {
+      await this.server.server.sendResourceUpdated({ uri: resourceId });
+      logger.info(`Sent resource/updated notification for ${resourceId}.`);
+    } catch (e) {
+      logger.warn(`Failed to send resource/updated notification for ${resourceId}:`, { error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  /**
+   * Start a filesystem watcher that maps source edits to resource-updated
+   * notifications (the "file watch → resource update" chain).
+   *
+   * Uses `node:fs` (no external dependency). `persistent: false` guarantees the
+   * watcher never keeps the process / test runner alive. Notifications are
+   * throttled to avoid flooding clients during bulk edits. Best-effort: if
+   * recursive watching is unsupported on the platform it logs and skips.
+   */
+  startFileWatch(rootDir: string): void {
+    if (this.watchers.length > 0) return; // already watching
+    const ignored = /(?:^|[\\/])(?:node_modules|\.git|dist|coverage)(?:[\\/]|$)/;
+    try {
+      const watcher = fsWatch(
+        rootDir,
+        { recursive: true, persistent: false },
+        (_event: string, filename: string | Buffer | null) => {
+          if (!filename || ignored.test(String(filename))) return;
+          const now = Date.now();
+          if (now - this.lastNotifyAt < ResourceSubscriptionManager.WATCH_THROTTLE_MS) return;
+          this.lastNotifyAt = now;
+          // Source edits change file inventory (schema) and project stats.
+          void this.notifyResourceUpdated('pm://stats');
+          void this.notifyResourceUpdated('pm://schema');
+        }
+      );
+      this.watchers.push(watcher);
+      logger.info(`Resource file-watch started for ${rootDir}`);
+    } catch (e) {
+      logger.warn('Resource file-watch unavailable (recursive watch unsupported on this platform):', {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+}
+
+// Singleton instance
+const subscriptionManager = new ResourceSubscriptionManager();
 
 /**
  * MCP Resources & Prompts.
@@ -15,12 +108,15 @@ import { logger } from '../cli/utils/logger.js';
 
 const MASK_KEYS = /apikey|api_key|token|secret|password/i;
 
-function maskSecrets(obj: unknown, depth = 0): unknown {
+type JsonScalar = string | number | boolean | null;
+type JsonValue = JsonScalar | JsonValue[] | { [key: string]: JsonValue };
+
+function maskSecrets(obj: JsonValue, depth = 0): JsonValue {
   if (depth > 6) return '[deep]';
   if (Array.isArray(obj)) return obj.map((v) => maskSecrets(v, depth + 1));
   if (obj && typeof obj === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    const out: { [key: string]: JsonValue } = {};
+    for (const [k, v] of Object.entries(obj)) {
       out[k] = MASK_KEYS.test(k) ? '***masked***' : maskSecrets(v, depth + 1);
     }
     return out;
@@ -29,17 +125,27 @@ function maskSecrets(obj: unknown, depth = 0): unknown {
 }
 
 export function registerCoreResources(server: McpServer, deps: McpDependencies): void {
+  // Set the server for the subscription manager
+  subscriptionManager.setServer(server);
+  // Real-time chain: source edits → resource/updated notifications.
+  subscriptionManager.startFileWatch(process.cwd());
+
   // pm://schema — live table list from the knowledge-graph database.
   server.registerResource(
     'schema',
     'pm://schema',
-    { title: 'Database Schema', description: 'Table names of the ProjectMind knowledge-graph SQLite database.', mimeType: 'application/json' },
+    {
+      title: 'Database Schema', 
+      description: 'Table names of the ProjectMind knowledge-graph SQLite database.', 
+      mimeType: 'application/json',
+      _meta: { supportsSubscribe: true },
+    },
     async () => {
-      let tables: unknown = [];
+      let tables: Array<Record<string, SQLOutputValue>> = [];
       try {
         tables = getStatement(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`).all();
       } catch (e) {
-        logger.warn('pm://schema read failed', { error: e });
+        logger.warn('pm://schema read failed', { error: e instanceof Error ? e.message : String(e) });
       }
       return { contents: [{ uri: 'pm://schema', mimeType: 'application/json', text: JSON.stringify({ tables }, null, 2) }] };
     }
@@ -51,9 +157,9 @@ export function registerCoreResources(server: McpServer, deps: McpDependencies):
     'pm://config',
     { title: 'Effective Config', description: 'Resolved ProjectMind configuration with all secrets masked.', mimeType: 'application/json' },
     async () => {
-      let config: unknown;
+      let config: JsonValue;
       try {
-        config = maskSecrets(loadConfig());
+        config = maskSecrets(loadConfig() as unknown as JsonValue);
       } catch (e) {
         config = { error: String(e) };
       }
@@ -67,7 +173,7 @@ export function registerCoreResources(server: McpServer, deps: McpDependencies):
     'pm://stats',
     { title: 'Project Stats', description: 'File counts per language, agent-touch coverage and session count for the active project.', mimeType: 'application/json' },
     async () => {
-      const stats: Record<string, unknown> = {};
+      const stats: { totalFiles: number; languages: Record<string, number>; agentTouchedFiles: number; agentCoverage: string | number; error?: string } = { totalFiles: 0, languages: {}, agentTouchedFiles: 0, agentCoverage: '0%' };
       try {
         const files = deps.kg.getAllFiles();
         const languages: Record<string, number> = {};
@@ -90,6 +196,45 @@ export function registerCoreResources(server: McpServer, deps: McpDependencies):
 }
 
 type PromptArgs = Record<string, string | undefined>;
+
+/**
+ * Register the resource subscription tool.
+ */
+export function registerResourceSubscriptionTool(server: McpServer): void {
+  server.registerTool(
+    'resource_subscribe',
+    {
+      ...toolCacheHintMeta('resource_subscribe'),
+      title: 'Resource Subscribe',
+      description: 'Subscribe to updates for a specific resource.',
+      inputSchema: {
+        resourceId: z.string().describe('The ID of the resource to subscribe to.'),
+        clientId: z.string().describe('The client ID to associate with this subscription.'),
+      },
+    },
+    async ({ resourceId, clientId }: { resourceId: string; clientId: string }) => {
+      subscriptionManager.subscribe(resourceId, clientId);
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true }) }] };
+    }
+  );
+
+  server.registerTool(
+    'resource_unsubscribe',
+    {
+      ...toolCacheHintMeta('resource_unsubscribe'),
+      title: 'Resource Unsubscribe',
+      description: 'Unsubscribe from updates for a specific resource.',
+      inputSchema: {
+        resourceId: z.string().describe('The ID of the resource to unsubscribe from.'),
+        clientId: z.string().describe('The client ID to remove from this subscription.'),
+      },
+    },
+    async ({ resourceId, clientId }: { resourceId: string; clientId: string }) => {
+      subscriptionManager.unsubscribe(resourceId, clientId);
+      return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true }) }] };
+    }
+  );
+}
 
 export function registerWorkflowPrompts(server: McpServer): void {
   server.registerPrompt(

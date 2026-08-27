@@ -2,6 +2,7 @@ import { getStatement, runWithRetry } from '../../database.js';
 import { resolve } from 'node:path';
 import { FileInfo } from '../types.js';
 import type { KgContext } from './context.js';
+import type { SQLOutputValue } from 'node:sqlite';
 import { getFileByPath, getAllFiles, getImports, resolveImportSource } from './files.js';
 
 export function getDependents(ctx: KgContext, fileId: number): FileInfo[] {
@@ -15,7 +16,7 @@ export function getDependents(ctx: KgContext, fileId: number): FileInfo[] {
       i.resolved_path = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
       OR i.source = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
     )
-  `).all(ctx.currentProjectId, fileId, fileId) as Record<string, unknown>[];
+  `).all(ctx.currentProjectId, fileId, fileId) as Record<string, SQLOutputValue>[];
   return rows.map((r) => ({
     id: r.id as number,
     path: r.path as string,
@@ -28,7 +29,8 @@ export function getDependents(ctx: KgContext, fileId: number): FileInfo[] {
     agentTouchedAt: (r.agent_touched_at as string | null) ?? null,
     cognitiveLoad: (r.cognitive_load as number) ?? 0,
     lastScanned: r.last_scanned as string,
-    patterns: (r.patterns as string[]) ?? [],
+    lastSynced: (r.last_synced as string) ?? (r.last_scanned as string),
+    patterns: JSON.parse((r.patterns as string) ?? '[]') as string[],
   }));
 }
 
@@ -38,7 +40,7 @@ export function getDirectDependents(ctx: KgContext, sourcePath: string): FileInf
     SELECT DISTINCT f.* FROM files f
     JOIN imports i ON f.id = i.file_id
     WHERE f.project_id = ? AND (i.resolved_path = ? OR i.source = ?)
-  `).all(ctx.currentProjectId, normalizedSource, normalizedSource) as Record<string, unknown>[];
+  `).all(ctx.currentProjectId, normalizedSource, normalizedSource) as Record<string, SQLOutputValue>[];
   return rows.map((r) => ({
     id: r.id as number,
     path: r.path as string,
@@ -51,7 +53,8 @@ export function getDirectDependents(ctx: KgContext, sourcePath: string): FileInf
     agentTouchedAt: (r.agent_touched_at as string | null) ?? null,
     cognitiveLoad: (r.cognitive_load as number) ?? 0,
     lastScanned: r.last_scanned as string,
-    patterns: (r.patterns as string[]) ?? [],
+    lastSynced: (r.last_synced as string) ?? (r.last_scanned as string),
+    patterns: JSON.parse((r.patterns as string) ?? '[]') as string[],
   }));
 }
 
@@ -222,7 +225,7 @@ export function getDynamicCalls(ctx: KgContext, workloadId: string): { fromFunct
      FROM calls c
      JOIN functions f1 ON c.from_function_id = f1.id
      JOIN functions f2 ON c.to_function_id = f2.id
-     WHERE c.workload_id = ? AND c.dynamic = 1`).all(workloadId) as Record<string, unknown>[];
+     WHERE c.workload_id = ? AND c.dynamic = 1`).all(workloadId) as Record<string, SQLOutputValue>[];
 
   return rows.map((r) => ({
     fromFunctionId: r.from_function_id as number,
@@ -240,7 +243,7 @@ export function getAllDynamicCalls(_ctx: KgContext): { fromFunctionId: number; t
      FROM calls c
      JOIN functions f1 ON c.from_function_id = f1.id
      JOIN functions f2 ON c.to_function_id = f2.id
-     WHERE c.dynamic = 1`).all() as Record<string, unknown>[];
+     WHERE c.dynamic = 1`).all() as Record<string, SQLOutputValue>[];
 
   return rows.map((r) => ({
     fromFunctionId: r.from_function_id as number,
@@ -258,7 +261,7 @@ export function getStaticMissedCalls(_ctx: KgContext): { fromFunctionName: strin
      FROM calls c
      JOIN functions f1 ON c.from_function_id = f1.id
      JOIN functions f2 ON c.to_function_id = f2.id
-     WHERE c.dynamic = 1 AND c.static_missed = 1`).all() as Record<string, unknown>[];
+     WHERE c.dynamic = 1 AND c.static_missed = 1`).all() as Record<string, SQLOutputValue>[];
 
   return rows.map((r) => ({
     fromFunctionName: (r.from_name as string) || '',
@@ -285,7 +288,7 @@ export function getCoherenceDecisions(ctx: KgContext, fileId: number): { id: num
     FROM coherence_decisions 
     WHERE file_id = ? 
     ORDER BY analyzed_at DESC
-  `).all(fileId) as Record<string, unknown>[];
+  `).all(fileId) as Record<string, SQLOutputValue>[];
 
   return rows.map((r) => ({
     id: r.id as number,

@@ -11,16 +11,17 @@ export function registerStructuralSearchTool(server: McpServer, deps: McpDepende
     'structural_search',
     {
       title: 'Structural Search',
-      description: 'Find and optionally rewrite code by AST pattern. Matches TypeScript/JavaScript AST nodes across the codebase.',
+      description: 'Find and optionally rewrite code by AST pattern. Matches AST nodes across TypeScript, JavaScript, Python, Go, Rust, and Java.',
       inputSchema: {
-        nodeKind: z.string().describe('AST node kind to match (e.g., FunctionDeclaration, CallExpression, IfStatement)'),
-        hasModifier: z.string().optional().describe('Required modifier (e.g., async, export)'),
+        nodeKind: z.string().describe('AST node kind to match (e.g., FunctionDeclaration, CallExpression, IfStatement; for non-TS languages use tree-sitter node types like function_definition, function_declaration, function_item, method_declaration)'),
+        hasModifier: z.string().optional().describe('Required modifier (e.g., async, export; Java-only for non-TS languages)'),
         containsText: z.string().optional().describe('Text that must appear inside the matched node'),
         namePattern: z.string().optional().describe('Regex pattern for the node name (functions, classes, etc.)'),
         filePatterns: z.array(z.string()).optional().describe('Glob patterns for files to search'),
         maxResults: z.number().default(50).describe('Maximum number of results'),
         replacement: z.string().optional().describe('Replacement text (if provided, performs replace instead of search)'),
         dryRun: z.boolean().default(true).describe('If true, do not write changes to disk'),
+        language: z.enum(['typescript', 'javascript', 'python', 'go', 'rust', 'java']).optional().describe('Language to search (defaults to per-file extension detection)'),
       },
     },
     async (args) => {
@@ -39,6 +40,7 @@ export function registerStructuralSearchTool(server: McpServer, deps: McpDepende
           namePattern: args.namePattern,
           filePatterns: args.filePatterns,
           maxResults: args.maxResults,
+          language: args.language,
         };
 
         if (args.replacement) {
@@ -49,6 +51,16 @@ export function registerStructuralSearchTool(server: McpServer, deps: McpDepende
           };
 
           const result = searcher.replace(replaceOptions, filePaths);
+
+          // Truncate diffs to avoid overwhelming the client — include only
+          // the first 3 files and cap each file's diff at 2000 chars.
+          const MAX_DIFFS = 3;
+          const MAX_DIFF_CHARS = 2000;
+          const truncatedDiffs = result.diffs.slice(0, MAX_DIFFS).map((d) => ({
+            file: d.filePath,
+            originalPreview: d.original.substring(0, MAX_DIFF_CHARS) + (d.original.length > MAX_DIFF_CHARS ? '…' : ''),
+            transformedPreview: d.transformed.substring(0, MAX_DIFF_CHARS) + (d.transformed.length > MAX_DIFF_CHARS ? '…' : ''),
+          }));
 
           return {
             content: [
@@ -63,6 +75,7 @@ export function registerStructuralSearchTool(server: McpServer, deps: McpDepende
                   message: result.dryRun
                     ? `Would replace ${result.replaced} occurrences in ${result.files.length} files`
                     : `Replaced ${result.replaced} occurrences in ${result.files.length} files`,
+                  ...(result.dryRun ? { diffs: truncatedDiffs, totalDiffs: result.diffs.length } : {}),
                 }, null, 2),
               },
             ],

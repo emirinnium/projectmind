@@ -155,6 +155,9 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
         propertiesCount: 0,
         extends: null,
         implements: [],
+        methods: [],
+        properties: [],
+        cognitiveLoad: 0,
       });
     }
 

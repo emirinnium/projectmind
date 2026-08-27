@@ -2,6 +2,35 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { predictMergeRisk } from '../../core/coordination/risk.js';
+import { logger } from '../../utils/logger.js';
+
+// Stale lock cleanup interval (5 minutes)
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * Clean up stale locks (expired TTL).
+ */
+async function cleanupStaleLocks(kg: McpDependencies['kg']): Promise<void> {
+  try {
+    const purgedCount = kg.purgeExpiredLocks();
+    if (purgedCount === 0) return;
+    
+    logger.info(`Cleaned up ${purgedCount} stale locks.`);
+  } catch (error) {
+    logger.warn('Failed to clean up stale locks:', { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/**
+ * Start periodic stale lock cleanup.
+ */
+function startStaleLockCleanup(kg: McpDependencies['kg']): void {
+  setInterval(() => {
+    cleanupStaleLocks(kg).catch(error => {
+      logger.error('Stale lock cleanup failed:', { error });
+    });
+  }, CLEANUP_INTERVAL_MS);
+}
 
 /**
  * agent_locks — multi-agent coordination surface.
@@ -24,11 +53,14 @@ const inputSchema = {
   reason: z.string().optional().describe('Why you are locking this file (shown to other agents)'),
 };
 
-function json(result: unknown): { content: Array<{ type: 'text'; text: string }> } {
+function json(result: object): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 }
 
 export function registerAgentLocksTool(server: McpServer, deps: McpDependencies): void {
+  // Start periodic stale lock cleanup
+  startStaleLockCleanup(deps.kg);
+
   server.registerTool(
     'agent_locks',
     {

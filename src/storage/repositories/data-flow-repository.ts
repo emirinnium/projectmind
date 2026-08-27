@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { getDatabase } from '../database.js';
 
 export type ResourceKind = 'FILE' | 'NETWORK' | 'DATABASE' | 'ENV' | 'STDIN' | 'STDOUT' | 'STDERR' | 'SOCKET';
@@ -84,7 +84,7 @@ export class DataFlowRepository {
       LEFT JOIN functions f2 ON df.target_function_id = f2.id
       WHERE df.project_id = ?
       ORDER BY df.detected_at DESC
-    `).all(projectId) as Record<string, unknown>[];
+    `).all(projectId) as Record<string, SQLOutputValue>[];
 
     return rows.map((r) => ({
       id: r.id as number,
@@ -130,7 +130,7 @@ export class DataFlowRepository {
       FROM data_flows df
       JOIN resources r2 ON df.to_resource_id = r2.id
       WHERE df.from_resource_id = ?
-    `).all(resource.id) as Record<string, unknown>[];
+    `).all(resource.id) as Record<string, SQLOutputValue>[];
 
     for (const r of fromRows) {
       flows.push({
@@ -152,7 +152,7 @@ export class DataFlowRepository {
       FROM data_flows df
       JOIN resources r1 ON df.from_resource_id = r1.id
       WHERE df.to_resource_id = ?
-    `).all(resource.id) as Record<string, unknown>[];
+    `).all(resource.id) as Record<string, SQLOutputValue>[];
 
     for (const r of toRows) {
       flows.push({

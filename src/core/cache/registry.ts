@@ -1,27 +1,37 @@
 import type { CacheStats } from './types.js';
-import { AdvancedCache } from './advanced-cache.js';
+
+/**
+ * Minimal non-generic interface that captures the operations the registry
+ * needs from any AdvancedCache<K,V> instance.  This avoids storing
+ * AdvancedCache<any,any> in the map while keeping type-safety for callers.
+ */
+interface CacheLike {
+  getStats(): CacheStats;
+  clear(): void;
+  destroy(): void;
+}
 
 /**
  * Cache registry for managing multiple caches
  */
 export class CacheRegistry {
-  private caches = new Map<string, AdvancedCache<any, any>>();
+  private caches = new Map<string, CacheLike>();
 
-  register<K, V>(name: string, cache: AdvancedCache<K, V>): void {
+  register(name: string, cache: CacheLike): void {
     this.caches.set(name, cache);
   }
 
-  get<K, V>(name: string): AdvancedCache<K, V> | undefined {
-    return this.caches.get(name) as AdvancedCache<K, V> | undefined;
+  get<K, V>(name: string): import('./advanced-cache.js').AdvancedCache<K, V> | undefined {
+    return this.caches.get(name) as import('./advanced-cache.js').AdvancedCache<K, V> | undefined;
   }
 
-  getOrCreate<K, V>(name: string, factory: () => AdvancedCache<K, V>): AdvancedCache<K, V> {
+  getOrCreate<K, V>(name: string, factory: () => import('./advanced-cache.js').AdvancedCache<K, V>): import('./advanced-cache.js').AdvancedCache<K, V> {
     let cache = this.caches.get(name);
     if (!cache) {
       cache = factory();
       this.caches.set(name, cache);
     }
-    return cache as AdvancedCache<K, V>;
+    return cache as import('./advanced-cache.js').AdvancedCache<K, V>;
   }
 
   getAllStats(): Record<string, CacheStats> {

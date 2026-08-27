@@ -5,10 +5,12 @@ import { dirname, join, resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { loadConfig } from '../../../utils/config.js';
 import { globalCacheRegistry } from '../../../core/cache/index.js';
+import { getVecIndex } from '../../../core/embeddings/vector-index.js';
 import type { FileInfo } from '../types.js';
+import type { SQLOutputValue } from 'node:sqlite';
 import type { KgContext } from './context.js';
 
-export function mapFileInfo(row: Record<string, unknown>): FileInfo {
+export function mapFileInfo(row: Record<string, SQLOutputValue>): FileInfo {
   return {
     id: row.id as number,
     path: row.path as string,
@@ -21,7 +23,8 @@ export function mapFileInfo(row: Record<string, unknown>): FileInfo {
     agentTouchedAt: (row.agent_touched_at as string | null) ?? null,
     cognitiveLoad: (row.cognitive_load as number) ?? 0,
     lastScanned: row.last_scanned as string,
-    patterns: (row.patterns as string[]) ?? [],
+    lastSynced: (row.last_synced as string) ?? (row.last_scanned as string),
+    patterns: JSON.parse((row.patterns as string) ?? '[]') as string[],
   };
 }
 
@@ -44,10 +47,10 @@ export function getFileByPath(ctx: KgContext, path: string, projectId?: number):
   const normalized = path.replace(/\\/g, '/');
   const pid = projectId ?? ctx.currentProjectId;
   const row = getStatement('SELECT * FROM files WHERE path = ? AND project_id = ?')
-    .get(path, pid) as Record<string, unknown> | undefined;
+    .get(path, pid) as Record<string, SQLOutputValue> | undefined;
   if (!row) {
     const row2 = getStatement('SELECT * FROM files WHERE relative_path = ? AND project_id = ?')
-      .get(normalized, pid) as Record<string, unknown> | undefined;
+      .get(normalized, pid) as Record<string, SQLOutputValue> | undefined;
     if (row2) return mapFileInfo(row2);
     return null;
   }
@@ -105,14 +108,14 @@ export function resolveImportSource(ctx: KgContext, source: string, fromDir?: st
  * Decode an embedding stored in either legacy JSON TEXT or new Float32 BLOB
  * format. Empty array signals unreadable/corrupt value.
  */
-function decodeEmbedding(raw: unknown): number[] {
+function decodeEmbedding(raw: SQLOutputValue | null): number[] {
   if (raw instanceof Uint8Array) {
     const floats = new Float32Array(raw.buffer, raw.byteOffset, Math.floor(raw.byteLength / 4));
     return Array.from(floats);
   }
   if (typeof raw === 'string') {
     try {
-      const parsed = JSON.parse(raw) as unknown;
+      const parsed = JSON.parse(raw as string) as number[];
       return Array.isArray(parsed) ? parsed.map(Number) : [];
     } catch {
       return [];
@@ -147,6 +150,8 @@ export async function upsertFile(ctx: KgContext, fileStruct: FileStructure, rela
       // search reflects the new content instead of the pre-update vector.
       globalCacheRegistry.get('embeddings')?.delete(`file:${existing.id}`);
       clearFileRelations(ctx, existing.id);
+      // Keep the sqlite-vec index in sync.
+      getVecIndex(ctx.db).upsert(existing.id, embedding);
       return existing.id;
     } else {
       const result = getStatement(`INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash, embedding, cognitive_load)
@@ -160,7 +165,10 @@ export async function upsertFile(ctx: KgContext, fileStruct: FileStructure, rela
         embeddingBlob,
         cognitiveLoad
       );
-      return Number(result.lastInsertRowid);
+      const newId = Number(result.lastInsertRowid);
+      // Keep the sqlite-vec index in sync.
+      getVecIndex(ctx.db).upsert(newId, embedding);
+      return newId;
     }
   });
 }
@@ -298,13 +306,13 @@ export function markAgentTouched(ctx: KgContext, filePath: string, agentName: st
 export function getFilesByLanguage(ctx: KgContext, language: string, projectId?: number): FileInfo[] {
   const pid = projectId ?? ctx.currentProjectId;
   const rows = getStatement('SELECT * FROM files WHERE language = ? AND project_id = ? ORDER BY last_scanned DESC')
-    .all(language, pid) as Record<string, unknown>[];
+    .all(language, pid) as Record<string, SQLOutputValue>[];
   return rows.map((r) => mapFileInfo(r));
 }
 
 export function getAllFiles(ctx: KgContext, projectId?: number): FileInfo[] {
   const pid = projectId ?? ctx.currentProjectId;
-  const rows = getStatement('SELECT * FROM files WHERE project_id = ? ORDER BY path').all(pid) as Record<string, unknown>[];
+  const rows = getStatement('SELECT * FROM files WHERE project_id = ? ORDER BY path').all(pid) as Record<string, SQLOutputValue>[];
   return rows.map((r) => mapFileInfo(r));
 }
 
@@ -316,7 +324,7 @@ export function getAgentTouchedFiles(ctx: KgContext, agentName?: string, project
   const rows = (agentName
     ? getStatement(sql).all(agentName, pid)
     : getStatement(sql).all(pid)
-  ) as Record<string, unknown>[];
+  ) as Record<string, SQLOutputValue>[];
   return rows.map((r) => mapFileInfo(r));
 }
 
@@ -339,6 +347,40 @@ export function findSimilarFiles(ctx: KgContext, targetEmbedding: number[], thre
     return allFiles.slice(0, limit);
   }
 
+  // ------------------------------------------------------------------
+  // Fast path: sqlite-vec ANN search (sub-millisecond on 10K+ vectors).
+  // The virtual table contains embeddings for ALL projects (IDs are
+  // globally unique).  We over-fetch, then filter by threshold so the
+  // caller gets only high-quality matches.
+  // ------------------------------------------------------------------
+  const vecIndex = getVecIndex(ctx.db);
+  if (vecIndex.isAvailable()) {
+    const overfetch = Math.max(limit * 3, 30);
+    const rawMatches = vecIndex.findSimilar(targetEmbedding, overfetch);
+
+    // Convert cosine distance → similarity score and apply threshold.
+    const goodIds: number[] = [];
+    for (const m of rawMatches) {
+      const score = 1 - m.distance;
+      if (score >= threshold) goodIds.push(m.id);
+    }
+
+    if (goodIds.length > 0) {
+      const ids = goodIds.slice(0, limit);
+      const placeholders = ids.map(() => '?').join(',');
+      const resultRows = getStatement(`SELECT * FROM files WHERE id IN (${placeholders})`)
+        .all(...ids) as Record<string, SQLOutputValue>[];
+      return resultRows.map((r) => mapFileInfo(r));
+    }
+    // No vec matches above threshold → fall through to brute-force
+    // (handles edge cases like dimension mismatch or stale index).
+  }
+
+  // ------------------------------------------------------------------
+  // Fallback: full-table scan with in-memory cosine similarity.
+  // Used when sqlite-vec is unavailable or the vec index returned no
+  // results above threshold.
+  // ------------------------------------------------------------------
   const allFiles = getAllFiles(ctx);
 
   const ids = allFiles.map((f) => f.id);
@@ -346,7 +388,7 @@ export function findSimilarFiles(ctx: KgContext, targetEmbedding: number[], thre
 
   const placeholders = ids.map(() => '?').join(',');
   const rows = getStatement(`SELECT id, embedding FROM files WHERE id IN (${placeholders})`)
-    .all(...ids) as { id: number; embedding: unknown }[];
+    .all(...ids) as { id: number; embedding: SQLOutputValue | null }[];
 
   const embeddingMap = new Map<number, number[]>();
   for (const row of rows) {
@@ -367,12 +409,12 @@ export function findSimilarFiles(ctx: KgContext, targetEmbedding: number[], thre
 
   const matchPlaceholders = matchIds.map(() => '?').join(',');
   const resultRows = getStatement(`SELECT * FROM files WHERE id IN (${matchPlaceholders})`)
-    .all(...matchIds) as Record<string, unknown>[];
+    .all(...matchIds) as Record<string, SQLOutputValue>[];
   return resultRows.map((r) => mapFileInfo(r));
 }
 
 export function getFunctions(ctx: KgContext, fileId: number): { id: number; name: string; signature: string; complexity: number; startLine: number; endLine: number }[] {
-  const rows = getStatement('SELECT id, name, signature, complexity, start_line, end_line FROM functions WHERE file_id = ?').all(fileId) as Record<string, unknown>[];
+  const rows = getStatement('SELECT id, name, signature, complexity, start_line, end_line FROM functions WHERE file_id = ?').all(fileId) as Record<string, SQLOutputValue>[];
   return rows.map(r => ({
     id: r.id as number,
     name: r.name as string,
@@ -384,7 +426,7 @@ export function getFunctions(ctx: KgContext, fileId: number): { id: number; name
 }
 
 export function getClasses(ctx: KgContext, fileId: number): { id: number; name: string; methodsCount: number; propertiesCount: number }[] {
-  const rows = getStatement('SELECT id, name, methods_count, properties_count FROM classes WHERE file_id = ?').all(fileId) as Record<string, unknown>[];
+  const rows = getStatement('SELECT id, name, methods_count, properties_count FROM classes WHERE file_id = ?').all(fileId) as Record<string, SQLOutputValue>[];
   return rows.map(r => ({
     id: r.id as number,
     name: r.name as string,
@@ -394,7 +436,7 @@ export function getClasses(ctx: KgContext, fileId: number): { id: number; name: 
 }
 
 export function getImports(ctx: KgContext, fileId: number): { source: string; named: string[]; kind: string }[] {
-  const rows = getStatement('SELECT * FROM imports WHERE file_id = ?').all(fileId) as Record<string, unknown>[];
+  const rows = getStatement('SELECT * FROM imports WHERE file_id = ?').all(fileId) as Record<string, SQLOutputValue>[];
   return rows.map((r) => ({
     source: r.source as string,
     named: [],
@@ -403,7 +445,7 @@ export function getImports(ctx: KgContext, fileId: number): { source: string; na
 }
 
 export function getFileEmbedding(ctx: KgContext, fileId: number): number[] | null {
-  const row = getStatement('SELECT embedding FROM files WHERE id = ?').get(fileId) as { embedding: unknown } | undefined;
+  const row = getStatement('SELECT embedding FROM files WHERE id = ?').get(fileId) as { embedding: SQLOutputValue | null } | undefined;
   if (!row || !row.embedding) return null;
   const decoded = decodeEmbedding(row.embedding);
   return decoded.length > 0 ? decoded : null;

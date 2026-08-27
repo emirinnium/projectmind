@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-27
+
+Living codebase intelligence — roadmap A+B: multi-language AST analysis,
+visual diagrams + MCP Apps, OAuth 2.0 Dynamic Client Registration, evidence
+based agent skill recommendations, 3-way team-memory merging, and agent
+native config generation.
+
+### Added
+- **Multi-language analysis (A2)**: tree-sitter AST parsing for Go, Rust,
+  Python, Java, C#, C++, Ruby and TypeScript — `structural_search` and
+  pattern extraction now work across languages with native parser byte
+  offsets (previously TypeScript-only).
+- **Symbol language service** (`src/parser/language-service.ts`): cross-file
+  symbol resolution powering def/ref navigation in every supported language.
+- **Visual diagrams + MCP Apps (B3)**: `pm graph-render` emits SVG **and**
+  PNG (zero-dependency hand-rolled PNG encoder) dependency diagrams; the
+  `src/mcp/apps/` module lets MCP tools render the same diagrams.
+- **OAuth 2.0 Dynamic Client Registration (B4)**: RFC 7591 `/oauth/register`
+  + RFC 6749 client-credentials `/oauth/token` endpoints on the HTTP
+  transport (`PROJECTMIND_OAUTH_ENABLED`); RFC-compliant client metadata
+  validation, one-time `client_secret`, scoped registration.
+- **Evidence-based skill recommendations (B5)**: `pm skill-recommend`
+  rewritten to derive per-agent proficiency from REAL interaction history
+  (agent sessions, `files.agent_touched_by`, session decisions, coding
+  fingerprint) instead of a hardcoded catalog; `--write` generates a
+  personalized `skills/<agent>/SKILL.md` explaining what each of 21 skills
+  helps with and the exact commands to apply it.
+- **Team-memory 3-way merge (A1)**: concurrent `store_team_memory` writes
+  are reconciled Git-style — overlapping-safe values merge, genuine conflicts
+  keep the stored value and return a resolution suggestion instead of
+  silently overwriting.
+- **Agent-native config generators**: `pm`-side generators build Claude Code
+  SKILL.md and other agent configs (`src/cli/generators/agent-configs.ts`).
+- **MCP tool-list cache hints**: `_meta` TTL/cache-scope extensions per the
+  MCP spec so spec-compliant clients can cache `tools/list` results.
+
+### Changed
+- `skill-recommend` output now includes "Why it helps" per skill, evidence
+  files, estimated effort (gap × 20h), and priority (critical/high/medium/low)
+  across text, JSON and HTML formats.
+- HTTP transport: `/mcp`, `/oauth/*` and legacy routes are dispatched through
+  a single handler with rate limiting and static-token auth preserved.
+
+### Fixed
+- `check_coherence` rejected every request from clients that send a partial
+  `_meta` (e.g. Kilo Code) — the tool now mirrors the transport edge and only
+  enforces the envelope when the client advertises `protocolVersion`.
+- Skill evidence never lists the same file twice within one skill
+  (typescript double-push + module-path dedup).
+- Non-TypeScript parser offsets corrected to native tree-sitter byte
+  accounting (structural-search findings were silently dropped before).
+
+### Security
+- OAuth client secrets are stored as SHA-256 digests only; the plaintext is
+  returned exactly once at registration.
+- `/oauth/register` is protected by the static bearer token per RFC 7591 §2.1
+  (token endpoint stays open for client-credentials flow).
+
 ## [0.7.0] - 2026-08-26
 
 From analysis to action: agents get progress feedback during long operations,

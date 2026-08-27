@@ -64,6 +64,12 @@ export class FastCoherenceAnalyzer {
     let issues = 0;
     const suggestions: string[] = [];
 
+    // Semantic Analysis
+    const semanticIssues = this.semanticAnalysis(options.code, options.filePath);
+    issues += semanticIssues.issues;
+    reasoningTrace.push(...semanticIssues.reasoningTrace);
+    suggestions.push(...semanticIssues.suggestions);
+
     if (lines.length > 400) {
       reasoningTrace.push(`Warning: File exceeds 400 lines (${lines.length}) — cognitive load concern`);
       suggestions.push('Consider splitting this file into smaller modules');
@@ -163,6 +169,73 @@ export class FastCoherenceAnalyzer {
   }
 
   /** Kept as thin alias — single crypto-backed implementation in utils/hash. */
+  /**
+   * Perform semantic analysis on the code.
+   */
+  private semanticAnalysis(code: string, filePath: string): {
+    issues: number;
+    reasoningTrace: string[];
+    suggestions: string[];
+  } {
+    const reasoningTrace: string[] = [];
+    const suggestions: string[] = [];
+    let issues = 0;
+
+    // Check for naming conventions
+    const functionMatches = code.match(/function\s+([a-zA-Z0-9_]+)\s*\(/g) || [];
+    const arrowFunctionMatches = code.match(/([a-zA-Z0-9_]+)\s*=\s*\(?[^)]*\)?\s*=>/g) || [];
+    const allFunctions = [...functionMatches, ...arrowFunctionMatches];
+    
+    const camelCaseFunctions = allFunctions.filter(f => /function\s+[a-z][a-zA-Z0-9]*\(/.test(f) || /^[a-z][a-zA-Z0-9]*\s*=/.test(f));
+    const nonCamelCaseFunctions = allFunctions.length - camelCaseFunctions.length;
+    
+    if (nonCamelCaseFunctions > 0) {
+      reasoningTrace.push(`Warning: ${nonCamelCaseFunctions} functions do not follow camelCase naming convention`);
+      suggestions.push('Rename functions to follow camelCase convention');
+      issues += nonCamelCaseFunctions;
+    }
+
+    // Check for unused variables
+    const variableMatches = code.match(/const\s+([a-zA-Z0-9_]+)\s*=/g) || [];
+    const letMatches = code.match(/let\s+([a-zA-Z0-9_]+)\s*=/g) || [];
+    const allVariables = [...variableMatches, ...letMatches];
+    
+    const usedVariables = allVariables.filter(v => {
+      const varName = v.split(/\s+/)[1];
+      return code.includes(varName) && !code.includes(`// ${varName} unused`);
+    });
+    
+    const unusedVariables = allVariables.length - usedVariables.length;
+    if (unusedVariables > 0) {
+      reasoningTrace.push(`Warning: ${unusedVariables} unused variables detected`);
+      suggestions.push('Remove unused variables or mark them with `// variable unused`');
+      issues += unusedVariables;
+    }
+
+    // Check for complex functions (cyclomatic complexity)
+    const functionBodies = code.match(/function\s*[^{]*{([\s\S]*?)}/g) || [];
+    const complexFunctions = functionBodies.filter(body => {
+      const decisionPoints = body.match(/\b(if|for|while|case|catch|\?|&&|\|\|)\b/g) || [];
+      return decisionPoints.length > 10;
+    });
+    
+    if (complexFunctions.length > 0) {
+      reasoningTrace.push(`Warning: ${complexFunctions.length} functions with high cyclomatic complexity (>10 decision points)`);
+      suggestions.push('Refactor complex functions into smaller, more manageable pieces');
+      issues += complexFunctions.length;
+    }
+
+    // Check for type usage
+    const typeUsage = (code.match(/\b[A-Z][a-zA-Z0-9]*\b/g) || []).length;
+    if (typeUsage < 5 && filePath.endsWith('.ts')) {
+      reasoningTrace.push(`Warning: Low type usage in TypeScript file (${typeUsage} types detected)`);
+      suggestions.push('Consider using more specific types for better type safety');
+      issues++;
+    }
+
+    return { issues, reasoningTrace, suggestions };
+  }
+
   private hashCode(str: string): string {
     return stableHash(str);
   }

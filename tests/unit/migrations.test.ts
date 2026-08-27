@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { getCurrentSchemaVersion, rollbackMigrations, rollbackLast, setSchemaVersion, removeSchemaVersion } from '../../src/storage/migrations.js';
+import { getCurrentSchemaVersion, rollbackMigrations, rollbackLast, setSchemaVersion, removeSchemaVersion, runMigrations } from '../../src/storage/migrations.js';
 
 function createTestDbWithoutMigrations(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
@@ -130,5 +130,96 @@ describe('Migration Rollback', () => {
       const version = getCurrentSchemaVersion(db);
       expect(version).toBe(2);
     });
+  });
+});
+
+describe('Legacy DB upgrades', () => {
+  /**
+   * Simulate a persisted DB created by a pre-v7 version of ProjectMind:
+   * - files WITHOUT the last_synced column
+   * - debt_items with the OLD 4-type CHECK constraint
+   * - team_memories WITHOUT base_value (needed so migration 8 can run)
+   */
+  function createV6Db(): DatabaseSync {
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('PRAGMA foreign_keys = ON');
+
+    db.exec(`
+      CREATE TABLE files (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        path TEXT UNIQUE NOT NULL,
+        language TEXT,
+        size_bytes INTEGER DEFAULT 0,
+        cognitive_load REAL DEFAULT 0,
+        hash TEXT,
+        last_scanned TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        project_id INTEGER DEFAULT 1
+      );
+      CREATE TABLE debt_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id INTEGER,
+        type TEXT CHECK(type IN ('pattern_drift', 'architectural_drift', 'redundancy', 'agent_conflict')),
+        description TEXT,
+        severity TEXT CHECK(severity IN ('high', 'medium', 'low')),
+        suggestion TEXT,
+        reasoning_trace TEXT,
+        detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        resolved BOOLEAN DEFAULT 0,
+        resolved_at TIMESTAMP
+      );
+      CREATE TABLE team_memories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_name TEXT NOT NULL,
+        scope TEXT NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        is_public BOOLEAN DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Existing rows that the ALTER must not break
+    db.prepare('INSERT INTO files (path, language, last_scanned) VALUES (?, ?, ?)')
+      .run('src/legacy.ts', 'typescript', '2026-01-01T00:00:00.000Z');
+    db.prepare('INSERT INTO debt_items (file_id, type, description, severity) VALUES (?, ?, ?, ?)')
+      .run(1, 'pattern_drift', 'legacy debt', 'high');
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_version (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    setSchemaVersion(db, 6, 'team_memories_unique_scope_key');
+    return db;
+  }
+
+  it('upgrades a v6 DB to the latest schema without error', () => {
+    const db = createV6Db();
+
+    runMigrations(db);
+
+    expect(getCurrentSchemaVersion(db)).toBe(8);
+
+    // last_synced added as a NULLABLE column (no non-constant default —
+    // SQLite forbids DEFAULT CURRENT_TIMESTAMP in ADD COLUMN)
+    const filesColumns = db.prepare('PRAGMA table_info(files)').all() as Array<{ name: string; dflt_value: string | null }>;
+    const lastSynced = filesColumns.find((c) => c.name === 'last_synced');
+    expect(lastSynced).toBeDefined();
+    expect(lastSynced?.dflt_value).toBeNull();
+
+    // Existing rows survive with NULL last_synced (readers fall back to last_scanned)
+    const row = db.prepare('SELECT last_synced, last_scanned FROM files WHERE id = 1').get() as { last_synced: string | null; last_scanned: string };
+    expect(row.last_synced).toBeNull();
+    expect(row.last_scanned).toBe('2026-01-01T00:00:00.000Z');
+
+    // debt_items rebuilt with the expanded 7-type CHECK
+    db.prepare(`INSERT INTO debt_items (file_id, type, description, severity) VALUES (?, ?, ?, ?)`)
+      .run(1, 'complexity', 'new type allowed', 'medium');
+    const count = db.prepare('SELECT COUNT(*) as c FROM debt_items').get() as { c: number };
+    expect(count.c).toBe(2);
   });
 });

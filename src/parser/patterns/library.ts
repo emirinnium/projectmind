@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { getDatabase, getStatement } from '../../storage/database.js';
+import type { SQLOutputValue } from 'node:sqlite';
+import { getDatabase } from '../../storage/database.js';
 import { SCHEMA_SQL } from '../../storage/schema.js';
 import { FileStructure } from '../ast-parser.js';
 import { codeToEmbedding, cosineSimilarity } from '../legacy-embeddings.js';
@@ -171,16 +172,16 @@ export class PatternLibrary {
   }
 
   private storePattern(pattern: Omit<Pattern, 'id'> & { id: number }, codeHash: string): void {
-    const existing = getStatement('SELECT id, usage_count, last_seen FROM patterns WHERE code_hash = ? AND name = ?')
+    const existing = this.db.prepare('SELECT id, usage_count, last_seen FROM patterns WHERE code_hash = ? AND name = ?')
       .get(codeHash, pattern.name) as { id: number; usage_count: number; last_seen: string } | undefined;
 
     if (existing) {
-      getStatement(
+      this.db.prepare(
         'UPDATE patterns SET usage_count = usage_count + 1, last_seen = ?, confidence = MIN(?, 1.0) WHERE id = ?'
       ).run(new Date().toISOString(), pattern.confidence, existing.id);
     } else {
       const embedding = pattern.embedding ? JSON.stringify(pattern.embedding) : null;
-      getStatement(
+      this.db.prepare(
         `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count, embedding)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
@@ -207,7 +208,7 @@ export class PatternLibrary {
       return this.patternCache;
     }
 
-    const rows = getStatement('SELECT * FROM patterns ORDER BY usage_count DESC, last_seen DESC').all() as Record<string, unknown>[];
+    const rows = this.db.prepare('SELECT * FROM patterns ORDER BY usage_count DESC, last_seen DESC').all() as Record<string, SQLOutputValue>[];
     this.patternCache = rows.map((r) => ({
       id: r.id as number,
       name: r.name as string,
@@ -253,7 +254,7 @@ export class PatternLibrary {
   }
 
   getCoherenceScore(): number {
-    const result = getStatement('SELECT AVG(confidence) as avg_conf, COUNT(*) as cnt FROM patterns')
+    const result = this.db.prepare('SELECT AVG(confidence) as avg_conf, COUNT(*) as cnt FROM patterns')
       .get() as { avg_conf: number | null; cnt: number };
 
     if (!result.cnt) return 1.0;

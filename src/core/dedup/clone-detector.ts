@@ -183,7 +183,7 @@ export class CloneDetector {
   private extractUnits(sf: ts.SourceFile): Array<FnUnit> {
     const units: FnUnit[] = [];
     for (const { node, name } of walkFunctionLike(sf)) {
-      const body = (node as unknown as { body?: ts.Node }).body;
+      const body = ts.isFunctionLike(node) ? node.body : undefined;
       if (!body) continue;
       units.push({
         file: relative(this.projectRoot, sf.fileName).split('\\').join('/'),

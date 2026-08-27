@@ -1,4 +1,5 @@
-import { getStatement } from '../../../storage/database.js';
+import { DatabaseSync } from 'node:sqlite';
+import { getDatabase, getStatement } from '../../../storage/database.js';
 import { KnowledgeGraph } from '../../../storage/knowledge-graph.js';
 import { PatternLibrary, Pattern } from '../../../parser/pattern-extractor.js';
 import { stableHash } from '../../../utils/hash.js';
@@ -25,21 +26,27 @@ export interface GenomeBreakdown {
  */
 export class GenomeComputer {
   private kg: KnowledgeGraph;
+  private db: DatabaseSync;
 
-  constructor(kg: KnowledgeGraph) {
+  constructor(kg: KnowledgeGraph, db?: DatabaseSync) {
     this.kg = kg;
+    this.db = db || getDatabase();
+  }
+
+  private getStmt(sql: string) {
+    return this.db.prepare(sql);
   }
 
   compute(): GenomeResult {
     // Cache pattern library results for 30 seconds to avoid repeated full scans
     if (!this.patternCache || Date.now() > this.patternCacheExpiry) {
-      const patterns = new PatternLibrary();
+      const patterns = new PatternLibrary(this.db);
       this.patternCache = patterns.getPatterns();
       this.patternCacheExpiry = Date.now() + 30_000;
     }
     const projectPatterns = this.patternCache ?? [];
 
-    const violations = getStatement(
+    const violations = this.getStmt(
       "SELECT COUNT(*) as cnt FROM debt_items WHERE resolved = 0 AND severity = 'high'"
     ).get() as { cnt: number };
 
@@ -66,7 +73,7 @@ export class GenomeComputer {
     let importResolutionRate = 0;
     let importBonus = 0;
     try {
-      const importStats = getStatement(
+      const importStats = this.getStmt(
         "SELECT COUNT(*) as total, SUM(CASE WHEN resolved = 1 THEN 1 ELSE 0 END) as resolved FROM imports"
       ).get() as { total: number; resolved: number };
       importResolutionRate = importStats.total > 0 ? importStats.resolved / importStats.total : 0;
@@ -81,7 +88,7 @@ export class GenomeComputer {
     let circularDepCount = 0;
     let circularDepPenalty = 0;
     try {
-      const circularDeps = getStatement(
+      const circularDeps = this.getStmt(
         "SELECT COUNT(*) as cnt FROM circular_dependencies"
       ).get() as { cnt: number };
       circularDepCount = circularDeps?.cnt ?? 0;
@@ -122,14 +129,14 @@ export class GenomeComputer {
     });
 
   const checksum = this.hashCode(genomeData);
-  getStatement(
+  this.getStmt(
     `INSERT OR REPLACE INTO project_genome (checksum, genome_data, coherence_score, computed_at) 
      VALUES (?, ?, ?, ?)`
   ).run(checksum, genomeData, coherenceScore, new Date().toISOString());
 
   // Prune history: keep only the 10 most recent genome snapshots so the
   // table cannot grow unboundedly across a long-lived server.
-  getStatement(
+  this.getStmt(
     `DELETE FROM project_genome WHERE id NOT IN (
        SELECT id FROM project_genome ORDER BY computed_at DESC, id DESC LIMIT 10
      )`

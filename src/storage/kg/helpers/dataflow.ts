@@ -1,4 +1,5 @@
 import { getStatement } from '../../database.js';
+import type { SQLOutputValue } from 'node:sqlite';
 import type { KgContext } from './context.js';
 
 export function getOrCreateResource(ctx: KgContext, qualifiedName: string, kind: string, identity: string): { id: number; qualifiedName: string; kind: string; identity: string } {
@@ -60,7 +61,7 @@ export function getDataFlows(ctx: KgContext, projectId?: number): { id: number; 
     LEFT JOIN functions f2 ON df.target_function_id = f2.id
     WHERE df.project_id = ?
     ORDER BY df.detected_at DESC
-  `).all(pid) as Record<string, unknown>[];
+  `).all(pid) as Record<string, SQLOutputValue>[];
 
   return rows.map((r) => ({
     id: r.id as number,
@@ -94,7 +95,7 @@ export function getResourceFlows(ctx: KgContext, resourceQualifiedName: string):
     FROM data_flows df
     JOIN resources r2 ON df.to_resource_id = r2.id
     WHERE df.from_resource_id = ?
-  `).all(resource.id) as Record<string, unknown>[];
+  `).all(resource.id) as Record<string, SQLOutputValue>[];
 
   for (const r of fromRows) {
     flows.push({
@@ -116,7 +117,7 @@ export function getResourceFlows(ctx: KgContext, resourceQualifiedName: string):
     FROM data_flows df
     JOIN resources r1 ON df.from_resource_id = r1.id
     WHERE df.to_resource_id = ?
-  `).all(resource.id) as Record<string, unknown>[];
+  `).all(resource.id) as Record<string, SQLOutputValue>[];
 
   for (const r of toRows) {
     flows.push({

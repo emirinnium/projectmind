@@ -1,6 +1,6 @@
 {
   "name": "@emirhanturker/projectmind",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Living Codebase Intelligence Layer for AI Agents — persistent memory, real-time coherence, and Opus-level reasoning",
   "bin": {
     "projectmind": "./cli.mjs",
@@ -75,6 +75,7 @@
     "dotenv": "^17.4.2",
     "fast-glob": "^3.3.3",
     "onnxruntime-node": "^1.27.0",
+    "sqlite-vec": "^0.1.9",
     "tree-sitter": "^0.25.1",
     "tree-sitter-c-sharp": "^0.23.5",
     "tree-sitter-cpp": "^0.23.4",

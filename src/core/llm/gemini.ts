@@ -49,7 +49,12 @@ export class GeminiProvider implements LLMProvider {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const requestBody: Record<string, unknown> = {
+      interface GeminiRequestBody {
+        contents: Array<{ role: string; parts: Array<{ text: string }> }>;
+        generationConfig: { temperature: number; maxOutputTokens: number };
+        systemInstruction?: { parts: Array<{ text: string }> };
+      }
+      const requestBody: GeminiRequestBody = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: { temperature, maxOutputTokens: 4000 }
       };

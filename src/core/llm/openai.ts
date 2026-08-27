@@ -59,9 +59,10 @@ export class OpenAIProvider implements LLMProvider {
         throw new Error(`OpenAI API error: ${response.status} ${err}`);
       }
 
-      const data = await response.json() as Record<string, unknown>;
-      const choice = (data.choices as Array<Record<string, unknown>>)?.[0];
-      const content = (choice?.message as Record<string, unknown>)?.content as string || '';
+      interface OpenAIChoice { message?: { content?: string } }
+      interface OpenAIResponse { choices?: OpenAIChoice[]; usage?: { prompt_tokens: number; completion_tokens: number } }
+      const data = await response.json() as OpenAIResponse;
+      const content = data.choices?.[0]?.message?.content || '';
 
       const reasoningTrace = content.includes('<thinking>')
         ? content.split('<thinking>')[1]?.split('</thinking>')[0]?.split('\n') ?? [content]
@@ -72,8 +73,8 @@ export class OpenAIProvider implements LLMProvider {
         reasoningTrace: reasoningTrace.filter(Boolean),
         confidence: 0.85,
         usage: {
-          inputTokens: (data.usage as Record<string, number>)?.prompt_tokens || 0,
-          outputTokens: (data.usage as Record<string, number>)?.completion_tokens || 0,
+          inputTokens: data.usage?.prompt_tokens || 0,
+          outputTokens: data.usage?.completion_tokens || 0,
         },
         responseTimeMs: Date.now() - startTime,
       };

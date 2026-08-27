@@ -103,29 +103,78 @@ SUGGESTIONS: (one per line, or "none")`;
     return result;
   }
 
+  /**
+   * Parse structured data from LLM response.
+   */
+  private parseStructuredData<T>(content: string, key: string, parser: (text: string) => T): T | null {
+    const startIndex = content.indexOf(`${key}:`);
+    if (startIndex === -1) return null;
+    
+    const endIndex = content.indexOf('\n\n', startIndex);
+    const section = endIndex === -1 ? content.substring(startIndex) : content.substring(startIndex, endIndex);
+    
+    try {
+      return parser(section.substring(key.length + 1).trim());
+    } catch {
+      return null;
+    }
+  }
+
   private parseLLMResponse(
     response: LLMResponse,
     startTime: number
   ): CoherenceResult {
     const content = response.content;
-
-    const verdictMatch = content.match(/VERDICT:\s*(pass|warn|fail)/i);
-    const confidenceMatch = content.match(/CONFIDENCE:\s*([\d.]+)/i);
-
-    const suggestionsStart = content.indexOf('SUGGESTIONS:');
+    let verdict: 'pass' | 'warn' | 'fail' = 'warn';
+    let confidence = 0.5;
     let suggestions: string[] = [];
-    if (suggestionsStart >= 0) {
-      const suggestionsText = content.substring(suggestionsStart + 'SUGGESTIONS:'.length);
-      suggestions = suggestionsText.split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 5);
-    }
+    let reasoningTrace: string[] = response.reasoningTrace;
 
-    const verdict = (verdictMatch?.[1]?.toLowerCase() as 'pass' | 'warn' | 'fail') ?? 'warn';
-    const confidence = confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5;
+    // Parse verdict
+    const verdictText = this.parseStructuredData(content, 'VERDICT', (text) => {
+      const match = text.match(/(pass|warn|fail)/i);
+      return match ? match[1].toLowerCase() as 'pass' | 'warn' | 'fail' : 'warn';
+    });
+    if (verdictText) verdict = verdictText;
+
+    // Parse confidence
+    const confidenceText = this.parseStructuredData(content, 'CONFIDENCE', (text) => {
+      const num = parseFloat(text);
+      return isNaN(num) ? 0.5 : Math.min(1.0, Math.max(0.0, num));
+    });
+    if (confidenceText) confidence = confidenceText;
+
+    // Parse reasoning trace
+    const reasoningText = this.parseStructuredData(content, 'REASONING_TRACE', (text) => {
+      return text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    });
+    if (reasoningText) reasoningTrace = reasoningText;
+
+    // Parse suggestions
+    const suggestionsText = this.parseStructuredData(content, 'SUGGESTIONS', (text) => {
+      return text.split('\n').map(line => line.trim()).filter(line => line.length > 0 && !line.startsWith('- '));
+    });
+    if (suggestionsText) suggestions = suggestionsText.slice(0, 5);
+
+    // Fallback parsing if structured data is missing
+    if (!verdictText || !confidenceText) {
+      const verdictMatch = content.match(/VERDICT:\s*(pass|warn|fail)/i);
+      const confidenceMatch = content.match(/CONFIDENCE:\s*([\d.]+)/i);
+      
+      if (verdictMatch) verdict = verdictMatch[1].toLowerCase() as 'pass' | 'warn' | 'fail';
+      if (confidenceMatch) confidence = parseFloat(confidenceMatch[1]);
+      
+      const suggestionsStart = content.indexOf('SUGGESTIONS:');
+      if (suggestionsStart >= 0) {
+        const suggestionsText = content.substring(suggestionsStart + 'SUGGESTIONS:'.length);
+        suggestions = suggestionsText.split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 5);
+      }
+    }
 
     return {
       verdict,
       confidence,
-      reasoningTrace: response.reasoningTrace,
+      reasoningTrace,
       suggestions,
       llmProvider: response.reasoningTrace.length > 5 ? 'deep-tier(llm)' : 'fast-tier',
       responseTimeMs: Date.now() - startTime,

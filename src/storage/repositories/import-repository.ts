@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { getDatabase } from '../database.js';
 
 /**
@@ -8,7 +8,7 @@ export class ImportRepository {
   constructor(private readonly db: DatabaseSync = getDatabase()) {}
 
   getImports(fileId: number): Array<{ id: number; source: string; kind: string; resolved: boolean; resolvedPath: string | null }> {
-    const rows = this.db.prepare('SELECT * FROM imports WHERE file_id = ?').all(fileId) as Record<string, unknown>[];
+    const rows = this.db.prepare('SELECT * FROM imports WHERE file_id = ?').all(fileId) as Record<string, SQLOutputValue>[];
     return rows.map((r) => ({
       id: r.id as number,
       source: r.source as string,
@@ -31,7 +31,7 @@ export class ImportRepository {
         i.resolved_path = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
         OR i.source = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
       )
-    `).all(projectId, fileId, fileId) as Record<string, unknown>[];
+    `).all(projectId, fileId, fileId) as Record<string, SQLOutputValue>[];
     return rows.map((r) => ({ id: r.id as number, path: r.path as string, relativePath: r.relative_path as string }));
   }
 

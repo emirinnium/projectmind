@@ -1,17 +1,33 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { initDatabase, closeDatabase } from '../../src/storage/database.js';
+import { DatabaseManager } from '../../src/storage/database.js';
 import { DebtTracker } from '../../src/core/debt/tracker.js';
+import { KnowledgeGraph } from '../../src/storage/knowledge-graph.js';
+import { CoherenceEngine } from '../../src/core/coherence/engine.js';
+import { closeDatabase } from '../../src/storage/database.js';
+
+let dbManager: DatabaseManager;
 
 describe('DebtTracker', () => {
   let tracker: DebtTracker;
 
   beforeEach(() => {
-    initDatabase(':memory:');
-    tracker = new DebtTracker();
+    dbManager = new DatabaseManager(':memory:');
+    const db = dbManager.init();
+    
+    // Mock dependencies
+    const kg = {
+      getAllFiles: () => [],
+      getAgentSessions: () => [],
+    };
+    const coherenceEngine = {
+      analyze: () => ({}),
+    };
+
+    tracker = new DebtTracker(db, kg as any, coherenceEngine as any);
   });
 
   afterEach(() => {
-    closeDatabase();
+    dbManager.close();
   });
 
   describe('getReport', () => {

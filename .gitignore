@@ -16,6 +16,9 @@ dist-tests/
 *.db
 *.db-journal
 
+# Generated per-agent skill reports (regenerable via `pm skill-recommend --write`)
+/skills/
+
 # Logs
 *.log
 npm-debug.log*

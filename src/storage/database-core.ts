@@ -25,7 +25,7 @@ export class DatabaseManager {
       this.handleWalFiles(this.dbPath);
     }
 
-    this.db = new DatabaseSync(this.dbPath || ':memory:');
+    this.db = new DatabaseSync(this.dbPath || ':memory:', { allowExtension: true });
     this.configurePragmas(this.db);
     this.db.exec(SCHEMA_SQL);
     runMigrations(this.db);
@@ -183,7 +183,7 @@ export function initDatabase(dbPath: string): DatabaseSync {
     }
   }
 
-  _instance = new DatabaseSync(dbPath);
+  _instance = new DatabaseSync(dbPath, { allowExtension: true });
   _instance.exec('PRAGMA journal_mode = WAL');
   _instance.exec('PRAGMA foreign_keys = ON');
   _instance.exec('PRAGMA synchronous = NORMAL');

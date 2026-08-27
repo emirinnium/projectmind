@@ -24,7 +24,7 @@ export interface ApiDiff {
   breaking: ExportedSymbol[];
 }
 
-export async function extractApiSurface(files: any[], _projectRoot: string): Promise<ExportedSymbol[]> {
+export async function extractApiSurface(files: Array<{ path: string; relativePath: string }>, _projectRoot: string): Promise<ExportedSymbol[]> {
   const { readFileSync } = await import('node:fs');
   const symbols: ExportedSymbol[] = [];
   

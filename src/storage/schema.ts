@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS team_memories (
   scope TEXT NOT NULL,
   key TEXT NOT NULL,
   value TEXT NOT NULL,
+  base_value TEXT,
   is_public BOOLEAN DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -41,7 +42,8 @@ CREATE TABLE IF NOT EXISTS files (
   agent_touched BOOLEAN DEFAULT 0,
   agent_touched_by TEXT,
   agent_touched_at TIMESTAMP,
-  cognitive_load REAL DEFAULT 0
+  cognitive_load REAL DEFAULT 0,
+  last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS functions (
@@ -170,7 +172,7 @@ CREATE TABLE IF NOT EXISTS coherence_decisions (
 CREATE TABLE IF NOT EXISTS debt_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   file_id INTEGER,
-  type TEXT CHECK(type IN ('pattern_drift', 'architectural_drift', 'redundancy', 'agent_conflict')),
+  type TEXT CHECK(type IN ('pattern_drift', 'architectural_drift', 'redundancy', 'agent_conflict', 'complexity', 'code_age', 'cognitive_load')),
   description TEXT,
   severity TEXT CHECK(severity IN ('high', 'medium', 'low')),
   suggestion TEXT,

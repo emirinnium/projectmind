@@ -50,8 +50,9 @@ export class OllamaProvider implements LLMProvider {
         throw new Error(`Ollama API error: ${response.status}`);
       }
 
-      const data = await response.json() as Record<string, unknown>;
-      const content = (data.message as Record<string, unknown>)?.content as string || '';
+      interface OllamaResponse { message?: { content?: string } }
+      const data = await response.json() as OllamaResponse;
+      const content = data.message?.content || '';
 
       const reasoningTrace = content.includes('<thinking>')
         ? content.split('<thinking>')[1]?.split('</thinking>')[0]?.split('\n') ?? [content]

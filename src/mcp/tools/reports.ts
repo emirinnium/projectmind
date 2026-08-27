@@ -2,6 +2,8 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { createProgressReporter } from './progress.js';
+import { attachApps } from '../apps/content.js';
+import { buildDebtChart, buildModuleSizeChart, buildLanguageChart, buildGenomeSummary } from '../apps/builders.js';
 
 export function registerDebtReportTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -23,9 +25,10 @@ export function registerDebtReportTool(server: McpServer, deps: McpDependencies)
         }
         const report = deps.debt.getReport();
         await progress(100, 100, 'done');
-        return {
-          content: [{ type: 'text', text: JSON.stringify(report, null, 2) }],
+        const base = {
+          content: [{ type: 'text' as const, text: JSON.stringify(report, null, 2) }],
         };
+        return attachApps(base, [buildDebtChart(report)]);
       } catch (error) {
         return {
           content: [{ type: 'text', text: JSON.stringify({ error: error instanceof Error ? error.message : 'Debt report failed' }) }],
@@ -59,9 +62,10 @@ export function registerScaleReportTool(server: McpServer, deps: McpDependencies
           };
         }
         const report = deps.scale.getScaleReport();
-        return {
-          content: [{ type: 'text', text: JSON.stringify(report, null, 2) }],
+        const base = {
+          content: [{ type: 'text' as const, text: JSON.stringify(report, null, 2) }],
         };
+        return attachApps(base, [buildModuleSizeChart(report), buildLanguageChart(report)]);
       } catch (error) {
         return {
           content: [{ type: 'text', text: JSON.stringify({ error: error instanceof Error ? error.message : 'Scale report failed' }) }],
@@ -82,10 +86,10 @@ export function registerGenomeScoreTool(server: McpServer, deps: McpDependencies
     async () => {
       try {
         const genome = deps.debt.computeGenome();
-        return {
+        const base = {
           content: [
             {
-              type: 'text',
+              type: 'text' as const,
               text: JSON.stringify({
                 coherenceScore: genome.coherenceScore,
                 scorePercentage: `${(genome.coherenceScore * 100).toFixed(1)}%`,
@@ -94,6 +98,7 @@ export function registerGenomeScoreTool(server: McpServer, deps: McpDependencies
             },
           ],
         };
+        return attachApps(base, [buildGenomeSummary(genome.coherenceScore, genome.genomeData.length)]);
       } catch (error) {
         return {
           content: [{ type: 'text', text: JSON.stringify({ error: error instanceof Error ? error.message : 'Genome score computation failed' }) }],

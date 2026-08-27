@@ -134,7 +134,7 @@ export function createSbomCommand(): Command {
   return sbomCmd;
 }
 
-function generateSpdx(projectName: string, projectVersion: string, namespace: string, packages: any[], tagValue: boolean): string {
+function generateSpdx(projectName: string, projectVersion: string, namespace: string, packages: SbomPackage[], tagValue: boolean): string {
   const lines = [
     'SPDXVersion: SPDX-2.3',
     'DataLicense: CC0-1.0',
@@ -172,7 +172,7 @@ function generateSpdx(projectName: string, projectVersion: string, namespace: st
   return lines.join('\n');
 }
 
-function generateCycloneDx(projectName: string, projectVersion: string, namespace: string, packages: any[]): string {
+function generateCycloneDx(projectName: string, projectVersion: string, namespace: string, packages: SbomPackage[]): string {
   const packagesXml = packages.map(pkg => `
     <component type="library">
       <name>${escapeXml(pkg.name)}</name>
@@ -259,7 +259,8 @@ function validateSbom(content: string, format: string): { valid: boolean; errors
         if (!/<version>[\s\S]+?<\/version>/.test(body)) errors.push('component without <version>');
       }
     } else if (format === 'json') {
-      const parsed = JSON.parse(content) as Record<string, unknown>;
+      interface SbomJson { bomFormat?: string; specVersion?: string; version?: number; components?: Array<Record<string, string | number>>; sbom?: { specVersion?: string; serialNumber?: string; packages?: Array<{ name?: string; version?: string }> } }
+      const parsed = JSON.parse(content) as SbomJson;
 
       if (parsed.bomFormat === 'CycloneDX') {
         // Accept standard CycloneDX JSON as well as our own shape.

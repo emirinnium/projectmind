@@ -173,16 +173,21 @@ export class PatternExtractor {
     const patterns: ExtendedPattern[] = [];
     const path = file.filePath.toLowerCase();
 
-    // Repository pattern
-    if (path.includes('repository') || path.includes('repo')) {
+    // Repository pattern (AST-based detection)
+    const hasRepositoryInterface = file.classes.some(cls => {
+      return cls.implements.some(impl => impl.includes('Repository')) ||
+             cls.methods.some(method => method.name === 'find' || method.name === 'save' || method.name === 'delete');
+    });
+    
+    if (hasRepositoryInterface || path.includes('repository') || path.includes('repo')) {
       patterns.push({
         id: 'arch-repository',
         name: 'Repository Pattern',
         category: 'architectural',
         description: 'Data access abstraction — decouples business logic from persistence',
         filePath: file.filePath,
-        lineNumber: 0,
-        confidence: 0.85,
+        lineNumber: hasRepositoryInterface ? file.classes.find(cls => cls.implements.some(impl => impl.includes('Repository')))?.startLine || 0 : 0,
+        confidence: hasRepositoryInterface ? 0.95 : 0.85,
         severity: 'info',
       });
     }
@@ -253,17 +258,21 @@ export class PatternExtractor {
   private detectDesignPatterns(file: FileStructure): ExtendedPattern[] {
     const patterns: ExtendedPattern[] = [];
 
-    // Singleton detection
+    // Singleton detection (AST-based)
     for (const cls of file.classes) {
-      if (cls.name.toLowerCase().includes('singleton')) {
+      const hasPrivateConstructor = cls.methods.some(method => method.name === 'constructor' && method.accessModifier === 'private');
+      const hasStaticInstance = cls.properties.some(prop => prop.name === 'instance' && prop.isStatic);
+      const hasGetInstanceMethod = cls.methods.some(method => method.name === 'getInstance' && method.isStatic);
+      
+      if ((hasPrivateConstructor && hasStaticInstance && hasGetInstanceMethod) || cls.name.toLowerCase().includes('singleton')) {
         patterns.push({
           id: 'design-singleton',
           name: 'Singleton Pattern',
           category: 'design-pattern',
-          description: `Class "${cls.name}" implements singleton via private constructor/instance`,
+          description: `Class "${cls.name}" implements singleton via private constructor/static instance`,
           filePath: file.filePath,
           lineNumber: cls.startLine,
-          confidence: 0.9,
+          confidence: hasPrivateConstructor && hasStaticInstance && hasGetInstanceMethod ? 0.98 : 0.9,
           severity: 'info',
           suggestion: 'Consider dependency injection instead for testability',
         });
@@ -346,32 +355,22 @@ export class PatternExtractor {
       }
     }
 
-    // God class (>500 lines or >10 methods)
+    // God class (>500 lines, >10 methods, or high cognitive load)
     for (const cls of file.classes) {
       const classLength = cls.endLine - cls.startLine;
-      if (classLength > 500) {
+      const isGodClass = (classLength > 500) || (cls.methodsCount > 15) || (cls.cognitiveLoad > 50);
+      
+      if (isGodClass) {
         patterns.push({
           id: `smell-god-class-${cls.name}`,
           name: 'God Class',
           category: 'code-smell',
-          description: `Class "${cls.name}" spans ${classLength} lines — likely has too many responsibilities`,
+          description: `Class "${cls.name}" has ${cls.methodsCount} methods, ${classLength} lines, and cognitive load ${cls.cognitiveLoad} — violates Single Responsibility Principle`,
           filePath: file.filePath,
           lineNumber: cls.startLine,
-          confidence: 0.8,
-          severity: 'critical',
-          suggestion: 'Apply Single Responsibility Principle — extract cohesive groups into separate classes',
-        });
-      }
-      if (cls.methodsCount > 15) {
-        patterns.push({
-          id: `smell-many-methods-${cls.name}`,
-          name: 'Large Class',
-          category: 'code-smell',
-          description: `Class "${cls.name}" has ${cls.methodsCount} methods — consider decomposition`,
-          filePath: file.filePath,
-          lineNumber: cls.startLine,
-          confidence: 0.75,
-          severity: 'warning',
+          confidence: cls.cognitiveLoad > 50 ? 0.95 : 0.8,
+          severity: cls.cognitiveLoad > 50 ? 'critical' : 'warning',
+          suggestion: 'Extract cohesive groups of methods/properties into separate classes based on responsibility domains',
         });
       }
     }

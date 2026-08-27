@@ -1,4 +1,5 @@
 import { getStatement } from '../../database.js';
+import type { SQLOutputValue } from 'node:sqlite';
 import type { KgContext } from './context.js';
 
 export function ensureDefaultProject(_ctx: KgContext): void {
@@ -42,7 +43,7 @@ export function createProject(ctx: KgContext, name: string, rootPath: string, de
 }
 
 export function getProject(ctx: KgContext, id: number): { id: number; name: string; rootPath: string; description: string | null; createdAt: string; lastScanned: string } | null {
-  const row = getStatement('SELECT * FROM projects WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  const row = getStatement('SELECT * FROM projects WHERE id = ?').get(id) as Record<string, SQLOutputValue> | undefined;
   if (!row) return null;
   return {
     id: row.id as number,
@@ -55,7 +56,7 @@ export function getProject(ctx: KgContext, id: number): { id: number; name: stri
 }
 
 export function getProjectByName(ctx: KgContext, name: string): { id: number; name: string; rootPath: string; description: string | null; createdAt: string; lastScanned: string } | null {
-  const row = getStatement('SELECT * FROM projects WHERE name = ?').get(name) as Record<string, unknown> | undefined;
+  const row = getStatement('SELECT * FROM projects WHERE name = ?').get(name) as Record<string, SQLOutputValue> | undefined;
   if (!row) return null;
   return {
     id: row.id as number,
@@ -74,7 +75,7 @@ export function listProjects(_ctx: KgContext): { id: number; name: string; rootP
     LEFT JOIN files f ON f.project_id = p.id 
     GROUP BY p.id 
     ORDER BY p.name
-  `).all() as Record<string, unknown>[];
+  `).all() as Record<string, SQLOutputValue>[];
   return rows.map((r) => ({
     id: r.id as number,
     name: r.name as string,

@@ -4,6 +4,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { parseFile } from '../../parser/ast-parser.js';
 import { loadConfig } from '../../utils/config.js';
+import { logger } from '../../cli/utils/logger.js';
 
 // Session-scoped registry of live watchers + intent records.
 // Watchers perform REAL change detection: on any file event the file is
@@ -14,34 +15,56 @@ const liveWatchers = new Map<string, FSWatcher>();
 function startLiveWatch(deps: McpDependencies, filePath: string, agentId: string): void {
   const key = `${filePath}::${agentId}`;
   if (liveWatchers.has(key)) return;
-  try {
-    const w = watch(filePath, { persistent: false }, () => {
-      try {
-        deps.kg.markAgentTouched(filePath, agentId);
-      } catch {
-        // Never let a watcher crash the server.
-      }
-      // Incremental single-file refresh: re-parse and upsert so functions,
-      // classes and dependents in the KG stay current without a full
-      // scan_project. Best-effort; embedding is intentionally NOT regenerated
-      // here (provider may be unavailable) — next full scan refreshes it.
-      try {
-        const struct = parseFile(filePath);
-        if (struct) {
-          const root = loadConfig().projectRoot.replace(/\\/g, '/');
-          const norm = filePath.replace(/\\/g, '/');
-          const rel = norm.startsWith(root) ? norm.slice(root.length + 1) : norm;
-          void Promise.resolve(deps.kg.upsertFile(struct, rel)).catch(() => {});
+  
+  const startWatcher = () => {
+    try {
+      const w = watch(filePath, { persistent: false }, (eventType) => {
+        if (eventType !== 'change') return;
+        try {
+          deps.kg.markAgentTouched(filePath, agentId);
+        } catch {
+          // Never let a watcher crash the server.
         }
-      } catch {
-        // Refresh is opportunistic — never crash the watcher.
-      }
-    });
-    w.on('error', () => liveWatchers.delete(key));
-    liveWatchers.set(key, w);
-  } catch {
-    // File may not exist yet / permission: registration intent still recorded.
-  }
+        // Incremental single-file refresh: re-parse and upsert so functions,
+        // classes and dependents in the KG stay current without a full
+        // scan_project. Best-effort; embedding is intentionally NOT regenerated
+        // here (provider may be unavailable) — next full scan refreshes it.
+        try {
+          const struct = parseFile(filePath);
+          if (struct) {
+            const root = loadConfig().projectRoot.replace(/\\/g, '/');
+            const norm = filePath.replace(/\\/g, '/');
+            const rel = norm.startsWith(root) ? norm.slice(root.length + 1) : norm;
+            void Promise.resolve(deps.kg.upsertFile(struct, rel)).catch(() => {});
+          }
+        } catch {
+          // Refresh is opportunistic — never crash the watcher.
+        }
+      });
+      
+      w.on('error', (error) => {
+        logger.warn(`Watcher error for ${filePath}:`, { error: error instanceof Error ? error.message : String(error) });
+        liveWatchers.delete(key);
+        // Restart watcher after a delay
+        setTimeout(() => startWatcher(), 5000);
+      });
+      
+      w.on('close', () => {
+        liveWatchers.delete(key);
+        // Restart watcher after a delay
+        setTimeout(() => startWatcher(), 5000);
+      });
+      
+      liveWatchers.set(key, w);
+      logger.info(`Started watching ${filePath} for agent ${agentId}`);
+    } catch (error) {
+      logger.warn(`Failed to start watcher for ${filePath}:`, { error: error instanceof Error ? error.message : String(error) });
+      // Retry after a delay
+      setTimeout(() => startWatcher(), 5000);
+    }
+  };
+  
+  startWatcher();
 }
 
 function stopLiveWatch(filePath: string, agentId: string): void {
@@ -225,7 +248,7 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
     'sync_context',
     {
       title: 'Sync Context',
-      description: 'Synchronize context between coding agent and ProjectMind - share current working state, decisions, and patterns.',
+      description: 'Synchronize context between coding agent and ProjectMind - share current working state, decisions, and patterns. Supports diff merge and conflict resolution.',
       inputSchema: {
         agentId: z.string().describe('Unique identifier for the coding agent'),
         action: z.enum(['push', 'pull', 'both']).default('both').describe('Direction of sync'),
@@ -236,13 +259,16 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
             decision: z.string(),
             reasoning: z.string(),
             timestamp: z.string(),
+            version: z.number().optional().describe('Version for conflict resolution'),
           })).optional().describe('Recent architectural decisions'),
           patternsUsed: z.array(z.string()).optional().describe('Patterns being applied'),
           issuesFound: z.array(z.object({
             file: z.string(),
             issue: z.string(),
             severity: z.enum(['high', 'medium', 'low']),
+            version: z.number().optional().describe('Version for conflict resolution'),
           })).optional().describe('Issues discovered during coding'),
+          workingState: z.record(z.string(), z.unknown()).optional().describe('Agent working state (key-value pairs)'),
         }).optional().describe('Context to push from coding agent'),
       },
     },
@@ -254,44 +280,77 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
         const sessionId = session ? session.id : deps.kg.startAgentSession(args.agentId);
         
         let pushed = false;
-        let pulled: { decisions: Array<{ key: string; value: unknown }>; patterns: Array<{ key: string; value: unknown }>; issues: Array<{ key: string; value: unknown }>; sync: Array<{ key: string; value: unknown }> } | null = null;
+        let pulled: {
+          decisions: Array<{ key: string; value: unknown; version: number }>;
+          patterns: Array<{ key: string; value: unknown; version: number }>;
+          issues: Array<{ key: string; value: unknown; version: number }>;
+          sync: Array<{ key: string; value: unknown; version: number }>;
+          conflicts?: Array<{
+            key: string;
+            local: unknown;
+            remote: unknown;
+            base?: unknown;
+            resolution?: 'local' | 'remote' | 'manual';
+          }>;
+        } | null = null;
 
         if (args.action === 'push' || args.action === 'both') {
           if (args.context) {
-            // Store context in agent memory
+            // Store context in agent memory with versioning for conflict resolution
             if (args.context.currentFile) {
               deps.kg.storeMemory(sessionId, 'sync', 'current_file', args.context.currentFile);
             }
             if (args.context.recentDecisions) {
               for (const decision of args.context.recentDecisions) {
-                deps.kg.storeMemory(sessionId, 'decisions', decision.file, JSON.stringify(decision));
+                const key = `decision:${decision.file}`;
+                const existingEntries = deps.kg.getMemory('decisions', key);
+                const existing = existingEntries[0]?.value;
+                const version = existing && typeof existing === 'object' && 'version' in existing ? ((existing as { version: number }).version || 0) + 1 : 1;
+                deps.kg.storeMemory(sessionId, 'decisions', key, JSON.stringify({ ...decision, version }));
               }
             }
             if (args.context.patternsUsed) {
-              deps.kg.storeMemory(sessionId, 'patterns', 'used', JSON.stringify(args.context.patternsUsed));
+              const existingEntries = deps.kg.getMemory('patterns', 'used');
+              const existing = existingEntries[0]?.value;
+              const version = existing && typeof existing === 'object' && 'version' in existing ? ((existing as { version: number }).version || 0) + 1 : 1;
+              deps.kg.storeMemory(sessionId, 'patterns', 'used', JSON.stringify({ patterns: args.context.patternsUsed, version }));
             }
             if (args.context.issuesFound) {
               for (const issue of args.context.issuesFound) {
-                deps.kg.storeMemory(sessionId, 'issues', issue.file, JSON.stringify(issue));
+                const key = `issue:${issue.file}`;
+                const existingEntries = deps.kg.getMemory('issues', key);
+                const existing = existingEntries[0]?.value;
+                const version = existing && typeof existing === 'object' && 'version' in existing ? ((existing as { version: number }).version || 0) + 1 : 1;
+                deps.kg.storeMemory(sessionId, 'issues', key, JSON.stringify({ ...issue, version }));
+              }
+            }
+            if (args.context.workingState) {
+              for (const [key, value] of Object.entries(args.context.workingState)) {
+                deps.kg.storeMemory(sessionId, 'sync', key, JSON.stringify(value));
               }
             }
             pushed = true;
           }
         }
 
-        // Living Context Window enrichment result (filled inside the pull
-        // branch below when the agent reports its current file).
+        // Living Context Window enrichment result
         let enrichment: { file?: string; dependents?: string[]; similar?: string[] } | undefined;
 
+        // Conflict detection: compare local and remote versions
+        let conflicts: Array<{
+          key: string;
+          local: unknown;
+          remote: unknown;
+          base?: unknown;
+          resolution?: 'local' | 'remote' | 'manual';
+        }> = [];
+
         if (args.action === 'pull' || args.action === 'both') {
-          // Pull relevant context from ProjectMind. Entries are ranked by
-          // relevance to the current file (key/path term overlap) with
-          // recency as tiebreaker, then capped so the model's context is not
-          // flooded by unranked key-value dumps.
+          // Pull relevant context from ProjectMind with versioning
           const currentFile = args.context?.currentFile ?? '';
           const fileTerms = currentFile.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 3);
 
-          const rank = (entries: Array<{ key: string; value: unknown; createdAt?: string }>): Array<{ key: string; value: unknown }> =>
+          const rank = (entries: Array<{ key: string; value: unknown; createdAt?: string; version?: number }>): Array<{ key: string; value: unknown; version: number }> =>
             entries
               .map((e) => {
                 const hay = `${e.key}`.toLowerCase();
@@ -300,17 +359,54 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
               })
               .sort((a, b) => (b.relevance - a.relevance) || (b.ts - a.ts))
               .slice(0, 10)
-              .map(({ e }) => ({ key: e.key, value: e.value }));
+              .map(({ e }) => ({
+                key: e.key,
+                value: e.value,
+                version: e.version || 0,
+              }));
+
+          const decisions = rank(deps.kg.getMemory('decisions'));
+          const patterns = rank(deps.kg.getMemory('patterns'));
+          const issues = rank(deps.kg.getMemory('issues'));
+          const sync = rank(deps.kg.getMemory('sync'));
+
+          if (args.context?.recentDecisions) {
+            for (const localDecision of args.context.recentDecisions) {
+              const key = `decision:${localDecision.file}`;
+              const remoteDecision = decisions.find(d => d.key === key);
+              if (remoteDecision && remoteDecision.version > (localDecision.version || 0)) {
+                conflicts.push({
+                  key,
+                  local: localDecision,
+                  remote: remoteDecision.value,
+                });
+              }
+            }
+          }
+
+          if (args.context?.issuesFound) {
+            for (const localIssue of args.context.issuesFound) {
+              const key = `issue:${localIssue.file}`;
+              const remoteIssue = issues.find(i => i.key === key);
+              if (remoteIssue && remoteIssue.version > (localIssue.version || 0)) {
+                conflicts.push({
+                  key,
+                  local: localIssue,
+                  remote: remoteIssue.value,
+                });
+              }
+            }
+          }
 
           pulled = {
-            decisions: rank(deps.kg.getMemory('decisions')),
-            patterns: rank(deps.kg.getMemory('patterns')),
-            issues: rank(deps.kg.getMemory('issues')),
-            sync: rank(deps.kg.getMemory('sync')),
+            decisions,
+            patterns,
+            issues,
+            sync,
+            ...(conflicts.length > 0 ? { conflicts } : {}),
           };
 
-          // Living Context Window enrichment: attach the reported file's real
-          // dependency closure + similar files to every pull.
+          // Living Context Window enrichment
           const ctxFile = typeof currentFile === 'string' ? currentFile : '';
           if (ctxFile.length > 0) {
             try {
@@ -341,7 +437,7 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
                 pushed,
                 pulled,
                 enrichment,
-                message: 'Context synchronized successfully',
+                message: conflicts?.length ? `Context synchronized with ${conflicts.length} conflicts detected.` : 'Context synchronized successfully',
               }, null, 2),
             },
           ],

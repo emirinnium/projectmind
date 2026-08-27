@@ -96,23 +96,26 @@ function humanizeToolName(name: string): string {
  *                                    did not define one
  */
 export function annotateToolRegistration(server: McpServer): void {
+  type JsonLike = string | number | boolean | null | JsonLike[] | { [key: string]: JsonLike };
   const target = server as unknown as {
-    registerTool: (name: string, cfg: Record<string, unknown>, ...rest: unknown[]) => unknown;
+    registerTool: (name: string, cfg: Record<string, JsonLike>, ...rest: JsonLike[]) => unknown;
   };
   const original = target.registerTool.bind(server);
   target.registerTool = (name, cfg, ...rest) => {
     if (DEDICATED_READ_ONLY.has(name)) {
       const openWorld = !READ_ONLY_OPEN_WORLD_EXCEPTIONS.has(name);
-      cfg.annotations = {
-        ...(cfg.title ? {} : { title: humanizeToolName(name) }),
+      const annotations = (cfg as Record<string, JsonLike>).annotations as Record<string, JsonLike> | undefined;
+      (cfg as Record<string, JsonLike>).annotations = {
+        ...(annotations?.title ? {} : { title: humanizeToolName(name) }),
         readOnlyHint: true,
         idempotentHint: true,
         destructiveHint: false,
         ...(openWorld ? { openWorldHint: false } : {}),
-        ...(cfg.annotations ?? {}),
+        ...(annotations ?? {}),
       };
     }
-    return original(name, cfg, ...rest);
+    const result = original(name, cfg, ...rest);
+    return result;
   };
 }
 

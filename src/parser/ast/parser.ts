@@ -11,7 +11,7 @@ function getModifiers(node: ts.Node): ts.Modifier[] {
     }
   }
   // Fallback for nodes that may store modifiers directly (older TS versions)
-  const modifierLike = (node as unknown as { modifiers?: ts.NodeArray<ts.Modifier> }).modifiers;
+  const modifierLike = 'modifiers' in node ? (node as { modifiers?: readonly ts.Modifier[] }).modifiers : undefined;
   if (modifierLike && Array.isArray(modifierLike)) {
     return Array.from(modifierLike);
   }
@@ -95,19 +95,40 @@ export function parseTypeScriptFile(filePath: string, content?: string, language
             .filter(Boolean)
             .join(', ')
         : null;
+      const methodMembers = node.members.filter((m) => ts.isMethodDeclaration(m));
+      const propertyMembers = node.members.filter((m) => ts.isPropertyDeclaration(m));
+      const methods = methodMembers.map((m) => ({
+        name: m.name?.getText() ?? 'anonymous',
+        kind: 'method' as const,
+        isStatic: m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.StaticKeyword) ?? false,
+        accessModifier: m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.PrivateKeyword) ? 'private'
+          : m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ProtectedKeyword) ? 'protected'
+          : 'public' as 'public' | 'private' | 'protected',
+      }));
+      const properties = propertyMembers.map((m) => ({
+        name: m.name?.getText() ?? 'anonymous',
+        kind: 'property' as const,
+        isStatic: m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.StaticKeyword) ?? false,
+        accessModifier: m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.PrivateKeyword) ? 'private'
+          : m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ProtectedKeyword) ? 'protected'
+          : 'public' as 'public' | 'private' | 'protected',
+      }));
       classes.push({
         name,
         signature: `${name}${extended ? ` extends ${extended}` : ''}`,
         startLine: sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1,
         endLine: sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
-        methodsCount: node.members.filter((m) => ts.isMethodDeclaration(m)).length,
-        propertiesCount: node.members.filter((m) => ts.isPropertyDeclaration(m)).length,
+        methodsCount: methodMembers.length,
+        propertiesCount: propertyMembers.length,
         extends: extended,
         implements:
           node.heritageClauses
             ?.filter((h) => h.token === ts.SyntaxKind.ImplementsKeyword)
             .map((h) => h.types[0]?.getText())
             .filter(Boolean) ?? [],
+        methods,
+        properties,
+        cognitiveLoad: (methodMembers.length * 2 + propertyMembers.length) / 10,
       });
     }
 

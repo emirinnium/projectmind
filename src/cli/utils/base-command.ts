@@ -5,6 +5,9 @@ import { output } from './output.js';
 import { formatGenomeScore } from './formatters.js';
 import { handleCliError } from './formatters.js';
 import { getFilesToCheck } from './files.js';
+import { ScaleManager } from '@/core/scale/manager.js';
+import { DebtTracker } from '@/core/debt/tracker.js';
+import { CoherenceEngine } from '@/core/coherence/engine.js';
 
 export { CLIContext, ContextFn } from './context.js';
 
@@ -26,21 +29,21 @@ export abstract class BaseCommand {
     return withService(services, fn);
   }
   
-  protected withScale(fn: ContextFn<any>): Promise<void> {
+  protected withScale(fn: ContextFn<ScaleManager>): Promise<void> {
     return withScale(fn);
   }
   
-  protected withDebt(fn: ContextFn<any>): Promise<void> {
+  protected withDebt(fn: ContextFn<DebtTracker>): Promise<void> {
     return withDebt(fn);
   }
   
-  protected withCoherence(fn: ContextFn<any>): Promise<void> {
+  protected withCoherence(fn: ContextFn<CoherenceEngine>): Promise<void> {
     return withCoherence(fn);
   }
   
   protected withServices(
     services: ('scale' | 'debt' | 'coherence')[],
-    fn: (ctx: CLIContext, services: Record<string, any>) => Promise<void>
+    fn: (ctx: CLIContext, services: ServiceMap) => Promise<void>
   ): Promise<void> {
     return withServices(services, fn);
   }

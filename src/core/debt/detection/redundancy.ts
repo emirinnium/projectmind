@@ -1,10 +1,12 @@
-import { getStatement } from '../../../storage/database.js';
 import { FileInfo } from '../../../storage/knowledge-graph.js';
 import { cosineSimilarity } from '../../../parser/embeddings.js';
 import { AdvancedCache } from '../../cache/advanced-cache.js';
 import { EmbeddingCache, globalCacheRegistry } from '../../cache/index.js';
+import { DatabaseSync } from 'node:sqlite';
+import { getDatabase } from '../../../storage/database.js';
+import { getVecIndex, type VecIndex } from '../../embeddings/vector-index.js';
 
-export type DebtType = 'pattern_drift' | 'architectural_drift' | 'redundancy' | 'agent_conflict';
+export type DebtType = 'pattern_drift' | 'architectural_drift' | 'redundancy' | 'agent_conflict' | 'complexity' | 'code_age' | 'cognitive_load';
 export type Severity = 'high' | 'medium' | 'low';
 
 export interface DebtItem {
@@ -32,9 +34,13 @@ export interface DebtReport {
  */
 export class RedundancyDetector {
   private embeddingCache: AdvancedCache<string, number[]>;
+  private db: DatabaseSync;
+  private vecIndex: VecIndex;
 
-  constructor() {
+  constructor(db?: DatabaseSync) {
     this.embeddingCache = globalCacheRegistry.getOrCreate('embeddings', () => new EmbeddingCache()) as AdvancedCache<string, number[]>;
+    this.db = db || getDatabase();
+    this.vecIndex = getVecIndex(this.db);
   }
 
   /**
@@ -60,18 +66,19 @@ export class RedundancyDetector {
       }
     }
 
-    // Fetch uncached embeddings from DB
+    // Fetch uncached embeddings from DB as Float32 BLOB
     if (uncachedIds.length > 0) {
       const placeholders = uncachedIds.map(() => '?').join(',');
-      const rows = getStatement(`SELECT id, embedding FROM files WHERE id IN (${placeholders})`)
-        .all(...uncachedIds) as { id: number; embedding: string | null }[];
+      const stmt = this.db.prepare(`SELECT id, embedding FROM files WHERE id IN (${placeholders})`);
+      const rows = stmt.all(...uncachedIds) as { id: number; embedding: Buffer | null }[];
 
       for (const row of rows) {
         if (!row.embedding) continue;
         try {
-          const embedding = JSON.parse(row.embedding) as number[];
-          result.set(row.id, embedding);
-          this.embeddingCache.set(`file:${row.id}`, embedding);
+          // Convert BLOB to Float32Array
+          const embedding = new Float32Array(row.embedding.buffer);
+          result.set(row.id, Array.from(embedding));
+          this.embeddingCache.set(`file:${row.id}`, Array.from(embedding));
         } catch {
           // skip invalid embeddings
         }
@@ -89,26 +96,48 @@ export class RedundancyDetector {
   /**
    * Find similar files using pre-fetched embeddings (no per-file DB queries).
    * Threshold set to 0.95 to reduce false positives from boilerplate similarity.
+   *
+   * Uses the shared VecIndex when available (sub-millisecond ANN), falling
+   * back to in-memory cosine similarity when sqlite-vec is unavailable.
    */
-  findSimilarFiles(
+  async findSimilarFiles(
     target: FileInfo,
     targetEmbedding: number[],
     allFiles: FileInfo[],
     embeddings: Map<number, number[]>
-  ): FileInfo[] {
-    const candidates: { id: number; embedding: number[] }[] = [];
-    for (const f of allFiles) {
-      if (f.id === target.id) continue;
-      const emb = embeddings.get(f.id);
-      if (emb) candidates.push({ id: f.id, embedding: emb });
+  ): Promise<FileInfo[]> {
+    const THRESHOLD = 0.95;
+
+    // Fast path: sqlite-vec ANN via the shared VecIndex.
+    if (this.vecIndex.isAvailable()) {
+      // Ensure the index is populated for these embeddings.
+      for (const [id, emb] of embeddings) {
+        this.vecIndex.upsert(id, emb);
+      }
+
+      const rawMatches = this.vecIndex.findSimilar(targetEmbedding, 20);
+      const matchIds = rawMatches
+        .filter((m) => (1 - m.distance) >= THRESHOLD)
+        .map((m) => m.id);
+
+      if (matchIds.length > 0) {
+        const idSet = new Set(matchIds);
+        return allFiles.filter((f) => idSet.has(f.id));
+      }
+      return [];
     }
 
-    return candidates
-      .map((c) => ({ id: c.id, score: cosineSimilarity(targetEmbedding, c.embedding) }))
-      .filter((r) => r.score > 0.95)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 5)
-      .map((r) => allFiles.find((f) => f.id === r.id)!)
-      .filter(Boolean);
+    // Fallback: in-memory cosine similarity (original behaviour).
+    const targetFileId = target.id;
+    const results: FileInfo[] = [];
+    for (const [id, emb] of embeddings) {
+      if (id === targetFileId) continue;
+      const score = cosineSimilarity(targetEmbedding, emb);
+      if (score >= THRESHOLD) {
+        const file = allFiles.find((f) => f.id === id);
+        if (file) results.push(file);
+      }
+    }
+    return results;
   }
 }

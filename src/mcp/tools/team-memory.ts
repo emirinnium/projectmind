@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { trackAgentAccess } from './types.js';
 import { searchTeamMemoriesSemantic } from '../../core/memory/semantic-memory.js';
+import { buildMergeSuggestion, type MergeSuggestion } from '../../core/team-memory/merge.js';
 
 export function registerTeamMemoryTools(server: McpServer, deps: McpDependencies): void {
   // Store a team memory (shared across agents)
@@ -10,7 +11,9 @@ export function registerTeamMemoryTools(server: McpServer, deps: McpDependencies
     'store_team_memory',
     {
       title: 'Store Team Memory',
-      description: 'Store a memory that is shared across all agents in the team. Use this for decisions, patterns, and knowledge that should be accessible to everyone.',
+      description:
+        'Store a memory that is shared across all agents in the team. Use this for decisions, patterns, and knowledge that should be accessible to everyone. ' +
+        'Concurrent writes are reconciled with a Git-style 3-way merge: identical/overlapping-safe values merge automatically, and genuine conflicts keep the stored value and return a resolution suggestion instead of silently overwriting.',
       inputSchema: {
         scope: z.string().describe('Memory scope (e.g., "architecture", "patterns", "decisions")'),
         key: z.string().describe('Memory key'),
@@ -24,7 +27,7 @@ export function registerTeamMemoryTools(server: McpServer, deps: McpDependencies
           trackAgentAccess(deps.kg, deps.agentName, 'team-memory-store');
         }
 
-        deps.kg.storeTeamMemory({
+        const result = deps.kg.storeTeamMemory({
           agentName: deps.agentName || 'unknown',
           scope: args.scope,
           key: args.key,
@@ -32,11 +35,41 @@ export function registerTeamMemoryTools(server: McpServer, deps: McpDependencies
           isPublic: args.isPublic,
         });
 
+        let suggestion: MergeSuggestion | null = null;
+        if (result.status === 'conflict') {
+          suggestion = await buildMergeSuggestion(
+            result.baseValueUsed,
+            result.previousValue,
+            args.value,
+            result.conflicts,
+            deps.llmProvider ?? null
+          );
+        }
+
+        const message =
+          result.status === 'conflict'
+            ? 'Conflict: overlapping concurrent changes — the stored value was kept unchanged. Review the suggestion and re-store a resolved value.'
+            : result.status === 'merged'
+              ? 'Team memory merged (3-way) and stored'
+              : 'Team memory stored';
+
+        const response: Record<string, unknown> = {
+          success: true,
+          status: result.status,
+          message,
+        };
+        if (result.status === 'conflict') {
+          response.previousValue = result.previousValue;
+          response.conflictCount = result.conflicts.length;
+          response.conflicts = result.conflicts;
+          response.suggestion = suggestion;
+        }
+
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ success: true, message: 'Team memory stored' }, null, 2),
+              text: JSON.stringify(response, null, 2),
             },
           ],
         };

@@ -13,6 +13,9 @@ const TraceCallSchema = z.object({
 
 type TraceCall = z.infer<typeof TraceCallSchema>;
 
+interface TraceRawEvent { fromFunctionName?: string; toFunctionName?: string; workloadId?: string; callCount?: number; staticMissed?: boolean }
+interface TraceInputFile { calls?: TraceRawEvent[]; events?: TraceRawEvent[] }
+
 export function createTraceCommand(): Command {
   const traceCmd = new Command('trace')
     .description('Runtime call tracing: ingest test traces and dynamic call data into the knowledge graph');
@@ -32,16 +35,16 @@ export function createTraceCommand(): Command {
           process.exit(1);
         }
 
-        let raw: unknown;
+        let raw: TraceInputFile | TraceRawEvent[] = [];
         try {
           const content = readFileSync(file, 'utf-8');
-          raw = JSON.parse(content);
+          raw = JSON.parse(content) as TraceInputFile | TraceRawEvent[];
         } catch (e) {
           output.error(`Invalid trace file: ${e instanceof Error ? e.message : e}`);
           process.exit(1);
         }
 
-        const parsed = Array.isArray(raw) ? raw : (raw as { calls?: unknown[]; events?: unknown[] }).calls || (raw as { calls?: unknown[]; events?: unknown[] }).events || [];
+        const parsed = Array.isArray(raw) ? raw : raw.calls || raw.events || [];
         const calls: TraceCall[] = [];
         for (const item of parsed) {
           const result = TraceCallSchema.safeParse(item);
@@ -100,11 +103,11 @@ export function createTraceCommand(): Command {
       let normalized: NormalizedEvent[] = [];
 
       if (opts.format === 'json') {
-        const raw = JSON.parse(readFileSync(input, 'utf-8')) as
-          | unknown[]
-          | { events?: unknown[] };
-        const events = Array.isArray(raw) ? raw : (raw.events ?? []);
-        normalized = (events as Array<Record<string, unknown>>)
+        interface RawTraceEvent { fromFunctionName?: string; toFunctionName?: string; workloadId?: string; callCount?: number; staticMissed?: boolean }
+        interface TraceFile { events?: RawTraceEvent[] }
+        const raw = JSON.parse(readFileSync(input, 'utf-8'));
+        const events: RawTraceEvent[] = Array.isArray(raw) ? raw as RawTraceEvent[] : ((raw as TraceFile).events ?? []);
+        normalized = events
           .filter((e) => e && typeof e.fromFunctionName === 'string' && typeof e.toFunctionName === 'string')
           .map((e) => ({
             fromFunctionName: String(e.fromFunctionName),

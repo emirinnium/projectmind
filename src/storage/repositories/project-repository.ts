@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { getDatabase } from '../database.js';
 
 export interface Project {
@@ -25,13 +25,13 @@ export class ProjectRepository {
   }
 
   getById(id: number): Project | null {
-    const row = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const row = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as Record<string, SQLOutputValue> | undefined;
     if (!row) return null;
     return this.mapRow(row);
   }
 
   getByName(name: string): Project | null {
-    const row = this.db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as Record<string, unknown> | undefined;
+    const row = this.db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as Record<string, SQLOutputValue> | undefined;
     if (!row) return null;
     return this.mapRow(row);
   }
@@ -43,7 +43,7 @@ export class ProjectRepository {
       LEFT JOIN files f ON f.project_id = p.id 
       GROUP BY p.id 
       ORDER BY p.name
-    `).all() as Record<string, unknown>[];
+    `).all() as Record<string, SQLOutputValue>[];
     return rows.map((r) => ({ ...this.mapRow(r), fileCount: (r.file_count as number) || 0 }));
   }
 
@@ -65,7 +65,7 @@ export class ProjectRepository {
     this.db.prepare('UPDATE projects SET last_scanned = CURRENT_TIMESTAMP WHERE id = ?').run(id);
   }
 
-  private mapRow(row: Record<string, unknown>): Project {
+  private mapRow(row: Record<string, SQLOutputValue>): Project {
     return {
       id: row.id as number,
       name: row.name as string,

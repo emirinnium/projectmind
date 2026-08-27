@@ -100,5 +100,6 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
   for (const top of program.commands ?? []) walk(top, []);
 
   console.info(`[mcp] CLI-parity tools registered: ${registered}`);
+  
   return registered;
 }

@@ -1,4 +1,5 @@
 import { getStatement } from '../../database.js';
+import type { SQLOutputValue } from 'node:sqlite';
 import type { KgContext } from './context.js';
 
 /**
@@ -26,7 +27,7 @@ export function purgeExpiredLocks(_ctx: KgContext): number {
   return Number(result.changes ?? 0);
 }
 
-function rowToLock(row: Record<string, unknown>): FileLock {
+function rowToLock(row: Record<string, SQLOutputValue>): FileLock {
   return {
     id: Number(row.id),
     filePath: String(row.file_path),
@@ -59,7 +60,7 @@ export function acquireFileLock(
   const ttlMinutes = Math.max(1, Math.min(24 * 60, Math.floor(options.ttlMinutes ?? 30)));
   const existing = getStatement(
     'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?'
-  ).get(filePath) as Record<string, unknown> | undefined;
+  ).get(filePath) as Record<string, SQLOutputValue> | undefined;
 
   if (existing) {
     const lock = rowToLock(existing);
@@ -79,7 +80,7 @@ export function acquireFileLock(
 
   const created = getStatement(
     'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE id = ?'
-  ).get(Number(result.lastInsertRowid)) as Record<string, unknown>;
+  ).get(Number(result.lastInsertRowid)) as Record<string, SQLOutputValue>;
 
   return { status: 'acquired', lock: rowToLock(created) };
 }
@@ -95,7 +96,7 @@ export function releaseFileLock(ctx: KgContext, filePath: string, agentName: str
 
   const row = getStatement(
     'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?'
-  ).get(filePath) as Record<string, unknown> | undefined;
+  ).get(filePath) as Record<string, SQLOutputValue> | undefined;
 
   if (!row) return { status: 'not-found' };
   const lock = rowToLock(row);
@@ -111,10 +112,10 @@ export function getActiveLocks(ctx: KgContext, agentName?: string): FileLock[] {
   const rows = agentName
     ? (getStatement(
         'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE agent_name = ? ORDER BY acquired_at DESC LIMIT 200'
-      ).all(agentName) as Record<string, unknown>[])
+      ).all(agentName) as Record<string, SQLOutputValue>[])
     : (getStatement(
         'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks ORDER BY acquired_at DESC LIMIT 500'
-      ).all() as Record<string, unknown>[]);
+      ).all() as Record<string, SQLOutputValue>[]);
   return rows.map(rowToLock);
 }
 
@@ -134,7 +135,7 @@ export function checkFileConflicts(ctx: KgContext, filePaths: string[], agentNam
   for (const filePath of filePaths) {
     const row = getStatement(
       'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?'
-    ).get(filePath) as Record<string, unknown> | undefined;
+    ).get(filePath) as Record<string, SQLOutputValue> | undefined;
 
     if (!row || row.agent_name === agentName) {
       report.free.push(filePath);

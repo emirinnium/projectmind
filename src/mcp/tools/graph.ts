@@ -24,7 +24,7 @@ const inputSchema = {
   damping: z.number().default(0.85).describe('PageRank damping factor'),
 };
 
-function json(result: unknown): { content: Array<{ type: 'text'; text: string }> } {
+function json(result: object): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 }
 

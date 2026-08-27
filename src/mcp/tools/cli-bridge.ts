@@ -5,6 +5,33 @@ import { trackAgentAccess } from './types.js';
 import { runCliCapture } from './cli-runner.js';
 import { isBlockedCliInvocation } from './guard.js';
 
+/**
+ * CLI commands that are safe to run through run_cli (read-only, non-destructive).
+ */
+export const ALLOWLISTED_CLI_COMMANDS = new Set([
+  'doctor',
+  'health',
+  'report',
+  'genome',
+  'scale',
+  'layers',
+  'audit',
+  'license',
+  'sbom',
+  'churn',
+  'api-surface',
+  'dedup',
+  'heatmap',
+  'ownership',
+  'test-quality',
+  'context-budget',
+  'pr-preview',
+  'flags',
+  'skill-recommend',
+  'deps-fresh',
+  'secrets-life',
+]);
+
 export function registerCliBridgeTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
     'run_cli',
@@ -34,6 +61,13 @@ export function registerCliBridgeTool(server: McpServer, deps: McpDependencies):
         if (isBlockedCliInvocation(argv)) {
           return {
             content: [{ type: 'text', text: JSON.stringify({ ok: false, error: `Command "${argv.join(' ')}" is not allowed through run_cli (blocked as destructive or restricted).` }) }],
+          };
+        }
+        
+        // Allow only allowlisted commands
+        if (!ALLOWLISTED_CLI_COMMANDS.has(argv[0])) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ ok: false, error: `Command "${argv[0]}" is not allowlisted for run_cli.` }) }],
           };
         }
         if (deps.agentName) {

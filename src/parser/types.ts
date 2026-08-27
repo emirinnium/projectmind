@@ -29,6 +29,13 @@ export interface FunctionInfo {
   cyclomaticComplexity: number;
 }
 
+export interface ClassMemberInfo {
+  name: string;
+  kind: 'method' | 'property' | 'constructor';
+  isStatic: boolean;
+  accessModifier: 'public' | 'private' | 'protected' | undefined;
+}
+
 export interface ClassInfo {
   name: string;
   signature: string;
@@ -38,6 +45,11 @@ export interface ClassInfo {
   propertiesCount: number;
   extends: string | null;
   implements: string[];
+  /** Detailed member list (populated when AST parser provides it). */
+  methods: ClassMemberInfo[];
+  properties: ClassMemberInfo[];
+  /** Approximate cognitive load heuristic for the class body. */
+  cognitiveLoad: number;
 }
 
 export interface FileStructure {

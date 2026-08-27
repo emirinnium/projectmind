@@ -1,6 +1,7 @@
 import { getStatement } from '../database.js';
 import { getAllFiles } from './helpers/index.js';
 import type { KgContext } from './helpers/context.js';
+import type { SQLOutputValue } from 'node:sqlite';
 import { isTestPath } from '../../utils/test-detection.js';
 
 export interface GraphNode {
@@ -105,7 +106,7 @@ export class GraphTraversal {
       JOIN files f1 ON i.file_id = f1.id
       LEFT JOIN files f2 ON i.resolved_path = f2.relative_path AND f2.project_id = ?
       WHERE f1.project_id = ? AND f2.id IS NOT NULL
-    `).all(this.ctx.currentProjectId, this.ctx.currentProjectId) as Record<string, unknown>[];
+    `).all(this.ctx.currentProjectId, this.ctx.currentProjectId) as Record<string, SQLOutputValue>[];
 
     for (const row of importRows) {
       const fromId = row.file_id as number;

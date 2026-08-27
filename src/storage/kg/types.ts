@@ -10,6 +10,7 @@ export interface FileInfo {
   agentTouchedAt: string | null;
   cognitiveLoad: number;
   lastScanned: string;
+  lastSynced: string;
   patterns: string[];
 }
 
@@ -18,7 +19,7 @@ export interface MemoryEntry {
   sessionId: number;
   scope: string;
   key: string;
-  value: unknown;
+  value: string;
   createdAt: string;
 }
 

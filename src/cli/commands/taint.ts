@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { TaintAnalyzer } from '@/parser/taint-analyzer.js';
+import { detectLanguageFromPath } from '@/parser/language-service.js';
 
 export function createTaintCommand(): Command {
   const taintCmd = new Command('taint')
@@ -21,7 +22,7 @@ export function createTaintCommand(): Command {
         }
 
         const content = readFileSync(path, 'utf-8');
-        const lang = path.endsWith('.ts') || path.endsWith('.tsx') ? 'typescript' : 'javascript';
+        const lang = detectLanguageFromPath(path) ?? 'typescript';
 
         const flows = analyzer.analyzeSource(path, content, lang);
 
@@ -55,7 +56,7 @@ export function createTaintCommand(): Command {
         }
 
         const content = readFileSync(path, 'utf-8');
-        const lang = path.endsWith('.ts') || path.endsWith('.tsx') ? 'typescript' : 'javascript';
+        const lang = detectLanguageFromPath(path) ?? 'typescript';
 
         const recorded = analyzer.recordFlows(path, content, lang);
         output.success(`Recorded ${recorded} taint flows from ${path}`);

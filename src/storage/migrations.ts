@@ -201,6 +201,94 @@ export const migrations: Migration[] = [
       void db;
     },
   },
+  {
+    version: 7,
+    name: 'add_last_synced_and_expand_debt_types',
+    up: (db: DatabaseSync) => {
+      // 1. Add last_synced column to files table if missing.
+      //    SQLite forbids non-constant defaults (CURRENT_TIMESTAMP) in
+      //    ALTER TABLE ADD COLUMN — leave the column nullable instead; read
+      //    sites already fall back to last_scanned when last_synced is NULL
+      //    (src/storage/kg/helpers/files.ts, imports.ts), and graph.ts sets
+      //    last_synced on the next sync.
+      const filesColumns = db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>;
+      const hasLastSynced = filesColumns.some(c => c.name === 'last_synced');
+      if (!hasLastSynced) {
+        db.exec('ALTER TABLE files ADD COLUMN last_synced TIMESTAMP');
+      }
+
+      // 2. Rebuild debt_items table to expand the type CHECK constraint
+      //    from 4 types to 7 (adding 'complexity', 'code_age', 'cognitive_load').
+      //    SQLite cannot ALTER a CHECK constraint, so rebuild is required.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS debt_items_migrated (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          file_id INTEGER,
+          type TEXT CHECK(type IN ('pattern_drift', 'architectural_drift', 'redundancy', 'agent_conflict', 'complexity', 'code_age', 'cognitive_load')),
+          description TEXT,
+          severity TEXT CHECK(severity IN ('high', 'medium', 'low')),
+          suggestion TEXT,
+          reasoning_trace TEXT,
+          detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          resolved BOOLEAN DEFAULT 0,
+          resolved_at TIMESTAMP,
+          FOREIGN KEY (file_id) REFERENCES files(id)
+        );
+        INSERT INTO debt_items_migrated (id, file_id, type, description, severity, suggestion, reasoning_trace, detected_at, resolved, resolved_at)
+          SELECT id, file_id, type, description, severity, suggestion, reasoning_trace, detected_at, resolved, resolved_at FROM debt_items;
+        DROP TABLE debt_items;
+        ALTER TABLE debt_items_migrated RENAME TO debt_items;
+      `);
+
+      // Recreate indexes that were on debt_items
+      db.exec('CREATE INDEX IF NOT EXISTS idx_debt_resolved ON debt_items(resolved);');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_debt_items_type ON debt_items(type, severity);');
+    },
+    down: (db: DatabaseSync) => {
+      // Rebuild debt_items back to the 4-type constraint
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS debt_items_old (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          file_id INTEGER,
+          type TEXT CHECK(type IN ('pattern_drift', 'architectural_drift', 'redundancy', 'agent_conflict')),
+          description TEXT,
+          severity TEXT CHECK(severity IN ('high', 'medium', 'low')),
+          suggestion TEXT,
+          reasoning_trace TEXT,
+          detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          resolved BOOLEAN DEFAULT 0,
+          resolved_at TIMESTAMP,
+          FOREIGN KEY (file_id) REFERENCES files(id)
+        );
+        INSERT INTO debt_items_old (id, file_id, type, description, severity, suggestion, reasoning_trace, detected_at, resolved, resolved_at)
+          SELECT id, file_id, type, description, severity, suggestion, reasoning_trace, detected_at, resolved, resolved_at FROM debt_items WHERE type IN ('pattern_drift', 'architectural_drift', 'redundancy', 'agent_conflict');
+        DROP TABLE debt_items;
+        ALTER TABLE debt_items_old RENAME TO debt_items;
+      `);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_debt_resolved ON debt_items(resolved);');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_debt_items_type ON debt_items(type, severity);');
+      // Note: last_synced column is not removed (SQLite limitation)
+    },
+  },
+{
+    version: 8,
+    name: 'team_memories_base_value',
+    up: (db: DatabaseSync) => {
+      // 3-way merge support for team memories: base_value records the value
+      // that was current BEFORE the stored one, enabling Git-style
+      // base/local/remote merges instead of last-write-wins.
+      const columns = db.prepare('PRAGMA table_info(team_memories)').all() as Array<{ name: string }>;
+      const hasBaseValue = columns.some((c) => c.name === 'base_value');
+      if (!hasBaseValue) {
+        db.exec('ALTER TABLE team_memories ADD COLUMN base_value TEXT');
+      }
+    },
+    down: (db: DatabaseSync) => {
+      // SQLite cannot drop columns without a table rebuild; leaving the
+      // nullable column in place is safe for rollback.
+      void db;
+    },
+  },
 ];
 
 export function getCurrentSchemaVersion(db: DatabaseSync): number {

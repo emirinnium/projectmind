@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
-import { trackAgentAccess } from './types.js';
+import { trackAgentAccess, validateMeta } from './types.js';
 
 export function registerCheckCoherenceTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -22,8 +22,15 @@ export function registerCheckCoherenceTool(server: McpServer, deps: McpDependenc
         includeDependents: z.boolean().default(false).describe('Include reverse dependency impact analysis'),
       },
     },
-    async (args) => {
+    async (args, { _meta }) => {
       try {
+        // Optional envelope: only enforce the documented _meta shape when the
+        // client actually advertises a protocolVersion (mirrors transport-edge
+        // validateRequestMeta). Clients that send partial _meta pass through.
+        if (_meta && typeof _meta === 'object' && typeof (_meta as { protocolVersion?: unknown }).protocolVersion === 'string') {
+          validateMeta(_meta);
+        }
+        
         // Track agent access for coverage
         if (deps.agentName) {
           trackAgentAccess(deps.kg, deps.agentName, args.filePath);

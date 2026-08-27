@@ -3,6 +3,15 @@ import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { loadConfig } from '@/cli/utils/shared.js';
 import { writeFileSync } from 'node:fs';
 import { collectGitChurn } from '@/cli/utils/git-churn.js'; 
+import type { ScaleReport } from '@/core/scale/reporting/types.js';
+
+interface ChurnResult {
+  path: string;
+  churnCount: number;
+  cognitiveLoad: number;
+  riskScore: number;
+  authors: string[];
+}
 export function createChurnCommand(): Command {
   const churnCmd = new Command('churn')
     .description('Analyze code churn and risk hotspots')
@@ -115,10 +124,10 @@ export function createChurnCommand(): Command {
   return churnCmd;
 }
 
-function calculateChurnFromSessions(files: any[], projectRoot: string, sinceDays: number): any[] {
+function calculateChurnFromSessions(files: ScaleReport['modules'][number]['files'], projectRoot: string, sinceDays: number): ChurnResult[] {
   const cutoff = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
   const gitChurn = collectGitChurn(projectRoot, sinceDays);
-  const results = [];
+  const results: ChurnResult[] = [];
 
   for (const file of files) {
     const normalizedPath = String(file.relativePath).replace(/\\/g, '/');
@@ -162,7 +171,7 @@ function calculateChurnFromSessions(files: any[], projectRoot: string, sinceDays
   return results;
 }
 
-function generateHtmlChurn(churnData: any[], highRisk: any[], threshold: number): string {
+function generateHtmlChurn(churnData: ChurnResult[], highRisk: ChurnResult[], threshold: number): string {
   const rows = churnData.map(item => `
     <tr class="${item.riskScore >= threshold ? 'high-risk' : item.riskScore >= threshold * 0.5 ? 'medium-risk' : 'low-risk'}">
       <td>${item.path}</td>

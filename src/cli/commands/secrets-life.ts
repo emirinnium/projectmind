@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output, logger } from '@/cli/utils/shared.js';
 import { readFileSync, writeFileSync } from 'node:fs';
+import type { ProjectMindConfig } from '@/utils/config.js';
 
 interface SecretFinding {
   type: 'api-key' | 'aws-key' | 'private-key' | 'password' | 'token' | 'secret' | 'connection-string' | 'jwt' | 'certificate';
@@ -280,7 +281,7 @@ function generateRotationSchedule(policies: Record<string, RotationPolicy>): { t
   return schedule.sort((a, b) => a.daysUntilRotation - b.daysUntilRotation);
 }
 
-function checkVaultIntegration(config: any): { configured: boolean; address?: string; authMethod?: string; mountPaths?: string[] } {
+function checkVaultIntegration(config: ProjectMindConfig & { vault?: { mountPaths?: string[] } }): { configured: boolean; address?: string; authMethod?: string; mountPaths?: string[] } {
   // Check for vault configuration in environment or config
   const vaultAddr = process.env.VAULT_ADDR;
   const vaultToken = process.env.VAULT_TOKEN;
@@ -293,7 +294,32 @@ function checkVaultIntegration(config: any): { configured: boolean; address?: st
   };
 }
 
-function generateSarif(findings: SecretFinding[]): any {
+interface SarifReport {
+  version: string;
+  $schema: string;
+  runs: Array<{
+    tool: {
+      driver: {
+        name: string;
+        version: string;
+        rules: Array<{ id: string }>;
+      };
+    };
+    results: Array<{
+      ruleId: string;
+      level: string;
+      message: { text: string };
+      locations: Array<{
+        physicalLocation: {
+          artifactLocation: { uri: string };
+          region: { startLine: number };
+        };
+      }>;
+    }>;
+  }>;
+}
+
+function generateSarif(findings: SecretFinding[]): SarifReport {
   return {
     version: '2.1.0',
     $schema: 'https://json.schemastore.org/sarif-2.1.0.json',

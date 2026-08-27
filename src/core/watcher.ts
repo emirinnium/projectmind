@@ -1,7 +1,7 @@
 import { watch as fsWatch, type FSWatcher } from 'node:fs';
 import { extname, relative, resolve } from 'node:path';
 import { loadConfig } from '../utils/config.js';
-import { parseFile } from '../parser/ast-parser.js';
+import { parseFile, type FileStructure } from '../parser/ast-parser.js';
 import { logger } from '../cli/utils/logger.js';
 
 /**
@@ -67,7 +67,7 @@ export class ProjectWatcher {
   };
 
   constructor(
-    private kg: { upsertFile(struct: unknown, relPath: string): Promise<number> },
+    private kg: { upsertFile(struct: FileStructure, relPath: string): Promise<number> },
     private options: ProjectWatcherOptions = {}
   ) {
     this.debounceMs = Math.max(50, options.debounceMs ?? 400);
@@ -156,7 +156,7 @@ export class ProjectWatcher {
         this.options.coherence?.invalidateFileCache(rel);
         updated.push(rel);
       } catch (e) {
-        logger.warn(`Watcher failed to index ${abs}:`, { error: e });
+        logger.warn(`Watcher failed to index ${abs}:`, { error: e instanceof Error ? e.message : String(e) });
         failed.push(relative(this.root, abs));
       }
     }

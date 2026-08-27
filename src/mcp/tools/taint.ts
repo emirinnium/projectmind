@@ -3,13 +3,14 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { trackAgentAccess } from './types.js';
 import { TaintAnalyzer } from '@/parser/taint-analyzer.js';
+import { detectLanguageFromPath } from '@/parser/language-service.js';
 
 export function registerTaintTools(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
     'analyze_taint',
     {
       title: 'Analyze Taint',
-      description: 'Analyze a TypeScript/JavaScript file for taint flows from sources to sinks using AST patterns.',
+      description: 'Analyze a file for taint flows from sources to sinks (TypeScript, JavaScript, Python, Go, Rust, Java) using AST patterns.',
       inputSchema: {
         filePath: z.string().describe('Path to the file to analyze'),
       },
@@ -30,7 +31,7 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
         }
 
         const content = readFileSync(args.filePath, 'utf-8');
-        const lang = args.filePath.endsWith('.ts') || args.filePath.endsWith('.tsx') ? 'typescript' : 'javascript';
+        const lang = detectLanguageFromPath(args.filePath) ?? 'typescript';
         const flows = analyzer.analyzeSource(args.filePath, content, lang);
 
         return {
@@ -71,7 +72,7 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
     'record_taint',
     {
       title: 'Record Taint',
-      description: 'Analyze a TypeScript/JavaScript file and record detected taint flows to the knowledge graph.',
+      description: 'Analyze a file and record detected taint flows to the knowledge graph (TypeScript, JavaScript, Python, Go, Rust, Java).',
       inputSchema: {
         filePath: z.string().describe('Path to the file to analyze'),
       },
@@ -92,7 +93,7 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
         }
 
         const content = readFileSync(args.filePath, 'utf-8');
-        const lang = args.filePath.endsWith('.ts') || args.filePath.endsWith('.tsx') ? 'typescript' : 'javascript';
+        const lang = detectLanguageFromPath(args.filePath) ?? 'typescript';
         const recorded = analyzer.recordFlows(args.filePath, content, lang);
 
         return {

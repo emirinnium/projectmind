@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { getDatabase } from '../database.js';
 
 export interface FileRecord {
@@ -38,14 +38,14 @@ function encodeEmbedding(values: number[]): Buffer {
   return Buffer.from(new Float32Array(values).buffer);
 }
 
-function decodeEmbedding(raw: unknown): number[] {
+function decodeEmbedding(raw: SQLOutputValue | null): number[] {
   if (raw instanceof Uint8Array) {
     const floats = new Float32Array(raw.buffer, raw.byteOffset, Math.floor(raw.byteLength / 4));
     return Array.from(floats);
   }
   if (typeof raw === 'string') {
     try {
-      const parsed = JSON.parse(raw) as unknown;
+      const parsed = JSON.parse(raw as string) as number[];
       return Array.isArray(parsed) ? parsed.map(Number) : [];
     } catch {
       return [];
@@ -93,42 +93,42 @@ export class FileRepository {
   }
 
   getById(id: number, projectId: number): FileRecord | null {
-    const row = this.db.prepare('SELECT * FROM files WHERE id = ? AND project_id = ?').get(id, projectId) as Record<string, unknown> | undefined;
+    const row = this.db.prepare('SELECT * FROM files WHERE id = ? AND project_id = ?').get(id, projectId) as Record<string, SQLOutputValue> | undefined;
     return row ? this.mapRow(row) : null;
   }
 
   getByPath(path: string, projectId: number): FileRecord | null {
     const normalized = path.replace(/\\/g, '/');
     const row = this.db.prepare('SELECT * FROM files WHERE (path = ? OR relative_path = ?) AND project_id = ?')
-      .get(path, normalized, projectId) as Record<string, unknown> | undefined;
+      .get(path, normalized, projectId) as Record<string, SQLOutputValue> | undefined;
     return row ? this.mapRow(row) : null;
   }
 
   getAll(projectId: number): FileRecord[] {
-    const rows = this.db.prepare('SELECT * FROM files WHERE project_id = ? ORDER BY path').all(projectId) as Record<string, unknown>[];
+    const rows = this.db.prepare('SELECT * FROM files WHERE project_id = ? ORDER BY path').all(projectId) as Record<string, SQLOutputValue>[];
     return rows.map((r) => this.mapRow(r));
   }
 
   getByLanguage(language: string, projectId: number): FileRecord[] {
     const rows = this.db.prepare('SELECT * FROM files WHERE language = ? AND project_id = ? ORDER BY last_scanned DESC')
-      .all(language, projectId) as Record<string, unknown>[];
+      .all(language, projectId) as Record<string, SQLOutputValue>[];
     return rows.map((r) => this.mapRow(r));
   }
 
   getAgentTouched(agentName: string | undefined, projectId: number): FileRecord[] {
     if (agentName) {
       const rows = this.db.prepare('SELECT * FROM files WHERE agent_touched = 1 AND agent_touched_by = ? AND project_id = ? ORDER BY agent_touched_at DESC')
-        .all(agentName, projectId) as Record<string, unknown>[];
+        .all(agentName, projectId) as Record<string, SQLOutputValue>[];
       return rows.map((r) => this.mapRow(r));
     } else {
       const rows = this.db.prepare('SELECT * FROM files WHERE agent_touched = 1 AND project_id = ? ORDER BY agent_touched_at DESC')
-        .all(projectId) as Record<string, unknown>[];
+        .all(projectId) as Record<string, SQLOutputValue>[];
       return rows.map((r) => this.mapRow(r));
     }
   }
 
   getEmbedding(fileId: number): number[] | null {
-    const row = this.db.prepare('SELECT embedding FROM files WHERE id = ?').get(fileId) as { embedding: unknown } | undefined;
+    const row = this.db.prepare('SELECT embedding FROM files WHERE id = ?').get(fileId) as { embedding: SQLOutputValue | null } | undefined;
     if (!row || !row.embedding) return null;
     const decoded = decodeEmbedding(row.embedding);
     return decoded.length > 0 ? decoded : null;
@@ -136,7 +136,7 @@ export class FileRepository {
 
   getAllEmbeddings(projectId: number): Map<number, number[]> {
     const rows = this.db.prepare('SELECT id, embedding FROM files WHERE project_id = ? AND embedding IS NOT NULL')
-      .all(projectId) as Array<{ id: number; embedding: unknown }>;
+      .all(projectId) as Array<{ id: number; embedding: SQLOutputValue | null }>;
     const map = new Map<number, number[]>();
     for (const row of rows) {
       const decoded = decodeEmbedding(row.embedding);
@@ -201,7 +201,7 @@ export class FileRepository {
     }
   }
 
-  private mapRow(row: Record<string, unknown>): FileRecord {
+  private mapRow(row: Record<string, SQLOutputValue>): FileRecord {
     return {
       id: row.id as number,
       projectId: row.project_id as number,

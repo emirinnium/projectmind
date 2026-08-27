@@ -256,7 +256,7 @@ function extractConfigFlags(content: string, relativePath: string): FeatureFlag[
   return flags;
 }
 
-function countReferences(flagName: string, files: any[]): number {
+function countReferences(flagName: string, files: Array<{ path: string }>): number {
   let count = 0;
   
   for (const file of files.slice(0, 100)) {

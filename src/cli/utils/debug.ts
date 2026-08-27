@@ -1,11 +1,13 @@
 import { logger } from '@/index.js';
 
+type DebugValue = string | number | boolean | null | DebugValue[] | { [key: string]: DebugValue };
+
 export const debug = {
   enabled: process.env.DEBUG === '1' || process.env.PROJECTMIND_DEBUG === '1',
   
-  log: (label: string, data: any) => {
+  log: (label: string, data: DebugValue) => {
     if (debug.enabled) {
-      logger.debug(`[DEBUG] ${label}:`, typeof data === 'object' ? JSON.stringify(data, null, 2) : data);
+      logger.debug(`[DEBUG] ${label}: ${typeof data === 'object' && data !== null ? JSON.stringify(data, null, 2) : String(data ?? '')}`);
     }
   },
   

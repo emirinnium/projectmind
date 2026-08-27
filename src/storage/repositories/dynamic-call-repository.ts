@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { getDatabase } from '../database.js';
 
 export interface DynamicCall {
@@ -87,7 +87,7 @@ export class DynamicCallRepository {
        JOIN functions f1 ON c.from_function_id = f1.id
        JOIN functions f2 ON c.to_function_id = f2.id
        WHERE c.workload_id = ? AND c.dynamic = 1`
-    ).all(workloadId) as Record<string, unknown>[];
+    ).all(workloadId) as Record<string, SQLOutputValue>[];
 
     return rows.map((r) => this.mapRow(r));
   }
@@ -99,7 +99,7 @@ export class DynamicCallRepository {
        JOIN functions f1 ON c.from_function_id = f1.id
        JOIN functions f2 ON c.to_function_id = f2.id
        WHERE c.dynamic = 1`
-    ).all() as Record<string, unknown>[];
+    ).all() as Record<string, SQLOutputValue>[];
 
     return rows.map((r) => this.mapRow(r));
   }
@@ -111,7 +111,7 @@ export class DynamicCallRepository {
        JOIN functions f1 ON c.from_function_id = f1.id
        JOIN functions f2 ON c.to_function_id = f2.id
        WHERE c.dynamic = 1 AND c.static_missed = 1`
-    ).all() as Record<string, unknown>[];
+    ).all() as Record<string, SQLOutputValue>[];
 
     return rows.map((r) => this.mapRow(r));
   }
@@ -126,7 +126,7 @@ export class DynamicCallRepository {
     return Number(result.changes);
   }
 
-  private mapRow(row: Record<string, unknown>): DynamicCall {
+  private mapRow(row: Record<string, SQLOutputValue>): DynamicCall {
     return {
       fromFunctionId: row.from_function_id as number,
       toFunctionId: row.to_function_id as number,

@@ -1,12 +1,17 @@
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { getDatabase } from '../database.js';
+import {
+  computeTeamMemoryStore,
+  type TeamMemoryRowView,
+  type TeamMemoryStoreComputation,
+} from '../../core/team-memory/merge.js';
 
 export interface MemoryEntry {
   id: number;
   sessionId: number;
   scope: string;
   key: string;
-  value: unknown;
+  value: string;
   createdAt: string;
   expiresAt: string | null;
 }
@@ -36,11 +41,11 @@ export class MemoryRepository {
   getSessions(agentName?: string, limit: number = 50): AgentSession[] {
     if (agentName) {
       const rows = this.db.prepare('SELECT * FROM agent_sessions WHERE agent_name = ? ORDER BY started_at DESC LIMIT ?')
-        .all(agentName, limit) as Record<string, unknown>[];
+        .all(agentName, limit) as Record<string, SQLOutputValue>[];
       return rows.map((r) => this.mapSession(r));
     } else {
       const rows = this.db.prepare('SELECT * FROM agent_sessions ORDER BY started_at DESC LIMIT ?')
-        .all(limit) as Record<string, unknown>[];
+        .all(limit) as Record<string, SQLOutputValue>[];
       return rows.map((r) => this.mapSession(r));
     }
   }
@@ -67,12 +72,12 @@ export class MemoryRepository {
     if (key) {
       const rows = this.db.prepare(
         'SELECT * FROM agent_memory WHERE scope = ? AND key = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC'
-      ).all(scope, key, now) as Record<string, unknown>[];
+      ).all(scope, key, now) as Record<string, SQLOutputValue>[];
       return rows.map((r) => this.mapMemory(r));
     } else {
       const rows = this.db.prepare(
         'SELECT * FROM agent_memory WHERE scope = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC'
-      ).all(scope, now) as Record<string, unknown>[];
+      ).all(scope, now) as Record<string, SQLOutputValue>[];
       return rows.map((r) => this.mapMemory(r));
     }
   }
@@ -83,33 +88,48 @@ export class MemoryRepository {
     key: string;
     value: string;
     isPublic?: boolean;
-  }): void {
-    this.db.prepare(
-      `INSERT INTO team_memories (agent_name, scope, key, value, is_public)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(scope, key) DO UPDATE SET
-         value = excluded.value,
-         agent_name = excluded.agent_name,
-         is_public = excluded.is_public,
-         updated_at = CURRENT_TIMESTAMP`
-    ).run(params.agentName, params.scope, params.key, params.value, params.isPublic ? 1 : 0);
+  }): TeamMemoryStoreComputation {
+    const existingRow = this.db.prepare('SELECT value, base_value FROM team_memories WHERE scope = ? AND key = ?')
+      .get(params.scope, params.key) as { value: SQLOutputValue; base_value: SQLOutputValue | null } | undefined;
+
+    const existing = existingRow
+      ? {
+          value: existingRow.value as string,
+          baseValue: existingRow.base_value as string | null,
+        }
+      : null;
+
+    const decision = computeTeamMemoryStore(existing, params.value);
+
+    if (decision.shouldWrite) {
+      this.db.prepare(
+        `INSERT INTO team_memories (agent_name, scope, key, value, base_value, is_public)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(scope, key) DO UPDATE SET
+           value = excluded.value,
+           base_value = excluded.base_value,
+           agent_name = excluded.agent_name,
+           is_public = excluded.is_public,
+           updated_at = CURRENT_TIMESTAMP`
+      ).run(
+        params.agentName,
+        params.scope,
+        params.key,
+        decision.storedValue,
+        decision.nextBaseValue,
+        params.isPublic ? 1 : 0
+      );
+    }
+
+    return decision;
   }
 
-  getTeamMemories(params: { scope: string; agentName: string }): Array<{
-    id: number;
-    agentName: string;
-    scope: string;
-    key: string;
-    value: string;
-    isPublic: boolean;
-    createdAt: string;
-    updatedAt: string;
-  }> {
+  getTeamMemories(params: { scope: string; agentName: string }): TeamMemoryRowView[] {
     const rows = this.db.prepare(
       `SELECT * FROM team_memories
        WHERE scope = ? AND (is_public = 1 OR agent_name = ?)
        ORDER BY updated_at DESC`
-    ).all(params.scope, params.agentName) as Record<string, unknown>[];
+    ).all(params.scope, params.agentName) as Record<string, SQLOutputValue>[];
 
     return rows.map((r) => ({
       id: r.id as number,
@@ -117,13 +137,14 @@ export class MemoryRepository {
       scope: r.scope as string,
       key: r.key as string,
       value: r.value as string,
+      baseValue: r.base_value as string | null,
       isPublic: (r.is_public as number) === 1,
       createdAt: r.created_at as string,
       updatedAt: r.updated_at as string,
     }));
   }
 
-  private mapSession(row: Record<string, unknown>): AgentSession {
+  private mapSession(row: Record<string, SQLOutputValue>): AgentSession {
     return {
       id: row.id as number,
       agentName: row.agent_name as string,
@@ -132,23 +153,16 @@ export class MemoryRepository {
     };
   }
 
-  private mapMemory(row: Record<string, unknown>): MemoryEntry {
+  private mapMemory(row: Record<string, SQLOutputValue>): MemoryEntry {
     return {
       id: row.id as number,
       sessionId: row.session_id as number,
       scope: row.scope as string,
       key: row.key as string,
-      value: this.tryParseJson(row.value as string),
+      value: row.value as string,
       createdAt: row.created_at as string,
       expiresAt: (row.expires_at as string | null) ?? null,
     };
   }
 
-  private tryParseJson(value: string): unknown {
-    try {
-      return JSON.parse(value);
-    } catch {
-      return value;
-    }
-  }
 }

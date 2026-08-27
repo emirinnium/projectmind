@@ -5,6 +5,7 @@ import { FileStructure } from '../../parser/ast-parser.js';
 import type { FileInfo, MemoryEntry, AgentSession } from './types.js';
 import type { KgContext } from './helpers/context.js';
 import { createGraphTraversal } from './graph-traversal.js';
+import { stat } from 'node:fs/promises';
 
 import {
   ensureDefaultProject,
@@ -52,6 +53,11 @@ import {
   getAgentSessions,
 } from './helpers/agents.js';
 
+import type {
+  TeamMemoryRowView,
+  TeamMemoryStoreComputation,
+} from '../../core/team-memory/merge.js';
+
 import {
   purgeExpiredLocks,
   acquireFileLock,
@@ -82,21 +88,84 @@ import {
   getFileByImport,
 } from './helpers/imports.js';
 
+export interface KnowledgeGraphDeps {
+  fs: {
+    readFile: (path: string, encoding: BufferEncoding) => Promise<string>;
+    readFileSync?: (path: string) => string;
+    stat?: (path: string) => Promise<{ mtime: Date }>;
+  };
+  parser: {
+    parseFile: (content: string) => FileStructure;
+  };
+  embedding: {
+    generateEmbedding: (text: string) => Promise<number[]>;
+    cosineSimilarity: (a: number[], b: number[]) => number;
+  };
+}
+
+/** Shape of JSON stored in agent action memory entries. */
+interface AgentAction {
+  action: 'edit' | 'create' | 'delete';
+  filePath: string;
+  details: string;
+}
+
 export class KnowledgeGraph {
   readonly db: DatabaseSync;
   protected currentProjectId: number = 1;
   /** Cached in-memory traversal engine (invalidated via getGraphTraversal(true)). */
   private _traversal: ReturnType<typeof createGraphTraversal> | null = null;
+  /** Injectable dependencies for FS, parser, and embedding (avoids global singletons). */
+  protected deps: KnowledgeGraphDeps;
 
   private get ctx(): KgContext {
     return { db: this.db, currentProjectId: this.currentProjectId };
   }
 
-  constructor(db?: DatabaseSync) {
+  constructor(db?: DatabaseSync, deps?: KnowledgeGraphDeps) {
     this.db = db ?? getDatabase();
     this.db.exec(SCHEMA_SQL);
     this.ensureDefaultProject();
     this.loadCurrentProjectId();
+    // Provide sensible defaults so callers that don't need deps aren't forced to pass them.
+    this.deps = deps ?? {
+      fs: {
+        readFile: async (path: string, enc: BufferEncoding) => {
+          const { readFile } = await import('node:fs/promises');
+          return readFile(path, { encoding: enc });
+        },
+        stat: async (path: string) => {
+          const { stat: fsStat } = await import('node:fs/promises');
+          return fsStat(path);
+        },
+      },
+      parser: {
+        parseFile: (content: string) => {
+          // Lazy sync import to avoid circular dependency.
+          // This is the only synchronous require in the codebase because
+          // the parser interface demands a sync call.
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const { parseFile: parse } = require('../../parser/ast-parser.js') as { parseFile: (c: string) => FileStructure };
+          return parse(content);
+        },
+      },
+      embedding: {
+        generateEmbedding: async (text: string) => {
+          const { generateEmbedding } = await import('../../parser/embeddings.js');
+          return generateEmbedding(text);
+        },
+        cosineSimilarity: (a: number[], b: number[]) => {
+          let dot = 0, normA = 0, normB = 0;
+          for (let i = 0; i < a.length; i++) {
+            dot += a[i]! * b[i]!;
+            normA += a[i]! * a[i]!;
+            normB += b[i]! * b[i]!;
+          }
+          const denom = Math.sqrt(normA) * Math.sqrt(normB);
+          return denom === 0 ? 0 : dot / denom;
+        },
+      },
+    };
   }
 
   /**
@@ -272,16 +341,16 @@ export class KnowledgeGraph {
     return getMemory(this.ctx, scope, key);
   }
 
-  storeTeamMemory(params: { agentName: string; scope: string; key: string; value: string; isPublic: boolean }): void {
-    storeTeamMemory(this.ctx, params);
+  storeTeamMemory(params: { agentName: string; scope: string; key: string; value: string; isPublic: boolean }): TeamMemoryStoreComputation {
+    return storeTeamMemory(this.ctx, params);
   }
 
-  getTeamMemories(params: { scope: string; agentName: string }): { id: number; agentName: string; scope: string; key: string; value: string; isPublic: boolean; createdAt: string; updatedAt: string }[] {
+  getTeamMemories(params: { scope: string; agentName: string }): TeamMemoryRowView[] {
     return getTeamMemories(this.ctx, params);
   }
 
   /** Cross-scope team memories visible to the viewer (public + own). */
-  getAllTeamMemories(viewerAgentName: string): { id: number; agentName: string; scope: string; key: string; value: string; isPublic: boolean; createdAt: string; updatedAt: string }[] {
+  getAllTeamMemories(viewerAgentName: string): TeamMemoryRowView[] {
     return getAllTeamMemories(this.ctx, viewerAgentName);
   }
 
@@ -375,5 +444,201 @@ export class KnowledgeGraph {
 
   getFileByImport(importPath: string, fromFilePath?: string): FileInfo | null {
     return getFileByImport(this.ctx, importPath, fromFilePath);
+  }
+
+  /**
+   * Search for files by semantic similarity to a natural language query.
+   */
+  async searchSemantic(query: string, limit = 5, threshold = 0.7): Promise<{
+    files: FileInfo[],
+    matches: Array<{
+      file: FileInfo,
+      lineNumber: number,
+      lineContent: string,
+      score: number
+    }>
+  }> {
+    // Generate an embedding for the query
+    const queryEmbedding = await this.deps.embedding.generateEmbedding(query);
+
+    // Find files with similar embeddings
+    const similarFiles = this.findSimilarFiles(queryEmbedding, threshold, limit);
+
+    // Search for matching content within those files
+    const matches: Array<{
+      file: FileInfo,
+      lineNumber: number,
+      lineContent: string,
+      score: number
+    }> = [];
+
+    for (const file of similarFiles) {
+      try {
+        const content = await this.deps.fs.readFile(file.path, 'utf-8');
+        const lines = content.split('\n');
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (line.trim() === '') continue;
+
+          // Simple semantic similarity check (in a real implementation, you would use a proper semantic search)
+          const lineEmbedding = await this.deps.embedding.generateEmbedding(line);
+          const similarity = this.deps.embedding.cosineSimilarity(queryEmbedding, lineEmbedding);
+
+          if (similarity > threshold) {
+            matches.push({
+              file,
+              lineNumber: i + 1,
+              lineContent: line,
+              score: similarity
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`Error reading file ${file.path}:`, error);
+      }
+    }
+
+    // Sort matches by score
+    matches.sort((a, b) => b.score - a.score);
+
+    return {
+      files: similarFiles,
+      matches: matches.slice(0, limit)
+    };
+  }
+
+/**
+ * Replay agent actions from memory to synchronize context.
+ */
+  async replayAgentActions(agentName: string, sessionId?: number): Promise<{
+    success: boolean;
+    actions: Array<{
+      action: string;
+      filePath: string;
+      details: string;
+      timestamp: string;
+    }>;
+    errors: string[];
+  }> {
+    const errors: string[] = [];
+    const actions: Array<{
+      action: string;
+      filePath: string;
+      details: string;
+      timestamp: string;
+    }> = [];
+
+    // Get agent memories
+    const memories = this.getMemory('agent_actions', sessionId ? `session_${sessionId}` : agentName);
+
+    for (const memory of memories) {
+      try {
+        const parsed = JSON.parse(memory.value) as AgentAction;
+        const { action, filePath, details } = parsed;
+
+        // Replay the action — update the knowledge graph to reflect what the agent did.
+        switch (action) {
+          case 'edit':
+          case 'create': {
+            // (Re-)parse the file and upsert it into the KG, then mark as agent-touched.
+            const content = await this.deps.fs.readFile(filePath, 'utf-8');
+            const fileStruct = this.deps.parser.parseFile(content);
+            const relativePath = filePath.replace(/\\/g, '/');
+            const fileId = await this.upsertFile(fileStruct, relativePath);
+            this.storeFileDetails(fileId, fileStruct);
+            this.markAgentTouched(filePath, agentName);
+            actions.push({ action, filePath, details, timestamp: memory.createdAt });
+            break;
+          }
+          case 'delete': {
+            // Remove the file entry from the KG (best-effort — file may not exist in DB).
+            const fileInfo = this.getFileByPath(filePath);
+            if (fileInfo) {
+              this.db.prepare('DELETE FROM files WHERE id = ?').run(fileInfo.id);
+            }
+            actions.push({ action, filePath, details, timestamp: memory.createdAt });
+            break;
+          }
+          default:
+            errors.push(`Unknown action: ${action}`);
+        }
+      } catch (error) {
+        errors.push(`Error replaying action: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      actions,
+      errors
+    };
+  }
+
+  /**
+   * Sync the knowledge graph incrementally by only updating files that have changed.
+   */
+  async syncIncremental(filePaths: string[]): Promise<{ syncedFiles: number; errors: string[] }> {
+    const errors: string[] = [];
+    let syncedFiles = 0;
+
+    // Get the current project
+    const project = this.getCurrentProject();
+    if (!project) {
+      errors.push('No active project');
+      return { syncedFiles: 0, errors };
+    }
+
+    // Get the current timestamp
+    const now = new Date().toISOString();
+
+    // Get the list of files being watched by agents
+    const watchedFiles = this.getAgentTouchedFiles();
+    const watchedFilePaths = new Set(watchedFiles.map(file => file.path));
+
+    for (const filePath of filePaths) {
+      try {
+        // Check if the file belongs to the current project
+        if (!filePath.startsWith(project.rootPath)) {
+          errors.push(`File ${filePath} is not part of the current project`);
+          continue;
+        }
+
+        const fileInfo = this.getFileByPath(filePath);
+        if (!fileInfo) {
+          errors.push(`File not found: ${filePath}`);
+          continue;
+        }
+
+        // Check if the file has been modified since last sync or is being watched by an agent
+        let lastModified = 0;
+        try {
+          const fileStat = await this.deps.fs.stat?.(filePath);
+          lastModified = fileStat ? fileStat.mtime.getTime() : 0;
+        } catch {
+          // If stat fails, treat as new (always sync)
+          lastModified = 0;
+        }
+        const lastSynced = new Date(fileInfo.lastSynced || fileInfo.lastScanned || 0).getTime();
+        const isWatched = watchedFilePaths.has(filePath);
+
+        if (lastModified > lastSynced || isWatched) {
+          // Parse the file and update its details in the knowledge graph
+          const fileContent = await this.deps.fs.readFile(filePath, 'utf-8');
+          const fileStruct = this.deps.parser.parseFile(fileContent);
+          await this.upsertFile(fileStruct, filePath);
+          this.storeFileDetails(fileInfo.id, fileStruct);
+
+          // Update the last synced time
+          this.db.prepare('UPDATE files SET last_synced = ? WHERE id = ?').run(now, fileInfo.id);
+
+          syncedFiles++;
+        }
+      } catch (error) {
+        errors.push(`Error syncing file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    return { syncedFiles, errors };
   }
 }

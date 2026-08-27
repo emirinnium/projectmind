@@ -270,7 +270,7 @@ function createCandidate(file: FileInfoForRefactor, type: RefactorCandidate['typ
       break;
   }
   
-  const debtItems = debtReport.items.filter((d: any) => d.filePath === file.relativePath || d.filePath === file.path);
+  const debtItems = debtReport.items.filter((d) => d.filePath === file.relativePath || d.filePath === file.path);
   const debtCount = debtItems.length;
   const coupling = Math.min(file.imports?.length || 0, 10) / 10;
   

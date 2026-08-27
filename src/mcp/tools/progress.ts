@@ -8,9 +8,9 @@
  */
 
 /** Minimal structural view of the SDK RequestHandlerExtra we rely on. */
-interface HandlerExtraLike {
+export interface HandlerExtraLike {
   _meta?: { progressToken?: string | number };
-  sendNotification?: (notification: unknown) => Promise<void>;
+  sendNotification?(notification: Record<string, unknown>): Promise<void>;
 }
 
 export type ProgressReporter = (progress: number, total: number, message?: string) => Promise<void>;
@@ -37,10 +37,9 @@ const MIN_INTERVAL_MS = 250;
  *   call (progress >= total) which is always delivered so clients can
  *   close out their progress indicator deterministically.
  */
-export function createProgressReporter(extra: unknown, _toolName: string): ProgressReporter {
-  const e = (extra ?? {}) as HandlerExtraLike;
-  const token = e._meta?.progressToken;
-  const send = e.sendNotification;
+export function createProgressReporter(extra: HandlerExtraLike | undefined, _toolName: string): ProgressReporter {
+  const token = extra?._meta?.progressToken;
+  const send = extra?.sendNotification;
 
   if (token === undefined || typeof send !== 'function') {
     return async () => {};
@@ -73,10 +72,9 @@ export function createProgressReporter(extra: unknown, _toolName: string): Progr
 }
 
 /** Convenience wrapper that always emits (bypasses throttle) — used for stage boundaries. */
-export function createStageProgressReporter(extra: unknown, _toolName: string): ProgressReporter {
-  const e = (extra ?? {}) as HandlerExtraLike;
-  const token = e._meta?.progressToken;
-  const send = e.sendNotification;
+export function createStageProgressReporter(extra: HandlerExtraLike | undefined, _toolName: string): ProgressReporter {
+  const token = extra?._meta?.progressToken;
+  const send = extra?.sendNotification;
 
   if (token === undefined || typeof send !== 'function') {
     return async () => {};

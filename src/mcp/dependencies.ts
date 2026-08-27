@@ -74,12 +74,12 @@ export async function initializeDependencies(): Promise<McpDependencies> {
         const result = await scale.scanProject(config.projectRoot);
         logger.info(`Initial scan complete: ${result.scanned} files, ${result.errors} errors`);
       } catch (e) {
-        logger.warn('Initial scan failed:', { error: e });
+        logger.warn('Initial scan failed:', { error: e instanceof Error ? e.message : String(e) });
       }
     }
   }
 
-  _deps = { kg, coherence, debt, scale };
+  _deps = { kg, coherence, debt, scale, llmProvider };
   return _deps;
 }
 

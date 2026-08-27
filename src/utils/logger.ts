@@ -32,7 +32,7 @@ class Logger {
     return levels[level] >= levels[this.minLevel];
   }
 
-  private format(level: LogLevel, message: string, context?: Record<string, unknown>): string {
+  private format(level: LogLevel, message: string, context?: Record<string, string | number | boolean | null>): string {
     const timestamp = new Date().toISOString();
     const ctx = context ? ` ${JSON.stringify(context)}` : '';
     const prefix = this.contextPrefix ? `[${this.contextPrefix}] ` : '';
@@ -58,25 +58,25 @@ class Logger {
     }
   }
 
-  debug(message: string, context?: Record<string, unknown>): void {
+  debug(message: string, context?: Record<string, string | number | boolean | null>): void {
     if (this.shouldLog('debug')) {
       this.output('debug', this.format('debug', message, context));
     }
   }
 
-  info(message: string, context?: Record<string, unknown>): void {
+  info(message: string, context?: Record<string, string | number | boolean | null>): void {
     if (this.shouldLog('info')) {
       this.output('info', this.format('info', message, context));
     }
   }
 
-  warn(message: string, context?: Record<string, unknown>): void {
+  warn(message: string, context?: Record<string, string | number | boolean | null>): void {
     if (this.shouldLog('warn')) {
       this.output('warn', this.format('warn', message, context));
     }
   }
 
-  error(message: string, context?: Record<string, unknown>): void {
+  error(message: string, context?: Record<string, string | number | boolean | null>): void {
     if (this.shouldLog('error')) {
       this.output('error', this.format('error', message, context));
     }

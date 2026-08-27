@@ -1,10 +1,14 @@
 import { existsSync } from 'node:fs';
 import { loadConfig } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
+import { VectorIndex } from '../core/embeddings/vector-index.js';
 
 // Re-export base utilities
 export { cosineSimilarity, vectorDistance, findSimilar, clearEmbeddingCache, getEmbeddingCacheStats } from './legacy-embeddings.js';
 export type { EmbeddingVector } from './legacy-embeddings.js';
+
+// Global vector index
+const vectorIndex = new VectorIndex();
 
 export type EmbeddingProvider = 'simple' | 'openai' | 'transformers' | 'unixcoder' | 'codebert';
 
@@ -18,25 +22,29 @@ export interface EmbeddingOptions {
 }
 
 let currentProvider: EmbeddingProvider = 'simple';
-let unixcoderSession: unknown = null;
-let codebertSession: unknown = null;
+let unixcoderSession: InferenceSession | null = null;
+let codebertSession: InferenceSession | null = null;
 let openaiApiKey: string | undefined = undefined;
 let openaiModel: string = 'text-embedding-3-small';
-let transformersPipeline: unknown = null;
+
+type TransformerPipeline = (text: string, options?: { pooling?: string; normalize?: boolean }) => Promise<{ data: Float32Array }>;
+let transformersPipeline: TransformerPipeline | null = null;
 
 type InferenceSession = {
-  run(feeds: Record<string, { data: unknown; dims: number[] }>): Promise<{
+  run(feeds: Record<string, { data: Float32Array | Int32Array; dims: number[] }>): Promise<{
     last_hidden_state?: { data: Float32Array };
     pooler_output?: { data: Float32Array };
   }>;
 };
 
-// Lazy-loaded ONNX module reference
-let ortModulePromise: Promise<unknown> | null = null;
+type OrtModule = { InferenceSession: new (path: string) => InferenceSession };
 
-async function getOrtModule() {
+// Lazy-loaded ONNX module reference
+let ortModulePromise: Promise<OrtModule | null> | null = null;
+
+async function getOrtModule(): Promise<OrtModule | null> {
   if (!ortModulePromise) {
-    ortModulePromise = import('onnxruntime-node').catch(() => null);
+    ortModulePromise = import('onnxruntime-node').catch(() => null) as Promise<OrtModule | null>;
   }
   return ortModulePromise;
 }
@@ -78,7 +86,7 @@ export async function initEmbeddingProvider(options: EmbeddingOptions = {}): Pro
     try {
       const modelName = options.transformersModel || 'Xenova/all-MiniLM-L6-v2';
       const { pipeline } = await import('@xenova/transformers');
-      transformersPipeline = await pipeline('feature-extraction', modelName);
+      transformersPipeline = await pipeline('feature-extraction', modelName) as TransformerPipeline;
       currentProvider = 'transformers';
       logger.info(`Transformers.js embedding provider initialized (model: ${modelName})`);
     } catch (e) {
@@ -149,26 +157,47 @@ export function getCurrentProvider(): EmbeddingProvider {
 /**
  * Generate embedding for text using the current provider
  */
-export async function generateEmbedding(text: string, dim: number = 768): Promise<number[]> {
+export async function generateEmbedding(text: string, dim: number = 768, indexId?: string, metadata?: Record<string, string | number | boolean | null>): Promise<number[]> {
+  let embedding: number[];
+  
   if (currentProvider === 'transformers' && transformersPipeline) {
-    return generateTransformersEmbedding(text, dim);
+    embedding = await generateTransformersEmbedding(text, dim);
+  } else if (currentProvider === 'openai' && openaiApiKey) {
+    embedding = await generateOpenAIEmbedding(text);
+  } else if (currentProvider === 'unixcoder' && unixcoderSession) {
+    embedding = await generateUniXcoderEmbedding(text, dim);
+  } else if (currentProvider === 'codebert' && codebertSession) {
+    embedding = await generateCodeBERTEmbedding(text, dim);
+  } else {
+    // Fallback to simple embedding
+    const { codeToEmbedding } = await import('./legacy-embeddings.js');
+    embedding = codeToEmbedding(text, dim);
   }
-
-  if (currentProvider === 'openai' && openaiApiKey) {
-    return generateOpenAIEmbedding(text);
+  
+  // Add to vector index if indexId is provided
+  if (indexId) {
+    vectorIndex.addVector(indexId, embedding, metadata || {});
   }
+  
+  return embedding;
+}
 
-  if (currentProvider === 'unixcoder' && unixcoderSession) {
-    return generateUniXcoderEmbedding(text, dim);
-  }
+/**
+ * Find similar vectors in the index.
+ */
+export function findSimilarInIndex(queryVector: number[], limit: number = 5): Array<{
+  id: string;
+  score: number;
+  metadata: Record<string, string | number | boolean | null>;
+}> {
+  return vectorIndex.findSimilar(queryVector, limit);
+}
 
-  if (currentProvider === 'codebert' && codebertSession) {
-    return generateCodeBERTEmbedding(text, dim);
-  }
-
-  // Fallback to simple embedding
-  const { codeToEmbedding } = await import('./legacy-embeddings.js');
-  return codeToEmbedding(text, dim);
+/**
+ * Clear the vector index.
+ */
+export function clearVectorIndex(): void {
+  vectorIndex.clear();
 }
 
 /**

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import type { SQLOutputValue } from 'node:sqlite';
 import { getStatement } from '../../../storage/database.js';
 import { KnowledgeGraph, FileInfo } from '../../../storage/knowledge-graph.js';
 import { loadConfig } from '../../../utils/config.js';
@@ -104,7 +105,7 @@ export class ScaleReporter {
   getLastScanProfile(): ScanProfile | null {
     const row = getStatement(
       `SELECT * FROM scan_profiles ORDER BY created_at DESC LIMIT 1`
-    ).get() as Record<string, unknown> | undefined;
+    ).get() as Record<string, SQLOutputValue> | undefined;
     
     if (!row) return null;
     

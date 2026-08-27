@@ -58,8 +58,9 @@ export class AnthropicProvider implements LLMProvider {
         throw new Error(`Anthropic API error: ${response.status} ${err}`);
       }
 
-      const data = await response.json() as Record<string, unknown>;
-      const content = (data.content as Array<{ text: string } >)?.[0]?.text || '';
+      interface AnthropicResponse { content?: Array<{ text: string }>; usage?: { input_tokens: number; output_tokens: number } }
+      const data = await response.json() as AnthropicResponse;
+      const content = data.content?.[0]?.text || '';
       const reasoningTrace = this.extractReasoningTrace(content);
 
       return {
@@ -67,8 +68,8 @@ export class AnthropicProvider implements LLMProvider {
         reasoningTrace,
         confidence: 0.9,
         usage: {
-          inputTokens: (data.usage as Record<string, number>)?.input_tokens || 0,
-          outputTokens: (data.usage as Record<string, number>)?.output_tokens || 0,
+          inputTokens: data.usage?.input_tokens || 0,
+          outputTokens: data.usage?.output_tokens || 0,
         },
         responseTimeMs: Date.now() - startTime,
       };

@@ -10,10 +10,39 @@ import { initializeDependencies, getDependencies, getMcpSessionId } from './mcp/
 import { closeDatabase } from './storage/database.js';
 import { resolvePackageVersion, currentModuleDir } from './utils/version.js';
 import { pathToFileURL } from 'node:url';
+import { ClaudeCodeClient } from './mcp/tools/clients/claude-code-client.js';
+import { registerResourceSubscriptionTool } from './mcp/resources.js';
+import { validateRequestMeta, MetaValidationError } from './mcp/tools/types.js';
+import { ClientRegistry } from './auth/registry.js';
+import { TokenService } from './auth/tokens.js';
+import { handleOauthRoute } from './auth/http.js';
 
 let _server: McpServer | null = null;
 let _httpServer: http.Server | null = null;
 let _initialized = false;
+
+/**
+ * Notify connected clients that the tool and resource lists have changed.
+ *
+ * Uses the MCP SDK's built-in `sendToolListChanged` / `sendResourceListChanged`.
+ * The SDK only delivers these while a transport is connected (it no-ops
+ * otherwise), so calling this at startup before `server.connect()` is safe.
+ * The corresponding `listChanged: true` capability is advertised automatically
+ * by the SDK the moment tools / resources are registered.
+ */
+async function sendListChangedNotification(): Promise<void> {
+  if (!_server || !_server.isConnected()) return;
+  try {
+    _server.sendToolListChanged();
+  } catch (e) {
+    logger.warn('Failed to send tools/listChanged notification', { error: e instanceof Error ? e.message : String(e) });
+  }
+  try {
+    _server.sendResourceListChanged();
+  } catch (e) {
+    logger.warn('Failed to send resources/listChanged notification', { error: e instanceof Error ? e.message : String(e) });
+  }
+}
 
 async function ensureInitialized(): Promise<void> {
   if (_initialized) return;
@@ -35,6 +64,27 @@ const HTTP_MAX_BODY = 10 * 1024 * 1024;
 
 const HTTP_AUTH_TOKEN = process.env.PROJECTMIND_HTTP_TOKEN?.trim() || '';
 const HTTP_RATE_LIMIT_PER_MIN = Math.max(1, parseInt(process.env.PROJECTMIND_HTTP_RATE_LIMIT ?? '120', 10) || 120);
+
+// ---------------------------------------------------------------------------
+// OAuth 2.0 Dynamic Client Registration (RFC 7591) + client-credentials flow.
+//
+// PROJECTMIND_OAUTH_ENABLED=1 — exposes POST /oauth/register (DCR) and
+//   POST /oauth/token (RFC 6749 §4.4). Access tokens issued there are accepted
+//   by /mcp as an alternative to the static PROJECTMIND_HTTP_TOKEN.
+// PROJECTMIND_OAUTH_TOKEN_TTL  — access-token lifetime in seconds (default 3600).
+//
+// When PROJECTMIND_HTTP_TOKEN is set, /oauth/register additionally requires it
+// (the registration endpoint is itself a protected resource per RFC 7591 §2.1);
+// /oauth/token is deliberately open — it IS the credential-authenticating step.
+// Enabling OAuth while no static token is configured turns /mcp into
+// token-required mode (open loopback mode only when BOTH are off).
+// ---------------------------------------------------------------------------
+
+const OAUTH_ENABLED =
+  process.env.PROJECTMIND_OAUTH_ENABLED === '1' || process.env.PROJECTMIND_OAUTH_ENABLED === 'true';
+const OAUTH_TOKEN_TTL = Math.max(1, parseInt(process.env.PROJECTMIND_OAUTH_TOKEN_TTL ?? '3600', 10) || 3600);
+const oauthRegistry = new ClientRegistry();
+const oauthTokens = new TokenService(OAUTH_TOKEN_TTL);
 
 /** Length-safe, timing-attack-resistant string comparison. */
 function safeTokenEqual(a: string, b: string): boolean {
@@ -58,10 +108,23 @@ function extractBearerOrHeaderToken(req: http.IncomingMessage): string | undefin
   return undefined;
 }
 
-function isHttpAuthorized(req: http.IncomingMessage): boolean {
-  if (!HTTP_AUTH_TOKEN) return true; // open mode — only safe on loopback bind
+/** Static-token check only (used by /mcp auth and the protected /oauth/register). */
+function isStaticTokenValid(req: http.IncomingMessage): boolean {
   const presented = extractBearerOrHeaderToken(req);
   return presented !== undefined && presented.length > 0 && safeTokenEqual(presented, HTTP_AUTH_TOKEN);
+}
+
+function isHttpAuthorized(req: http.IncomingMessage): boolean {
+  // Static bearer (admin) token wins when configured.
+  if (HTTP_AUTH_TOKEN && isStaticTokenValid(req)) return true;
+  // Dual mode: a valid OAuth access token also authorizes /mcp.
+  if (OAUTH_ENABLED) {
+    const presented = extractBearerOrHeaderToken(req);
+    if (presented !== undefined && presented.length > 0 && oauthTokens.verify(presented) !== null) return true;
+  }
+  // Open loopback mode ONLY when no authentication is configured at all.
+  if (!HTTP_AUTH_TOKEN && !OAUTH_ENABLED) return true;
+  return false;
 }
 
 /** Sliding-window per-IP rate limiter (60s window). */
@@ -90,7 +153,7 @@ class HttpRateLimiter {
 
 const httpRateLimiter = new HttpRateLimiter();
 
-function jsonError(res: http.ServerResponse, status: number, payload: Record<string, unknown>, extraHeaders?: Record<string, string>): void {
+function jsonError(res: http.ServerResponse, status: number, payload: Record<string, string | number | boolean | null>, extraHeaders?: Record<string, string>): void {
   res.writeHead(status, { 'Content-Type': 'application/json', ...extraHeaders });
   res.end(JSON.stringify(payload));
 }
@@ -99,6 +162,12 @@ export async function initMcpServer(): Promise<void> {
   try {
     await ensureInitialized();
 
+    // Initialize Claude Code client
+    const claudeCodeClient = new ClaudeCodeClient({
+      apiKey: process.env.CLAUDE_CODE_API_KEY,
+      model: process.env.CLAUDE_CODE_MODEL || 'claude-3-opus-20240229',
+    });
+
     const server = new McpServer({
       name: 'projectmind',
       // Real package version (was hardcoded '1.0.0' while package.json said 0.2.x).
@@ -106,6 +175,7 @@ export async function initMcpServer(): Promise<void> {
     });
 
     await registerAllTools(server, getDependencies());
+    await sendListChangedNotification();
 
     // Contextual data + reusable agent workflows (resources/read, prompts/get).
     // Registration is retried once after a short delay — transient init
@@ -113,10 +183,12 @@ export async function initMcpServer(): Promise<void> {
     const registerContextualSurface = async (): Promise<void> => {
       registerCoreResources(server, getDependencies());
       registerWorkflowPrompts(server);
+      registerResourceSubscriptionTool(server);
     };
     try {
       await registerContextualSurface();
       logger.info('ProjectMind resources (pm://schema, pm://config, pm://stats) and workflow prompts registered.');
+      await sendListChangedNotification();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       logger.warn(`Resource/prompt registration failed (${msg}) — retrying once...`);
@@ -142,18 +214,20 @@ export async function initMcpServer(): Promise<void> {
       const httpServer = http.createServer((req, res) => {
         void (async () => {
           try {
-            if (req.method !== 'POST' || req.url !== '/mcp') {
-              jsonError(res, 405, { error: 'Stateless MCP endpoint: POST /mcp only.' }, { Allow: 'POST' });
+            if (
+              req.method !== 'POST' ||
+              (req.url !== '/mcp' && req.url !== '/oauth/register' && req.url !== '/oauth/token')
+            ) {
+              jsonError(
+                res,
+                405,
+                { error: 'Stateless MCP endpoint: POST /mcp, /oauth/register or /oauth/token only.' },
+                { Allow: 'POST' },
+              );
               return;
             }
 
-            // Auth (only enforced when PROJECTMIND_HTTP_TOKEN is configured).
-            if (!isHttpAuthorized(req)) {
-              jsonError(res, 401, { error: 'Unauthorized: missing or invalid token.' }, { 'WWW-Authenticate': 'Bearer' });
-              return;
-            }
-
-            // Per-IP sliding-window rate limit.
+            // Per-IP sliding-window rate limit (applies to every endpoint).
             const ip = req.socket.remoteAddress || 'unknown';
             const rl = httpRateLimiter.check(ip);
             if (!rl.ok) {
@@ -173,7 +247,46 @@ export async function initMcpServer(): Promise<void> {
               chunks.push(chunk as Buffer);
             }
             const bodyText = Buffer.concat(chunks).toString('utf-8');
-            let body: unknown;
+
+            // OAuth 2.0 DCR (RFC 7591) + client-credentials token endpoint.
+            if (req.url === '/oauth/register' || req.url === '/oauth/token') {
+              if (!OAUTH_ENABLED) {
+                jsonError(res, 404, { error: 'OAuth endpoints are disabled (set PROJECTMIND_OAUTH_ENABLED=1).' });
+                return;
+              }
+              // /oauth/register is itself a protected resource (RFC 7591 §2.1):
+              // require the static admin token when one is configured.
+              // /oauth/token is NOT protected — it is the auth step.
+              if (req.url === '/oauth/register' && !isStaticTokenValid(req)) {
+                jsonError(
+                  res,
+                  401,
+                  { error: 'Unauthorized: /oauth/register requires the static PROJECTMIND_HTTP_TOKEN.' },
+                  { 'WWW-Authenticate': 'Bearer' },
+                );
+                return;
+              }
+              const result = handleOauthRoute(req.url, bodyText, req.headers['content-type'] ?? '', {
+                registry: oauthRegistry,
+                tokens: oauthTokens,
+                authorization: req.headers['authorization'],
+              });
+              if (!result.handled) {
+                jsonError(res, 500, { error: 'OAuth route failed' });
+                return;
+              }
+              res.writeHead(result.status, { 'Content-Type': 'application/json', ...result.headers });
+              res.end(JSON.stringify(result.payload));
+              return;
+            }
+
+            // /mcp — auth (static token and/or OAuth bearer), then transport.
+            if (!isHttpAuthorized(req)) {
+              jsonError(res, 401, { error: 'Unauthorized: missing or invalid token.' }, { 'WWW-Authenticate': 'Bearer' });
+              return;
+            }
+
+            let body: Record<string, unknown>;
             try {
               body = JSON.parse(bodyText);
             } catch {
@@ -181,9 +294,19 @@ export async function initMcpServer(): Promise<void> {
               res.end(JSON.stringify({ error: 'Invalid JSON body' }));
               return;
             }
+            // Validate _meta envelope if present (malformed envelope rejected).
+            try {
+              validateRequestMeta(body);
+            } catch (e) {
+              if (e instanceof MetaValidationError) {
+                jsonError(res, 400, { error: `Invalid _meta: ${e.message}` });
+                return;
+              }
+              throw e;
+            }
             await transport.handleRequest(req, res, body);
           } catch (e) {
-            logger.error('HTTP transport error', { error: e });
+            logger.error('HTTP transport error', { error: e instanceof Error ? e.message : String(e) });
             if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Internal error' }));
           }
@@ -192,8 +315,15 @@ export async function initMcpServer(): Promise<void> {
 
       await new Promise<void>((resolve) => httpServer.listen(httpPort, '127.0.0.1', resolve));
       _httpServer = httpServer;
-      logger.info(`ProjectMind MCP HTTP (stateless) listening on http://127.0.0.1:${httpPort}/mcp (rate limit: ${HTTP_RATE_LIMIT_PER_MIN} req/min/IP)`);
-      if (!HTTP_AUTH_TOKEN) {
+      logger.info(
+        `ProjectMind MCP HTTP (stateless) listening on http://127.0.0.1:${httpPort}/mcp (rate limit: ${HTTP_RATE_LIMIT_PER_MIN} req/min/IP${OAUTH_ENABLED ? ', OAuth DCR enabled' : ''})`,
+      );
+      if (OAUTH_ENABLED) {
+        logger.info(
+          `OAuth 2.0 DCR ready — POST /oauth/register (RFC 7591), POST /oauth/token (client_credentials); access-token TTL ${OAUTH_TOKEN_TTL}s.`,
+        );
+      }
+      if (!HTTP_AUTH_TOKEN && !OAUTH_ENABLED) {
         logger.warn('PROJECTMIND_HTTP_TOKEN is NOT set — the endpoint is unauthenticated. It is bound to 127.0.0.1 only; set a token before exposing it beyond loopback.');
       }
       return; // HTTP mode keeps the process alive via the http server.
@@ -204,7 +334,7 @@ export async function initMcpServer(): Promise<void> {
     await server.connect(transport);
     logger.info('ProjectMind MCP Server ready.');
   } catch (e) {
-    logger.error('Failed to initialize MCP server:', { error: e });
+    logger.error('Failed to initialize MCP server:', { error: e instanceof Error ? e.message : String(e) });
     throw e;
   }
 }
@@ -230,7 +360,7 @@ export async function shutdownMcpServer(): Promise<void> {
         deps.kg.endAgentSession(ownSessionId);
         logger.info(`MCP agent session ended: ${ownSessionId}`);
       } catch (e) {
-        logger.warn('Failed to end MCP agent session:', { error: e });
+        logger.warn('Failed to end MCP agent session:', { error: e instanceof Error ? e.message : String(e) });
       }
     }
     closeDatabase();
@@ -267,7 +397,7 @@ if (isMainModule) {
       await initMcpServer();
       process.stdin.resume();
     } catch (e) {
-      logger.error('Failed to start MCP server:', { error: e });
+      logger.error('Failed to start MCP server:', { error: e instanceof Error ? e.message : String(e) });
       process.exit(1);
     }
   })();
