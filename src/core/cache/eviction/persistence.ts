@@ -1,6 +1,7 @@
 import type { CacheEntry, CacheOptions } from '../types.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { logger } from '../../../utils/logger.js';
 
 /**
  * Handles cache persistence to disk
@@ -49,6 +50,7 @@ export class CachePersistence<K, V> {
         }
       }
     } catch (e) {
+      logger.error('Failed to load cache from disk', { path: this.options.persistPath, error: e instanceof Error ? e.message : String(e) });
       this.options.onError(e as Error);
     }
   }
@@ -71,6 +73,7 @@ export class CachePersistence<K, V> {
 
       writeFileSync(this.options.persistPath, JSON.stringify(data));
     } catch (e) {
+      logger.error('Failed to persist cache to disk', { path: this.options.persistPath, error: e instanceof Error ? e.message : String(e) });
       this.options.onError(e as Error);
     }
   }

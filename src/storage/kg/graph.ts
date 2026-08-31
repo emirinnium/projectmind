@@ -6,6 +6,7 @@ import type { FileInfo, MemoryEntry, AgentSession } from './types.js';
 import type { KgContext } from './helpers/context.js';
 import { createGraphTraversal } from './graph-traversal.js';
 import { getVecIndex } from '../../core/embeddings/vector-index.js';
+import { logger } from '../../utils/logger.js';
 
 import {
   ensureDefaultProject,
@@ -478,7 +479,7 @@ export class KnowledgeGraph {
           score: 0.85
         });
       } catch (error) {
-        console.error(`Error processing file ${file.path}:`, error);
+        logger.error(`Error processing file ${file.path}`, { error: error instanceof Error ? error.message : String(error) });
       }
     }
 
