@@ -1,13 +1,12 @@
-import { getStatement } from '../../database.js';
 import type { SQLOutputValue } from 'node:sqlite';
 import type { KgContext } from './context.js';
 
 export function getOrCreateResource(ctx: KgContext, qualifiedName: string, kind: string, identity: string): { id: number; qualifiedName: string; kind: string; identity: string } {
-  const existing = getStatement('SELECT id FROM resources WHERE qualified_name = ?').get(qualifiedName) as { id: number } | undefined;
+  const existing = ctx.db.prepare('SELECT id FROM resources WHERE qualified_name = ?').get(qualifiedName) as { id: number } | undefined;
   if (existing) {
     return { id: existing.id, qualifiedName, kind, identity };
   }
-  const result = getStatement('INSERT INTO resources (qualified_name, kind, identity) VALUES (?, ?, ?)').run(qualifiedName, kind, identity);
+  const result = ctx.db.prepare('INSERT INTO resources (qualified_name, kind, identity) VALUES (?, ?, ?)').run(qualifiedName, kind, identity);
   return { id: Number(result.lastInsertRowid), qualifiedName, kind, identity };
 }
 
@@ -29,15 +28,15 @@ export function recordDataFlow(ctx: KgContext, params: {
   let sourceFunctionId: number | null = null;
   let targetFunctionId: number | null = null;
   if (params.sourceFunctionName) {
-    const fn = getStatement('SELECT id FROM functions WHERE name = ? LIMIT 1').get(params.sourceFunctionName) as { id: number } | undefined;
+    const fn = ctx.db.prepare('SELECT id FROM functions WHERE name = ? LIMIT 1').get(params.sourceFunctionName) as { id: number } | undefined;
     if (fn) sourceFunctionId = fn.id;
   }
   if (params.targetFunctionName) {
-    const fn = getStatement('SELECT id FROM functions WHERE name = ? LIMIT 1').get(params.targetFunctionName) as { id: number } | undefined;
+    const fn = ctx.db.prepare('SELECT id FROM functions WHERE name = ? LIMIT 1').get(params.targetFunctionName) as { id: number } | undefined;
     if (fn) targetFunctionId = fn.id;
   }
 
-  const result = getStatement(`INSERT INTO data_flows (from_resource_id, to_resource_id, kind, via, source_function_id, target_function_id, project_id)
+  const result = ctx.db.prepare(`INSERT INTO data_flows (from_resource_id, to_resource_id, kind, via, source_function_id, target_function_id, project_id)
      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(fromResource.id, toResource.id, params.kind, params.via || null, sourceFunctionId, targetFunctionId, ctx.currentProjectId);
 
   return {
@@ -49,8 +48,8 @@ export function recordDataFlow(ctx: KgContext, params: {
 
 export function getDataFlows(ctx: KgContext, projectId?: number): { id: number; fromResource: { id: number; qualifiedName: string; kind: string; identity: string }; toResource: { id: number; qualifiedName: string; kind: string; identity: string }; kind: string; via: string | null; sourceFunctionName: string | null; targetFunctionName: string | null }[] {
   const pid = projectId || ctx.currentProjectId;
-  const rows = getStatement(`
-    SELECT df.*, 
+  const rows = ctx.db.prepare(`
+    SELECT df.*,
       r1.qualified_name as from_qn, r1.kind as from_kind, r1.identity as from_identity,
       r2.qualified_name as to_qn, r2.kind as to_kind, r2.identity as to_identity,
       f1.name as source_fn, f2.name as target_fn
@@ -85,12 +84,12 @@ export function getDataFlows(ctx: KgContext, projectId?: number): { id: number; 
 }
 
 export function getResourceFlows(ctx: KgContext, resourceQualifiedName: string): { id: number; direction: string; resource: { id: number; qualifiedName: string; kind: string; identity: string }; kind: string; via: string | null }[] {
-  const resource = getStatement('SELECT id FROM resources WHERE qualified_name = ?').get(resourceQualifiedName) as { id: number } | undefined;
+  const resource = ctx.db.prepare('SELECT id FROM resources WHERE qualified_name = ?').get(resourceQualifiedName) as { id: number } | undefined;
   if (!resource) return [];
 
   const flows: { id: number; direction: string; resource: { id: number; qualifiedName: string; kind: string; identity: string }; kind: string; via: string | null }[] = [];
 
-  const fromRows = getStatement(`
+  const fromRows = ctx.db.prepare(`
     SELECT df.*, r2.qualified_name as other_qn, r2.kind as other_kind, r2.identity as other_identity
     FROM data_flows df
     JOIN resources r2 ON df.to_resource_id = r2.id
@@ -112,7 +111,7 @@ export function getResourceFlows(ctx: KgContext, resourceQualifiedName: string):
     });
   }
 
-  const toRows = getStatement(`
+  const toRows = ctx.db.prepare(`
     SELECT df.*, r1.qualified_name as other_qn, r1.kind as other_kind, r1.identity as other_identity
     FROM data_flows df
     JOIN resources r1 ON df.from_resource_id = r1.id
@@ -139,6 +138,6 @@ export function getResourceFlows(ctx: KgContext, resourceQualifiedName: string):
 
 export function clearDataFlows(ctx: KgContext, projectId?: number): number {
   const pid = projectId || ctx.currentProjectId;
-  const result = getStatement('DELETE FROM data_flows WHERE project_id = ?').run(pid);
+  const result = ctx.db.prepare('DELETE FROM data_flows WHERE project_id = ?').run(pid);
   return Number(result.changes);
 }

@@ -1,24 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { DatabaseSync } from 'node:sqlite';
-import { SCHEMA_SQL } from '../../src/storage/schema.js';
-import { runMigrations } from '../../src/storage/migrations.js';
 import { KnowledgeGraph } from '../../src/storage/kg/graph.js';
-import { initDatabase, closeDatabase } from '../../src/storage/database.js';
+import { createIsolatedDatabase } from '../../src/test-helpers/database.js';
 import type { FileStructure } from '../../src/parser/ast-parser.js';
-
-// Create a fresh in-memory database with schema
-function createTestDb(): DatabaseSync {
-  const db = new DatabaseSync(':memory:');
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec(SCHEMA_SQL);
-  runMigrations(db);
-  return db;
-}
 
 describe('Schema Setup', () => {
   it('creates all required tables', () => {
-    const db = createTestDb();
+    const { db, cleanup } = createIsolatedDatabase();
     const tables = db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     ).all() as Array<{ name: string }>;
@@ -34,14 +21,22 @@ describe('Schema Setup', () => {
     expect(tableNames).toContain('calls');
     expect(tableNames).toContain('settings');
     expect(tableNames).toContain('schema_version');
+    cleanup();
   });
 });
 
 describe('Project Operations', () => {
-  let db: DatabaseSync;
+  let db: ReturnType<typeof createIsolatedDatabase>['db'];
+  let cleanup: ReturnType<typeof createIsolatedDatabase>['cleanup'];
 
   beforeEach(() => {
-    db = createTestDb();
+    const isolated = createIsolatedDatabase();
+    db = isolated.db;
+    cleanup = isolated.cleanup;
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   it('inserts and retrieves a project', () => {
@@ -84,12 +79,19 @@ describe('Project Operations', () => {
 });
 
 describe('File Operations', () => {
-  let db: DatabaseSync;
+  let db: ReturnType<typeof createIsolatedDatabase>['db'];
+  let cleanup: ReturnType<typeof createIsolatedDatabase>['cleanup'];
 
   beforeEach(() => {
-    db = createTestDb();
+    const isolated = createIsolatedDatabase();
+    db = isolated.db;
+    cleanup = isolated.cleanup;
     // Insert default project
     db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(1, 'default', '/test');
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   it('inserts and retrieves a file', () => {
@@ -187,11 +189,18 @@ describe('File Operations', () => {
 });
 
 describe('Resource & Data Flow Operations', () => {
-  let db: DatabaseSync;
+  let db: ReturnType<typeof createIsolatedDatabase>['db'];
+  let cleanup: ReturnType<typeof createIsolatedDatabase>['cleanup'];
 
   beforeEach(() => {
-    db = createTestDb();
+    const isolated = createIsolatedDatabase();
+    db = isolated.db;
+    cleanup = isolated.cleanup;
     db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(1, 'default', '/test');
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   it('creates and retrieves resources', () => {
@@ -231,10 +240,17 @@ describe('Resource & Data Flow Operations', () => {
 });
 
 describe('Settings Operations', () => {
-  let db: DatabaseSync;
+  let db: ReturnType<typeof createIsolatedDatabase>['db'];
+  let cleanup: ReturnType<typeof createIsolatedDatabase>['cleanup'];
 
   beforeEach(() => {
-    db = createTestDb();
+    const isolated = createIsolatedDatabase();
+    db = isolated.db;
+    cleanup = isolated.cleanup;
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   it('stores and retrieves settings', () => {
@@ -258,8 +274,9 @@ describe('Settings Operations', () => {
 });
 
 describe('KnowledgeGraph — dynamic calls + path lookup hardening', () => {
-  let db: DatabaseSync;
+  let db: ReturnType<typeof createIsolatedDatabase>['db'];
   let kg: KnowledgeGraph;
+  let cleanup: ReturnType<typeof createIsolatedDatabase>['cleanup'];
 
   function makeStruct(filePath: string): FileStructure {
     return {
@@ -290,14 +307,14 @@ describe('KnowledgeGraph — dynamic calls + path lookup hardening', () => {
   }
 
   beforeEach(() => {
-    // initDatabase sets the singleton the kg helpers reach through
-    // getStatement()/getDatabase() — graph and helpers share one connection.
-    db = initDatabase(':memory:');
+    const isolated = createIsolatedDatabase();
+    db = isolated.db;
+    cleanup = isolated.cleanup;
     kg = new KnowledgeGraph(db);
   });
 
   afterEach(() => {
-    closeDatabase();
+    cleanup();
   });
 
   describe('ingestDynamicCalls — ensureFunction never fabricates rows', () => {

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { initDatabase, setDatabase, closeDatabase } from '../src/storage/database.js';
+import { initDatabase, closeDatabase } from '../src/storage/database.js';
 import { SCHEMA_SQL } from '../src/storage/schema.js';
 import { KnowledgeGraph } from '../src/storage/knowledge-graph.js';
 import { CoherenceEngine } from '../src/core/coherence/engine.js';
@@ -29,9 +29,9 @@ async function testDatabase(): Promise<void> {
     }
   }
 
+  // Use initDatabase to set up the global singleton for KnowledgeGraph helpers
   const db = initDatabase(TEST_DB);
   db.exec(SCHEMA_SQL);
-  setDatabase(db);
 
   const kg = new KnowledgeGraph(db);
   const coherence = new CoherenceEngine(db);
@@ -200,6 +200,16 @@ async function testDatabase(): Promise<void> {
   assert(currentProject?.id === project.id, 'Current project matches switched project');
 
   console.log('\n=== Test: Dynamic Tracing ===');
+  // First insert functions to reference in dynamic calls
+  db.prepare('INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(1, 'caller', 'caller()', 1, 3, 1);
+  db.prepare('INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(1, 'callee', 'callee()', 5, 7, 1);
+  db.prepare('INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(1, 'caller2', 'caller2()', 9, 11, 1);
+  db.prepare('INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(1, 'callee2', 'callee2()', 13, 15, 1);
+
   kg.ingestDynamicCalls([
     {
       fromFunctionName: 'caller',
@@ -257,6 +267,7 @@ async function testDatabase(): Promise<void> {
   const clearedFlows = kg.clearDataFlows();
   assert(clearedFlows >= 1, `Cleared ${clearedFlows} data flows`);
 
+  // Cleanup using closeDatabase
   closeDatabase();
 
   // Retry cleanup to handle Windows file locking

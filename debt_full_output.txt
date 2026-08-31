@@ -1,0 +1,523 @@
+
+  ____            _           _   __  __ _           _ 
+ |  _ \ _ __ ___ (_) ___  ___| |_|  \/  (_)_ __   __| |
+ | |_) | '__/ _ \| |/ _ \/ __| __| |\/| | | '_ \ / _` |
+ |  __/| | | (_) | |  __/ (__| |_| |  | | | | | | (_| |
+ |_|   |_|  \___// |\___| \___|\__|_|  |_|_|_| |_|\__,_|
+                |__/
+
+
+[2026-08-31T05:17:32.958Z] [INFO] Current schema version: 95
+[2026-08-31T05:17:32.958Z] [INFO] Schema version after migrations: 95
+[2026-08-31T05:17:33.021Z] [INFO] === Cognitive Debt Report ===
+Total items: 8919
+High: 2
+Medium: 73
+Low: 8844
+Genome score: 91.3% — Excellent
+
+Debt items:
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/core/cache/eviction/lru.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/core/cache/eviction/persistence.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/core/cache/registry.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/core/cache/types.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/core/coherence/analysis/deep.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/core/coherence/analysis/fast.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/core/coherence/engine.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/core/contracts/engine.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/core/debt/detection/genome.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/core/debt/detection/interfaces.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/core/debt/detection/persistence.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/parser/patterns/library.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/storage/kg/graph.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/storage/kg/helpers/context.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/storage/kg/helpers/index.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/storage/kg/types.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/storage/migrations/collaboration-migrations.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/storage/migrations/core-migrations.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/storage/migrations/debt-migrations.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/debt-migrations.js vs src/storage/migrations/types.js
+  File: src/storage/migrations/debt-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations.ts vs src/mcp/tools/guard.ts
+  File: src/storage/migrations.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations.ts vs src/mcp/tools/semantic-search.ts
+  File: src/storage/migrations.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations.ts vs src/storage/migrations.ts
+  File: src/storage/migrations.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations.ts vs src/mcp/tools/impact.ts
+  File: src/storage/migrations.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.js vs src/storage/migrations/debt-migrations.js
+  File: src/storage/kg/types.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.js vs src/storage/migrations/types.js
+  File: src/storage/kg/types.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/core/cache/eviction/lru.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/core/cache/eviction/persistence.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/core/cache/registry.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/core/cache/types.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/core/coherence/analysis/deep.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/core/coherence/analysis/fast.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/core/coherence/engine.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/core/contracts/engine.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/core/debt/detection/genome.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/core/debt/detection/interfaces.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/core/debt/detection/persistence.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/parser/patterns/library.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/storage/kg/graph.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/storage/kg/helpers/context.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/storage/kg/helpers/index.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/storage/kg/types.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/storage/migrations/collaboration-migrations.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/storage/migrations/core-migrations.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/storage/migrations/debt-migrations.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/kg/types.ts vs src/storage/migrations/types.js
+  File: src/storage/kg/types.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/core/cache/eviction/lru.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/core/cache/eviction/persistence.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/core/cache/registry.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/core/cache/types.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/core/coherence/analysis/deep.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/core/coherence/analysis/fast.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/core/coherence/engine.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/core/contracts/engine.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/core/debt/detection/genome.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/core/debt/detection/interfaces.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/core/debt/detection/persistence.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/parser/patterns/library.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/storage/kg/graph.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/storage/kg/helpers/context.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/storage/kg/helpers/index.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/storage/kg/types.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/storage/migrations/collaboration-migrations.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/storage/migrations/core-migrations.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/storage/migrations/debt-migrations.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.js vs src/storage/migrations/types.js
+  File: src/storage/knowledge-graph.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/core/cache/eviction/lru.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/core/cache/eviction/persistence.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/core/cache/registry.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/core/cache/types.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/core/coherence/analysis/deep.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/core/coherence/analysis/fast.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/core/coherence/engine.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/core/contracts/engine.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/core/debt/detection/genome.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/core/debt/detection/interfaces.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/core/debt/detection/persistence.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/parser/patterns/library.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/storage/kg/graph.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/storage/kg/helpers/context.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/storage/kg/helpers/index.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/storage/kg/types.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/storage/migrations/collaboration-migrations.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/storage/migrations/core-migrations.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/storage/migrations/debt-migrations.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/knowledge-graph.ts vs src/storage/migrations/types.js
+  File: src/storage/knowledge-graph.ts
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations.js vs src/parser/multilang-parser.js
+  File: src/storage/migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations.js vs src/storage/migrations.js
+  File: src/storage/migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations.js vs tests/mcp/tools/architecture-diagram.test.js
+  File: src/storage/migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations.js vs tests/mcp/tools/scan-cves.test.ts
+  File: src/storage/migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/collaboration-migrations.js vs src/core/cache/eviction/lru.js
+  File: src/storage/migrations/collaboration-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/collaboration-migrations.js vs src/core/cache/eviction/persistence.js
+  File: src/storage/migrations/collaboration-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/collaboration-migrations.js vs src/core/cache/registry.js
+  File: src/storage/migrations/collaboration-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/collaboration-migrations.js vs src/core/cache/types.js
+  File: src/storage/migrations/collaboration-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/collaboration-migrations.js vs src/core/coherence/analysis/deep.js
+  File: src/storage/migrations/collaboration-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/collaboration-migrations.js vs src/core/coherence/analysis/fast.js
+  File: src/storage/migrations/collaboration-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/collaboration-migrations.js vs src/core/coherence/engine.js
+  File: src/storage/migrations/collaboration-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/collaboration-migrations.js vs src/core/contracts/engine.js
+  File: src/storage/migrations/collaboration-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/collaboration-migrations.js vs src/core/debt/detection/genome.js
+  File: src/storage/migrations/collaboration-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+
+[LOW] redundancy
+  Potential duplicate code: src/storage/migrations/collaboration-migrations.js vs src/core/debt/detection/interfaces.js
+  File: src/storage/migrations/collaboration-migrations.js
+  Suggestion: Consider extracting shared logic into a common module
+(node:436969) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:436969) [DEP0151] DeprecationWarning: Package /home/azureuser/projectmind/node_modules/tree-sitter-c-sharp/ has a "main" field set to "bindings/node", excluding the full filename and extension to the resolved file at "bindings/node/index.js", imported from /home/azureuser/projectmind/dist/parser/multilang-parser.js.
+ Automatic extension resolution of the "main" field is deprecated for ES modules.

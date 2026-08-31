@@ -1,4 +1,4 @@
-import { getStatement, runWithRetry } from '../../database.js';
+import { runWithRetry } from '../../database.js';
 import { resolve } from 'node:path';
 import { FileInfo } from '../types.js';
 import type { KgContext } from './context.js';
@@ -9,7 +9,7 @@ export function getDependents(ctx: KgContext, fileId: number): FileInfo[] {
   // Dependents are files whose imports RESOLVED to this file.
   // Match on resolved_path (populated at scan time by resolveImportSource),
   // falling back to raw source equality for unresolvable-but-exact matches.
-  const rows = getStatement(`
+  const rows = ctx.db.prepare(`
     SELECT DISTINCT f.* FROM files f
     JOIN imports i ON f.id = i.file_id
     WHERE f.project_id = ? AND (
@@ -36,7 +36,7 @@ export function getDependents(ctx: KgContext, fileId: number): FileInfo[] {
 
 export function getDirectDependents(ctx: KgContext, sourcePath: string): FileInfo[] {
   const normalizedSource = sourcePath.replace(/\\/g, '/');
-  const rows = getStatement(`
+  const rows = ctx.db.prepare(`
     SELECT DISTINCT f.* FROM files f
     JOIN imports i ON f.id = i.file_id
     WHERE f.project_id = ? AND (i.resolved_path = ? OR i.source = ?)
@@ -166,7 +166,7 @@ export function findCircularDependencies(ctx: KgContext): string[][] {
 
   runWithRetry(async () => {
     for (const cycle of uniqueCycles) {
-      getStatement(
+      ctx.db.prepare(
         `INSERT OR IGNORE INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)`
       ).run(cycle.join(' -> '), cycle.length);
     }
@@ -187,7 +187,7 @@ export function ingestDynamicCalls(ctx: KgContext, calls: { fromFunctionName: st
   const errors: string[] = [];
 
   const ensureFunction = (name: string): number | null => {
-    const existing = getStatement('SELECT id FROM functions WHERE name = ? LIMIT 1').get(name) as { id: number } | undefined;
+    const existing = ctx.db.prepare('SELECT id FROM functions WHERE name = ? LIMIT 1').get(name) as { id: number } | undefined;
     if (existing) return existing.id;
     return null;
   };
@@ -200,12 +200,12 @@ export function ingestDynamicCalls(ctx: KgContext, calls: { fromFunctionName: st
         errors.push(`Function not found: ${call.fromFunctionName} -> ${call.toFunctionName}`);
         continue;
       }
-      const existing = getStatement(`SELECT id, call_count FROM calls WHERE from_function_id = ? AND to_function_id = ? AND workload_id = ?`).get(fromFnId, toFnId, call.workloadId) as { id: number; call_count: number } | undefined;
+      const existing = ctx.db.prepare(`SELECT id, call_count FROM calls WHERE from_function_id = ? AND to_function_id = ? AND workload_id = ?`).get(fromFnId, toFnId, call.workloadId) as { id: number; call_count: number } | undefined;
       if (existing) {
-        getStatement(`UPDATE calls SET call_count = call_count + ?, dynamic = 1, static_missed = ? WHERE id = ?`).run(call.callCount ?? 1, call.staticMissed ? 1 : 0, existing.id);
+        ctx.db.prepare(`UPDATE calls SET call_count = call_count + ?, dynamic = 1, static_missed = ? WHERE id = ?`).run(call.callCount ?? 1, call.staticMissed ? 1 : 0, existing.id);
         updated++;
       } else {
-        getStatement(`INSERT INTO calls (from_function_id, to_function_id, dynamic, static_missed, call_count, workload_id)
+        ctx.db.prepare(`INSERT INTO calls (from_function_id, to_function_id, dynamic, static_missed, call_count, workload_id)
            VALUES (?, ?, 1, ?, ?, ?)`).run(fromFnId, toFnId, call.staticMissed ? 1 : 0, call.callCount ?? 1, call.workloadId);
         inserted++;
       }
@@ -218,7 +218,7 @@ export function ingestDynamicCalls(ctx: KgContext, calls: { fromFunctionName: st
 }
 
 export function getDynamicCalls(ctx: KgContext, workloadId: string): { fromFunctionId: number; toFunctionId: number; callCount: number; staticMissed: boolean; workloadId: string; fromFunctionName: string; toFunctionName: string }[] {
-  const rows = getStatement(`SELECT c.*, f1.name as from_name, f2.name as to_name
+  const rows = ctx.db.prepare(`SELECT c.*, f1.name as from_name, f2.name as to_name
      FROM calls c
      JOIN functions f1 ON c.from_function_id = f1.id
      JOIN functions f2 ON c.to_function_id = f2.id
@@ -235,8 +235,8 @@ export function getDynamicCalls(ctx: KgContext, workloadId: string): { fromFunct
   }));
 }
 
-export function getAllDynamicCalls(_ctx: KgContext): { fromFunctionId: number; toFunctionId: number; callCount: number; staticMissed: boolean; workloadId: string; fromFunctionName: string; toFunctionName: string }[] {
-  const rows = getStatement(`SELECT c.*, f1.name as from_name, f2.name as to_name
+export function getAllDynamicCalls(ctx: KgContext): { fromFunctionId: number; toFunctionId: number; callCount: number; staticMissed: boolean; workloadId: string; fromFunctionName: string; toFunctionName: string }[] {
+  const rows = ctx.db.prepare(`SELECT c.*, f1.name as from_name, f2.name as to_name
      FROM calls c
      JOIN functions f1 ON c.from_function_id = f1.id
      JOIN functions f2 ON c.to_function_id = f2.id
@@ -253,8 +253,8 @@ export function getAllDynamicCalls(_ctx: KgContext): { fromFunctionId: number; t
   }));
 }
 
-export function getStaticMissedCalls(_ctx: KgContext): { fromFunctionName: string; toFunctionName: string; workloadId: string; callCount: number; staticMissed: boolean }[] {
-  const rows = getStatement(`SELECT c.*, f1.name as from_name, f2.name as to_name
+export function getStaticMissedCalls(ctx: KgContext): { fromFunctionName: string; toFunctionName: string; workloadId: string; callCount: number; staticMissed: boolean }[] {
+  const rows = ctx.db.prepare(`SELECT c.*, f1.name as from_name, f2.name as to_name
      FROM calls c
      JOIN functions f1 ON c.from_function_id = f1.id
      JOIN functions f2 ON c.to_function_id = f2.id
@@ -270,17 +270,17 @@ export function getStaticMissedCalls(_ctx: KgContext): { fromFunctionName: strin
 }
 
 export function clearDynamicCalls(ctx: KgContext, workloadId: string): number {
-  const result = getStatement(`DELETE FROM calls WHERE workload_id = ?`).run(workloadId);
+  const result = ctx.db.prepare(`DELETE FROM calls WHERE workload_id = ?`).run(workloadId);
   return Number(result.changes);
 }
 
-export function clearAllDynamicCalls(_ctx: KgContext): number {
-  const result = getStatement(`DELETE FROM calls WHERE dynamic = 1`).run();
+export function clearAllDynamicCalls(ctx: KgContext): number {
+  const result = ctx.db.prepare(`DELETE FROM calls WHERE dynamic = 1`).run();
   return Number(result.changes);
 }
 
 export function getCoherenceDecisions(ctx: KgContext, fileId: number): { id: number; verdict: string; confidence: number; analyzedAt: string; llmProvider: string | null }[] {
-  const rows = getStatement(`
+  const rows = ctx.db.prepare(`
     SELECT id, verdict, confidence, analyzed_at, llm_provider 
     FROM coherence_decisions 
     WHERE file_id = ? 

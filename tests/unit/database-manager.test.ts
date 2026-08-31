@@ -173,15 +173,15 @@ describe('DatabaseManager', () => {
       manager = new DatabaseManager();
       manager.init();
 
-      const row = manager.getDb().prepare('PRAGMA busy_timeout').get() as { busy_timeout: number };
-      expect(row.busy_timeout).toBe(5000);
+      const row = manager.getDb().prepare('PRAGMA busy_timeout').get() as { timeout: number };
+      expect(row.timeout).toBe(5000);
     });
 
     it('initDatabase() sets busy_timeout to 5000ms', () => {
       const db = initDatabase('tests/tmp-busy-timeout.db');
       try {
-        const row = db.prepare('PRAGMA busy_timeout').get() as { busy_timeout: number };
-        expect(row.busy_timeout).toBe(5000);
+        const row = db.prepare('PRAGMA busy_timeout').get() as { timeout: number };
+        expect(row.timeout).toBe(5000);
       } finally {
         closeDatabase();
       }

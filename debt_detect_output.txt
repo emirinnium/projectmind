@@ -1,0 +1,17 @@
+
+  ____            _           _   __  __ _           _ 
+ |  _ \ _ __ ___ (_) ___  ___| |_|  \/  (_)_ __   __| |
+ | |_) | '__/ _ \| |/ _ \/ __| __| |\/| | | '_ \ / _` |
+ |  __/| | | (_) | |  __/ (__| |_| |  | | | | | | (_| |
+ |_|   |_|  \___// |\___| \___|\__|_|  |_|_|_| |_|\__,_|
+                |__/
+
+
+[2026-08-31T05:21:37.029Z] [INFO] Current schema version: 95
+[2026-08-31T05:21:37.030Z] [INFO] Schema version after migrations: 95
+[2026-08-31T05:21:37.080Z] [INFO] Running debt detection...
+[2026-08-31T05:22:27.049Z] [INFO] ✓ Detected 5225 debt items.
+(node:437250) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:437250) [DEP0151] DeprecationWarning: Package /home/azureuser/projectmind/node_modules/tree-sitter-c-sharp/ has a "main" field set to "bindings/node", excluding the full filename and extension to the resolved file at "bindings/node/index.js", imported from /home/azureuser/projectmind/dist/parser/multilang-parser.js.
+ Automatic extension resolution of the "main" field is deprecated for ES modules.

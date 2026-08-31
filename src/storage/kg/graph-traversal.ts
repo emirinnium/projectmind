@@ -1,4 +1,3 @@
-import { getStatement } from '../database.js';
 import { getAllFiles } from './helpers/index.js';
 import type { KgContext } from './helpers/context.js';
 import type { SQLOutputValue } from 'node:sqlite';
@@ -100,7 +99,7 @@ export class GraphTraversal {
     }
 
     // Build edges from imports table
-    const importRows = getStatement(`
+    const importRows = this.ctx.db.prepare(`
       SELECT i.file_id, i.resolved_path, f2.id as target_id
       FROM imports i
       JOIN files f1 ON i.file_id = f1.id

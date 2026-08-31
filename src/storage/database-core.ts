@@ -200,7 +200,17 @@ export function getDatabase(): DatabaseSync {
   return _instance;
 }
 
+/**
+ * @deprecated Use dependency injection with DatabaseManager or createIsolatedDatabase() instead.
+ * This function mutates the global singleton and can cause test pollution.
+ * Will be removed in a future version.
+ */
 export function setDatabase(db: DatabaseSync): void {
+  console.warn(
+    '⚠️  setDatabase() is deprecated. ' +
+    'Use dependency injection with DatabaseManager or createIsolatedDatabase() from src/test-helpers/database.ts instead. ' +
+    'This function mutates the global singleton and can cause test pollution.'
+  );
   _instance = db;
   clearStatementCache();
 }

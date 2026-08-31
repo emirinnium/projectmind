@@ -1,0 +1,28 @@
+
+  ____            _           _   __  __ _           _ 
+ |  _ \ _ __ ___ (_) ___  ___| |_|  \/  (_)_ __   __| |
+ | |_) | '__/ _ \| |/ _ \/ __| __| |\/| | | '_ \ / _` |
+ |  __/| | | (_) | |  __/ (__| |_| |  | | | | | | (_| |
+ |_|   |_|  \___// |\___| \___|\__|_|  |_|_|_| |_|\__,_|
+                |__/
+
+
+[2026-08-31T00:07:08.297Z] [INFO] Current schema version: 95
+[2026-08-31T00:07:08.297Z] [INFO] Schema version after migrations: 95
+[2026-08-31T00:07:08.598Z] [INFO] 
+=== Coherence Genome ===
+[2026-08-31T00:07:08.599Z] [INFO]   Score: 93.5% — Excellent
+[2026-08-31T00:07:08.599Z] [INFO]   Patterns detected: 1940
+[2026-08-31T00:07:08.599Z] [INFO]   Violations: 1
+[2026-08-31T00:07:08.599Z] [INFO]   Agent sessions: 50
+[2026-08-31T00:07:08.599Z] [INFO]   Marker count: 5
+[2026-08-31T00:07:08.599Z] [INFO]   Avg pattern confidence: 87%
+[2026-08-31T00:07:08.599Z] [INFO]   High-confidence patterns: 1755
+[2026-08-31T00:07:08.599Z] [INFO]   Import resolution rate: 69%
+[2026-08-31T00:07:08.599Z] [WARN] Violation penalty applied: 0.02
+[2026-08-31T00:07:08.599Z] [INFO]   Breakdown marker count: 5
+[2026-08-31T00:07:08.599Z] [INFO]   Genome data length: 373
+(node:384689) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:384689) [DEP0151] DeprecationWarning: Package /home/azureuser/projectmind/node_modules/tree-sitter-c-sharp/ has a "main" field set to "bindings/node", excluding the full filename and extension to the resolved file at "bindings/node/index.js", imported from /home/azureuser/projectmind/dist/parser/multilang-parser.js.
+ Automatic extension resolution of the "main" field is deprecated for ES modules.

@@ -18,7 +18,7 @@ import { AliasResolver, getDefaultAliasResolver } from '../../../parser/alias-re
 import { codeToEmbedding, cosineSimilarity } from '../../../parser/embeddings.js';
 
 import { loadConfig } from '../../../utils/config.js';
-import { getStatement, runWithRetry } from '../../database.js';
+import { runWithRetry } from '../../database.js';
 
 import type { FileInfo } from '../types.js';
 
@@ -43,9 +43,9 @@ export function mapFileInfo(row: Record<string, SQLOutputValue>): FileInfo {
 }
 
 function clearFileRelations(ctx: KgContext, fileId: number): void {
-  getStatement('DELETE FROM functions WHERE file_id = ?').run(fileId);
-  getStatement('DELETE FROM classes WHERE file_id = ?').run(fileId);
-  getStatement('DELETE FROM imports WHERE file_id = ?').run(fileId);
+  ctx.db.prepare('DELETE FROM functions WHERE file_id = ?').run(fileId);
+  ctx.db.prepare('DELETE FROM classes WHERE file_id = ?').run(fileId);
+  ctx.db.prepare('DELETE FROM imports WHERE file_id = ?').run(fileId);
 }
 
 function calculateCognitiveLoad(fileStruct: FileStructure): number {
@@ -69,7 +69,7 @@ export function getFileByPath(ctx: KgContext, path: string, projectId?: number):
     ['SELECT * FROM files WHERE path = ? COLLATE NOCASE AND project_id = ?', normalized],
   ];
   for (const [sql, value] of lookups) {
-    const row = getStatement(sql).get(value, pid) as Record<string, SQLOutputValue> | undefined;
+    const row = ctx.db.prepare(sql).get(value, pid) as Record<string, SQLOutputValue> | undefined;
     if (row) return mapFileInfo(row);
   }
   return null;
@@ -160,10 +160,10 @@ export async function upsertFile(ctx: KgContext, fileStruct: FileStructure, rela
   const cognitiveLoad = calculateCognitiveLoad(fileStruct);
 
   return runWithRetry(async () => {
-    const existing = getStatement('SELECT id FROM files WHERE path = ? AND project_id = ?').get(fileStruct.filePath, ctx.currentProjectId) as { id: number } | undefined;
+    const existing = ctx.db.prepare('SELECT id FROM files WHERE path = ? AND project_id = ?').get(fileStruct.filePath, ctx.currentProjectId) as { id: number } | undefined;
 
     if (existing) {
-      getStatement(`UPDATE files SET relative_path = ?, language = ?, size_bytes = ?, hash = ?, embedding = ?, 
+      ctx.db.prepare(`UPDATE files SET relative_path = ?, language = ?, size_bytes = ?, hash = ?, embedding = ?, 
          last_scanned = CURRENT_TIMESTAMP, cognitive_load = ? WHERE id = ?`).run(
         relativePath,
         fileStruct.language,
@@ -181,7 +181,7 @@ export async function upsertFile(ctx: KgContext, fileStruct: FileStructure, rela
       getVecIndex(ctx.db).upsert(existing.id, embedding);
       return existing.id;
     } else {
-      const result = getStatement(`INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash, embedding, cognitive_load)
+      const result = ctx.db.prepare(`INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash, embedding, cognitive_load)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
         ctx.currentProjectId,
         fileStruct.filePath,
@@ -204,7 +204,7 @@ export async function storeFileDetails(ctx: KgContext, fileId: number, fileStruc
   return runWithRetry(async () => {
     ctx.db.exec('SAVEPOINT storeFileDetails');
     try {
-      const fnStmt = getStatement(
+      const fnStmt = ctx.db.prepare(
         `INSERT INTO functions (file_id, name, signature, return_type, start_line, end_line, complexity, embedding)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       );
@@ -221,7 +221,7 @@ export async function storeFileDetails(ctx: KgContext, fileId: number, fileStruc
         );
       }
 
-      const clsStmt = getStatement(
+      const clsStmt = ctx.db.prepare(
         `INSERT INTO classes (file_id, name, signature, start_line, end_line, methods_count, properties_count, embedding)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       );
@@ -238,7 +238,7 @@ export async function storeFileDetails(ctx: KgContext, fileId: number, fileStruc
         );
       }
 
-      const impStmt = getStatement(`INSERT INTO imports (file_id, source, kind, resolved, resolved_path) VALUES (?, ?, ?, ?, ?)`);
+      const impStmt = ctx.db.prepare(`INSERT INTO imports (file_id, source, kind, resolved, resolved_path) VALUES (?, ?, ?, ?, ?)`);
       const fromFile = getFileByPath(ctx, fileStruct.filePath);
       const fromDir = fromFile ? dirname(fromFile.relativePath).replace(/\\/g, '/') : '';
 
@@ -311,7 +311,7 @@ export async function storeFileDetails(ctx: KgContext, fileId: number, fileStruc
 export function markAgentTouched(ctx: KgContext, filePath: string, agentName: string): Promise<void> {
   return runWithRetry(async () => {
     const normalized = filePath.replace(/\\/g, '/');
-    getStatement(
+    ctx.db.prepare(
       `UPDATE files SET agent_touched = 1, agent_touched_by = ?, agent_touched_at = CURRENT_TIMESTAMP 
        WHERE path = ? OR relative_path = ?`
     ).run(agentName, normalized, normalized);
@@ -320,14 +320,14 @@ export function markAgentTouched(ctx: KgContext, filePath: string, agentName: st
 
 export function getFilesByLanguage(ctx: KgContext, language: string, projectId?: number): FileInfo[] {
   const pid = projectId ?? ctx.currentProjectId;
-  const rows = getStatement('SELECT * FROM files WHERE language = ? AND project_id = ? ORDER BY last_scanned DESC')
+  const rows = ctx.db.prepare('SELECT * FROM files WHERE language = ? AND project_id = ? ORDER BY last_scanned DESC')
     .all(language, pid) as Record<string, SQLOutputValue>[];
   return rows.map((r) => mapFileInfo(r));
 }
 
 export function getAllFiles(ctx: KgContext, projectId?: number): FileInfo[] {
   const pid = projectId ?? ctx.currentProjectId;
-  const rows = getStatement('SELECT * FROM files WHERE project_id = ? ORDER BY path').all(pid) as Record<string, SQLOutputValue>[];
+  const rows = ctx.db.prepare('SELECT * FROM files WHERE project_id = ? ORDER BY path').all(pid) as Record<string, SQLOutputValue>[];
   return rows.map((r) => mapFileInfo(r));
 }
 
@@ -337,8 +337,8 @@ export function getAgentTouchedFiles(ctx: KgContext, agentName?: string, project
     ? 'SELECT * FROM files WHERE agent_touched = 1 AND agent_touched_by = ? AND project_id = ? ORDER BY agent_touched_at DESC'
     : 'SELECT * FROM files WHERE agent_touched = 1 AND project_id = ? ORDER BY agent_touched_at DESC';
   const rows = (agentName
-    ? getStatement(sql).all(agentName, pid)
-    : getStatement(sql).all(pid)
+    ? ctx.db.prepare(sql).all(agentName, pid)
+    : ctx.db.prepare(sql).all(pid)
   ) as Record<string, SQLOutputValue>[];
   return rows.map((r) => mapFileInfo(r));
 }
@@ -385,7 +385,7 @@ export function findSimilarFiles(ctx: KgContext, targetEmbedding: number[], thre
     if (goodIds.length > 0) {
       const ids = goodIds.slice(0, limit);
       const placeholders = ids.map(() => '?').join(',');
-      const resultRows = getStatement(`SELECT * FROM files WHERE id IN (${placeholders})`)
+      const resultRows = ctx.db.prepare(`SELECT * FROM files WHERE id IN (${placeholders})`)
         .all(...ids) as Record<string, SQLOutputValue>[];
       return resultRows.map((r) => mapFileInfo(r));
     }
@@ -404,7 +404,7 @@ export function findSimilarFiles(ctx: KgContext, targetEmbedding: number[], thre
   if (ids.length === 0) return [];
 
   const placeholders = ids.map(() => '?').join(',');
-  const rows = getStatement(`SELECT id, embedding FROM files WHERE id IN (${placeholders})`)
+  const rows = ctx.db.prepare(`SELECT id, embedding FROM files WHERE id IN (${placeholders})`)
     .all(...ids) as { id: number; embedding: SQLOutputValue | null }[];
 
   const embeddingMap = new Map<number, number[]>();
@@ -425,13 +425,13 @@ export function findSimilarFiles(ctx: KgContext, targetEmbedding: number[], thre
   if (matchIds.length === 0) return [];
 
   const matchPlaceholders = matchIds.map(() => '?').join(',');
-  const resultRows = getStatement(`SELECT * FROM files WHERE id IN (${matchPlaceholders})`)
+  const resultRows = ctx.db.prepare(`SELECT * FROM files WHERE id IN (${matchPlaceholders})`)
     .all(...matchIds) as Record<string, SQLOutputValue>[];
   return resultRows.map((r) => mapFileInfo(r));
 }
 
 export function getFunctions(ctx: KgContext, fileId: number): { id: number; name: string; signature: string; complexity: number; startLine: number; endLine: number }[] {
-  const rows = getStatement('SELECT id, name, signature, complexity, start_line, end_line FROM functions WHERE file_id = ?').all(fileId) as Record<string, SQLOutputValue>[];
+  const rows = ctx.db.prepare('SELECT id, name, signature, complexity, start_line, end_line FROM functions WHERE file_id = ?').all(fileId) as Record<string, SQLOutputValue>[];
   return rows.map(r => ({
     id: r.id as number,
     name: r.name as string,
@@ -443,7 +443,7 @@ export function getFunctions(ctx: KgContext, fileId: number): { id: number; name
 }
 
 export function getClasses(ctx: KgContext, fileId: number): { id: number; name: string; methodsCount: number; propertiesCount: number }[] {
-  const rows = getStatement('SELECT id, name, methods_count, properties_count FROM classes WHERE file_id = ?').all(fileId) as Record<string, SQLOutputValue>[];
+  const rows = ctx.db.prepare('SELECT id, name, methods_count, properties_count FROM classes WHERE file_id = ?').all(fileId) as Record<string, SQLOutputValue>[];
   return rows.map(r => ({
     id: r.id as number,
     name: r.name as string,
@@ -453,7 +453,7 @@ export function getClasses(ctx: KgContext, fileId: number): { id: number; name: 
 }
 
 export function getImports(ctx: KgContext, fileId: number): { source: string; named: string[]; kind: string }[] {
-  const rows = getStatement('SELECT * FROM imports WHERE file_id = ?').all(fileId) as Record<string, SQLOutputValue>[];
+  const rows = ctx.db.prepare('SELECT * FROM imports WHERE file_id = ?').all(fileId) as Record<string, SQLOutputValue>[];
   return rows.map((r) => ({
     source: r.source as string,
     named: [],
@@ -462,7 +462,7 @@ export function getImports(ctx: KgContext, fileId: number): { source: string; na
 }
 
 export function getFileEmbedding(ctx: KgContext, fileId: number): number[] | null {
-  const row = getStatement('SELECT embedding FROM files WHERE id = ?').get(fileId) as { embedding: SQLOutputValue | null } | undefined;
+  const row = ctx.db.prepare('SELECT embedding FROM files WHERE id = ?').get(fileId) as { embedding: SQLOutputValue | null } | undefined;
   if (!row || !row.embedding) return null;
   const decoded = decodeEmbedding(row.embedding);
   return decoded.length > 0 ? decoded : null;

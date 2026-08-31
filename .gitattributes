@@ -1,0 +1,13 @@
+* text=auto eol=lf
+*.sh text eol=lf
+*.png binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.vsix binary
+*.onnx binary
+*.db binary
+*.tgz binary
+*.woff binary
+*.woff2 binary

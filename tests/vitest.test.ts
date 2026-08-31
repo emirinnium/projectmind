@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { initDatabase, setDatabase, closeDatabase } from '../src/storage/database.js';
+import { initDatabase, closeDatabase } from '../src/storage/database.js';
 import { SCHEMA_SQL } from '../src/storage/schema.js';
 import { KnowledgeGraph } from '../src/storage/knowledge-graph.js';
 import { parseFile } from '../src/parser/ast-parser.js';
@@ -11,7 +11,7 @@ const TEST_DB = join(process.cwd(), 'tests', `tmp-vitest-${Date.now()}.db`);
 const PROJECT_ROOT = join(process.cwd());
 const SRC_DIR = join(PROJECT_ROOT, 'src');
 
-beforeAll(async () => {
+beforeEach(async () => {
   const dbDir = dirname(TEST_DB);
   if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true });
   for (let i = 0; i < 5; i++) {
@@ -22,11 +22,12 @@ beforeAll(async () => {
       await new Promise((r) => setTimeout(r, 100));
     }
   }
+  // Use initDatabase to set up the global singleton for KnowledgeGraph helpers
+  initDatabase(TEST_DB);
 });
 
-afterAll(async () => {
-  // F44: close the last open connection first — on Windows an open SQLite
-  // handle locks the file and rmSync below would silently fail.
+afterEach(async () => {
+  // Cleanup using closeDatabase
   try {
     closeDatabase();
   } catch {
@@ -48,7 +49,6 @@ describe('Database', () => {
   it('initializes and runs migrations', () => {
     const db = initDatabase(TEST_DB);
     db.exec(SCHEMA_SQL);
-    setDatabase(db);
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
     expect(tables.some((t) => t.name === 'files')).toBe(true);
   });
@@ -58,7 +58,6 @@ describe('Knowledge Graph', () => {
   it('creates projects and switches context', () => {
     const db = initDatabase(TEST_DB);
     db.exec(SCHEMA_SQL);
-    setDatabase(db);
     const kg = new KnowledgeGraph(db);
 
     const project = kg.createProject('vitest-project', PROJECT_ROOT, 'Vitest project');
@@ -78,7 +77,6 @@ describe('Taint Analyzer', () => {
   it('detects taint flows from file source to exec sink', () => {
     const db = initDatabase(TEST_DB);
     db.exec(SCHEMA_SQL);
-    setDatabase(db);
     const kg = new KnowledgeGraph(db);
     const analyzer = new TaintAnalyzer(kg);
 
