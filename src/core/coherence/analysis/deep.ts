@@ -5,6 +5,11 @@ import { runWithRetry } from '../../../storage/database.js';
 import { logger } from '../../../utils/logger.js';
 import { stableHash } from '../../../utils/hash.js';
 
+/** Base delay in ms for LLM retry backoff. */
+const BASE_DELAY_MS = 1000;
+/** Maximum delay in ms for LLM retry backoff. */
+const MAX_DELAY_MS = 5000;
+
 // Warning tracking to avoid spamming user
 let cloudLLMWarningShown = false;
 
@@ -90,8 +95,8 @@ SUGGESTIONS: (one per line, or "none")`;
       async () => this.llmProvider!.analyze(prompt, systemPrompt, 0.3),
       {
         maxAttempts: 3,
-        baseDelayMs: 1000,
-        maxDelayMs: 5000,
+        baseDelayMs: BASE_DELAY_MS,
+        maxDelayMs: MAX_DELAY_MS,
         retryableErrors: ['timeout', 'network', 'ECONNREFUSED', 'ETIMEDOUT', 'rate limit', '429', '500', '502', '503'],
       }
     );

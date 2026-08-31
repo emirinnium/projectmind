@@ -1,5 +1,10 @@
 import type { CacheEntry, CacheOptions } from '../types.js';
 
+/** Maximum number of operations between purge cycles (whichever comes first with time interval). */
+const PURGE_OPERATION_INTERVAL = 100;
+/** Time interval in ms between purge cycles (5 minutes). */
+const PURGE_TIME_INTERVAL_MS = 5 * 60 * 1000;
+
 /**
  * Handles cache eviction policies (LRU, TTL)
  * 
@@ -26,8 +31,8 @@ export class CacheEviction<K, V> {
       onError: options.onError ?? (() => {}),
     };
     // Purge expired entries every N operations or every 5 minutes, whichever comes first
-    this.purgeInterval = Math.min(options.maxSize, 100);
-    this.purgeTimeIntervalMs = 5 * 60 * 1000; // 5 minutes
+    this.purgeInterval = Math.min(options.maxSize, PURGE_OPERATION_INTERVAL);
+    this.purgeTimeIntervalMs = PURGE_TIME_INTERVAL_MS;
   }
 
   get(key: K): V | undefined {

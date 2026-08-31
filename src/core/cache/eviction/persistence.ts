@@ -3,6 +3,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { logger } from '../../../utils/logger.js';
 
+/** Interval in ms between automatic cache persistence to disk (1 minute). */
+const PERSIST_INTERVAL_MS = 60_000;
+
 /**
  * Handles cache persistence to disk
  */
@@ -83,7 +86,7 @@ export class CachePersistence<K, V> {
       if (this.cacheMap) {
         this.persistToDisk(this.cacheMap);
       }
-    }, 60_000); // Persist every minute
+    }, PERSIST_INTERVAL_MS);
   }
 
   destroy(): void {

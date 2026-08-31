@@ -1,5 +1,8 @@
 import type { KnowledgeGraph } from '../../storage/knowledge-graph.js';
 
+/** Maximum number of entries to track in the blast-radius closure before stopping. */
+const RISK_ANALYSIS_CLOSURE_LIMIT = 2000;
+
 /**
  * Merge-conflict prediction between agents (v1, graph-heuristic).
  *
@@ -58,7 +61,7 @@ export function predictMergeRisk(kg: KnowledgeGraph, input: ConflictRiskInput): 
     }
     try {
       const radius = g.getImpactRadius(info.id);
-      for (let i = 0; i < radius.affected.length && myClosure.size < 2000; i++) {
+      for (let i = 0; i < radius.affected.length && myClosure.size < RISK_ANALYSIS_CLOSURE_LIMIT; i++) {
         const n = radius.affected[i];
         const p = normalize(n.relativePath || n.path);
         if (!myClosure.has(p)) myClosure.set(p, f);
