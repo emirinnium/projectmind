@@ -5,8 +5,12 @@ import type { IntentQuery, IntentType, HybridScore, SearchResult, TaskType } fro
 import { VecIndex, getVecIndex } from '../embeddings/vector-index.js';
 import { generateEmbedding, codeToEmbeddingAsync } from '../../parser/embeddings.js';
 import { logger } from '../../utils/logger.js';
+import { DEFAULT_DIMENSION } from '../llm/types.js';
 
-const DEFAULT_DIMENSION = 768;
+const SIMILARITY_THRESHOLD = 0.5;
+const RANK_DECAY_FACTOR = 0.15;
+const SEMANTIC_THRESHOLD = 0.72;
+const MAX_SIMILAR_RESULTS = 10;
 
 export interface KGGraphLike {
   getFileByPath(path: string): { id?: number; path: string } | null;
@@ -274,7 +278,7 @@ export class IntentEngine {
       structuralScore = 0.3;
     }
 
-    const sem = semanticScore ?? 0.5;
+    const sem = semanticScore ?? SIMILARITY_THRESHOLD;
     const total = this.weights.semantic * sem + this.weights.structural * structuralScore + this.weights.intent * intentScore;
     return {
       semantic: sem,
@@ -289,13 +293,13 @@ export class IntentEngine {
     const out: Array<{ path: string; score: number; source: 'embedding' | 'lexical' }> = [];
     for (let i = 0; i < similarResults.length; i++) {
       const rank = i + 1;
-      const derived = Math.max(0, 1 - (rank - 1) * 0.15); // 1→1.0, 2→0.85, 3→0.7...
+      const derived = Math.max(0, 1 - (rank - 1) * RANK_DECAY_FACTOR); // 1→1.0, 2→0.85, 3→0.7...
       out.push({ path: similarResults[i].path, score: derived, source: 'embedding' });
     }
     return out;
   }
 
-  async search(query: IntentQuery, kgGraph?: KGGraphLike, limit = 10): Promise<SearchResult[]> {
+  async search(query: IntentQuery, kgGraph?: KGGraphLike, limit = MAX_SIMILAR_RESULTS): Promise<SearchResult[]> {
     const results: SearchResult[] = [];
     const queryText = this.resolveQueryText(query);
     const intent = this.classifyIntent(query);
@@ -305,7 +309,7 @@ export class IntentEngine {
     try {
       const queryEmb = await generateEmbedding(queryText, DEFAULT_DIMENSION);
       if (kgGraph && typeof kgGraph.findSimilarFiles === 'function') {
-        const similar = kgGraph.findSimilarFiles(queryEmb, 0.5, limit);
+        const similar = kgGraph.findSimilarFiles(queryEmb, SIMILARITY_THRESHOLD, limit);
         const derived = this.deriveSemanticFromSimilar(queryEmb, similar, limit);
         semanticFiles = derived;
       }
@@ -326,7 +330,7 @@ export class IntentEngine {
             if (row?.path) path = row.path;
           }
           if (path) {
-            const derived = Math.max(0, 1 - i * 0.15);
+            const derived = Math.max(0, 1 - i * RANK_DECAY_FACTOR);
             semanticFiles.push({ path, score: derived, source: 'embedding' });
           }
         }

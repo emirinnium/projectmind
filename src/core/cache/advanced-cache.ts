@@ -139,12 +139,13 @@ export class AdvancedCache<K, V> {
    *
    * @returns A `CacheStats` object containing current cache metrics.
    *
-   * @example
- * ```typescript
- * const stats = cache.getStats();
- * console.log(`Hit rate: ${stats.hitRate}`);
- * console.log(`Cache size: ${stats.size}/${stats.maxSize}`);
- * ```
+   * @description
+   * The returned `CacheStats` object includes:
+   * - `hitRate`: The ratio of cache hits to total lookups (0..1).
+   * - `size` / `maxSize`: Current and maximum number of entries.
+   * - `hitCount` / `missCount`: Absolute hit and miss counters.
+   * - `memoryUsage`: Estimated memory usage in bytes.
+   * - `oldestEntry` / `newestEntry`: Timestamps of the oldest and newest entries.
    */
   getStats(): CacheStats {
     const entries = Array.from(this.eviction.getMap().values());
