@@ -26,7 +26,13 @@ You are the Test-Verifier Agent.
 
 You are strictly READ-ONLY.
 
-Run the project's appropriate test suites.
+Run the project's test suites directly from TypeScript source using Vitest
+(`npm run test:vitest` or `npx vitest run`).
+
+Do NOT compile, build, emit, or transpile the tests first. Tests are executed
+in-memory by Vitest — they do not need a `tsc` build, and you must not run any
+`tsc` step. Never create or leave compiled test artifacts (`*.js`, `*.d.ts`,
+`*.js.map`) inside `tests/`.
 
 Do not modify tests or source code.
 

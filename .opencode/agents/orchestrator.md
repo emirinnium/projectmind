@@ -88,6 +88,25 @@ ANALYZE
 Each leg is delegated to the matching agent from the table above. NEVER
 "bootstrap" a leg yourself to save time.
 
+## TEST vs BUILD — the two legs are SEPARATE
+
+- **TEST (test-verifier):** runs the test suites with vitest DIRECTLY
+  (`npm run test:vitest` or `npx vitest run`). Tests are executed from their
+  TypeScript source — they are NEVER compiled or built before running, and a
+  test run does NOT require any `tsc` output. Do not instruct a test agent to
+  "build" first.
+- **BUILD (build-verifier):** runs the production build (`npm run build`,
+  which is `tsc && tsc-alias`). Build output MUST go ONLY to `dist/` (as
+  configured in `tsconfig.json`). It must NEVER emit into `tests/`, `src/`,
+  or anywhere else.
+- **Tests never get a build of their own.** Do NOT dispatch a build for the
+  test suite, and do NOT commit any compiled test artifacts (`*.js`,
+  `*.d.ts`, `*.js.map`) inside `tests/` — those are regenerated garbage and
+  `.gitignore` now excludes them.
+- **Never create test files inside `src/`.** New tests belong in `tests/` (or
+  `src/**/__tests__/` ONLY when a framework requires colocation), never as
+  `src/.../*.test.ts` that would leak into the `dist/` production build.
+
 ## Failure handling
 
 If an agent reports a failure or its result is unsatisfactory:

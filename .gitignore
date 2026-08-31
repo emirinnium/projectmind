@@ -11,6 +11,20 @@ dist-tests/
 .next/
 **/next/
 
+# In-place compiled test artifacts (tests run via vitest, never built into tests/)
+tests/**/*.js
+tests/**/*.d.ts
+tests/**/*.js.map
+tests/*.js
+tests/*.d.ts
+tests/*.js.map
+!tests/**/*.test.ts
+!tests/*.test.ts
+!tests/global-teardown.ts
+!tests/integration.test.ts
+!tests/integration-vitest.test.ts
+!tests/vitest.test.ts
+
 # ProjectMind runtime data
 .projectmind/
 *.db
