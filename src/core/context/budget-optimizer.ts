@@ -26,6 +26,9 @@ import type { TaskType } from '../search/types.js';
 import { greedySelector, dpSelector, dpApplicable, type SelectionResult } from './knapsack.js';
 import { logger } from '../../utils/logger.js';
 
+/** Token threshold above which a file is compressed to signature-only. */
+const COMPRESSION_HINT_TOKEN_THRESHOLD = 5000;
+
 /**
  * F31: multiplicative boost for items relevant to the current task type.
  * bug fix -> recently changed + error-handling; feature -> semantic-similar +
@@ -185,7 +188,7 @@ export class ContextBudgetOptimizer {
    * Compression strategy selector based on file/token size.
    */
   static compressionStrategySelector(tokens: number): 'summary' | 'signature_only' | 'full' {
-    if (tokens > 5000) return 'signature_only';
+    if (tokens > COMPRESSION_HINT_TOKEN_THRESHOLD) return 'signature_only';
     if (tokens > 2000) return 'summary';
     return 'full';
   }

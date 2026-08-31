@@ -2,6 +2,9 @@ import { generateEmbedding } from '../../parser/embeddings-v2.js';
 import { cosineSimilarity } from '../../parser/legacy-embeddings.js';
 import { EmbeddingCache } from '../cache/embedding-cache.js';
 
+/** Safety cap on the number of memory rows scanned for semantic search. */
+const DEFAULT_MAX_SEMANTIC_ROWS = 5000;
+
 /**
  * RAG-style semantic search over team memories (P4-1 v1).
  *
@@ -59,7 +62,7 @@ export async function searchTeamMemoriesSemantic(
 ): Promise<{ query: string; scanned: number; returned: number; hits: SemanticMemoryHit[]; note: string }> {
   const limit = Math.max(1, Math.min(50, options.limit ?? 5));
   const threshold = options.threshold ?? 0.05;
-  const maxRows = Math.max(1, Math.min(5000, options.maxRows ?? 500));
+  const maxRows = Math.max(1, Math.min(DEFAULT_MAX_SEMANTIC_ROWS, options.maxRows ?? 500));
   const dim = options.dim ?? 256;
 
   let rows = rowsProvider().slice(0, maxRows);

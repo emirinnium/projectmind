@@ -5,6 +5,9 @@ import { existsSync } from 'node:fs';
 import { logger } from '../utils/logger.js';
 import { clearStatementCache } from './database-statements.js';
 
+/** Default SQLite busy timeout in milliseconds. */
+const DEFAULT_SQLITE_BUSY_TIMEOUT_MS = 5000;
+
 // ===== Singleton Instance (default, backward compatible) =====
 
 let _instance: DatabaseSync | null = null;
@@ -114,7 +117,7 @@ export class DatabaseManager {
     db.exec('PRAGMA synchronous = NORMAL');
     db.exec('PRAGMA temp_store = MEMORY');
     db.exec('PRAGMA cache_size = -64000');
-    db.exec('PRAGMA busy_timeout = 5000');
+    db.exec(`PRAGMA busy_timeout = ${DEFAULT_SQLITE_BUSY_TIMEOUT_MS}`);
   }
 
   /**
@@ -184,7 +187,7 @@ export function initDatabase(dbPath: string): DatabaseSync {
   _instance.exec('PRAGMA synchronous = NORMAL');
   _instance.exec('PRAGMA temp_store = MEMORY');
   _instance.exec('PRAGMA cache_size = -64000');
-  _instance.exec('PRAGMA busy_timeout = 5000');
+  _instance.exec(`PRAGMA busy_timeout = ${DEFAULT_SQLITE_BUSY_TIMEOUT_MS}`);
 
   _instance.exec(SCHEMA_SQL);
   runMigrations(_instance);

@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { relative, resolve } from 'node:path';
 
+/** Safety cap on the number of files scanned for clone detection. */
+const DEFAULT_MAX_CLONE_FILES = 3000;
+
 /**
  * AST-based clone detector (Type-2) v1.
  *
@@ -113,7 +116,7 @@ export class CloneDetector {
    */
   detect(filePaths: string[], options: CloneDetectionOptions = {}): CloneDetectionResult {
     const minLines = Math.max(3, options.minLines ?? 6);
-    const maxFiles = Math.max(1, options.maxFiles ?? 3000);
+    const maxFiles = Math.max(1, options.maxFiles ?? DEFAULT_MAX_CLONE_FILES);
     const maxGroups = Math.max(1, options.maxGroups ?? 50);
 
     // Dedupe input paths: KG indexes may contain duplicate rows for the

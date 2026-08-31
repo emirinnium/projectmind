@@ -43,6 +43,9 @@ const MAX_RENAME_HOPS = 10;
 /** Extensions tried when resolving relative import specifiers (F27). */
 const RESOLVE_EXTENSIONS = ['.ts', '.tsx', '.js', '.mjs', '.jsx'];
 
+/** Timeout (ms) for git commands used during integrity checks. */
+const DEFAULT_INTEGRITY_TIMEOUT_MS = 5000;
+
 export interface ParsedRenameLog {
   /** Final path after applying every chained rename, or null when none. */
   path: string | null;
@@ -436,7 +439,7 @@ export class IntegrityGuard {
           encoding: 'utf-8',
           maxBuffer: 4 * 1024 * 1024,
           stdio: ['ignore', 'pipe', 'ignore'],
-          timeout: 5000,
+          timeout: DEFAULT_INTEGRITY_TIMEOUT_MS,
         });
       } catch {
         break; // not a git repo / git missing — fall through to FS search
@@ -477,7 +480,7 @@ export class IntegrityGuard {
         encoding: 'utf-8',
         maxBuffer: 4 * 1024 * 1024,
         stdio: ['ignore', 'pipe', 'ignore'],
-        timeout: 5000,
+        timeout: DEFAULT_INTEGRITY_TIMEOUT_MS,
       });
       for (const rawLine of out.split(/\r?\n/)) {
         const parts = rawLine.trimEnd().split('\t');

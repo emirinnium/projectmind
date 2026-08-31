@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { logger } from './logger.js';
 
+/** Default maximum cache size for LLM responses. */
+const DEFAULT_MAX_CACHE_SIZE = 10000;
+
 /**
  * Zod schema for .projectmindrc.json validation
  */
@@ -11,7 +14,7 @@ const LLMConfigSchema = z.object({
   apiKey: z.string().optional(),
   deepModel: z.string().min(1).default('claude-3-opus-20240229'),
   confidenceThreshold: z.number().min(0).max(1).default(0.7),
-  maxCacheSize: z.number().int().positive().default(10000),
+  maxCacheSize: z.number().int().positive().default(DEFAULT_MAX_CACHE_SIZE),
 });
 
 const EmbeddingsConfigSchema = z.object({
@@ -104,7 +107,7 @@ function getDefaults(): ProjectMindRc & { llm: NonNullable<ProjectMindRc['llm']>
       model: 'claude-3-5-sonnet-20241022',
       deepModel: 'claude-3-opus-20240229',
       confidenceThreshold: 0.7,
-      maxCacheSize: 10000,
+      maxCacheSize: DEFAULT_MAX_CACHE_SIZE,
     },
     embeddings: {
       provider: 'simple',
