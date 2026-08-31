@@ -114,3 +114,4 @@ scripts/
 
 # Exhaustive test sandbox
 all-actions-sandbox/
+.opencode/

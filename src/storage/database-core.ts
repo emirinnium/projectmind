@@ -211,7 +211,7 @@ export function getDatabase(): DatabaseSync {
 export function setDatabase(db: DatabaseSync): void {
   logger.warn(
     'setDatabase() is deprecated. ' +
-    'Use dependency injection with DatabaseManager or createIsolatedDatabase() from src/test-helpers/database.ts instead. ' +
+    'Use dependency injection with DatabaseManager or createIsolatedDatabase() from tests/test-helpers/database.ts instead. ' +
     'This function mutates the global singleton and can cause test pollution.'
   );
   _instance = db;

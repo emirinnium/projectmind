@@ -26,10 +26,10 @@
  */
 
 import { DatabaseSync } from 'node:sqlite';
-import { DatabaseManager } from '../storage/database-core.js';
-import { resetDefaultAliasResolver } from '../parser/alias-resolver.js';
-import { resetDefaultImportResolutionCache } from '../core/cache/import-resolution-cache.js';
-import { globalCacheRegistry } from '../core/cache/index.js';
+import { DatabaseManager } from '../../src/storage/database-core.js';
+import { resetDefaultAliasResolver } from '../../src/parser/alias-resolver.js';
+import { resetDefaultImportResolutionCache } from '../../src/core/cache/import-resolution-cache.js';
+import { globalCacheRegistry } from '../../src/core/cache/index.js';
 
 /**
  * Result of creating an isolated database instance.

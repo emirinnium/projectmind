@@ -14,7 +14,7 @@
  * @module test-helpers/fixtures
  */
 
-import { KnowledgeGraphDeps } from '../storage/kg/graph.js';
+import { KnowledgeGraphDeps } from '../../src/storage/kg/graph.js';
 import { createTestKnowledgeGraph, TestKnowledgeGraph } from './knowledge-graph.js';
 
 /**

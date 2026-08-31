@@ -15,7 +15,7 @@
  */
 
 import { DatabaseSync } from 'node:sqlite';
-import { KnowledgeGraph, KnowledgeGraphDeps } from '../storage/kg/graph.js';
+import { KnowledgeGraph, KnowledgeGraphDeps } from '../../src/storage/kg/graph.js';
 import { createIsolatedDatabase } from './database.js';
 
 /**

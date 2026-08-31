@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { KnowledgeGraph } from '../../src/storage/kg/graph.js';
-import { createIsolatedDatabase } from '../../src/test-helpers/database.js';
+import { createIsolatedDatabase } from '../test-helpers/database.js';
 import type { FileStructure } from '../../src/parser/ast-parser.js';
 
 describe('Schema Setup', () => {
