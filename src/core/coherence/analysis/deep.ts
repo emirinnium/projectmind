@@ -115,7 +115,8 @@ SUGGESTIONS: (one per line, or "none")`;
     
     try {
       return parser(section.substring(key.length + 1).trim());
-    } catch {
+    } catch (err) {
+      logger.debug(`[deep-coherence] Failed to parse structured data for key "${key}": ${err instanceof Error ? err.message : String(err)}`);
       throw new Error(`Failed to parse key: ${key}`);
     }
   }
@@ -137,7 +138,8 @@ SUGGESTIONS: (one per line, or "none")`;
         const match = text.match(/(pass|warn|fail)/i);
         return match ? match[1].toLowerCase() as 'pass' | 'warn' | 'fail' : 'warn';
       });
-    } catch {
+    } catch (err) {
+      logger.debug(`[deep-coherence] Failed to parse VERDICT from LLM response, defaulting to 'warn'. ${err instanceof Error ? err.message : String(err)}`);
       verdictText = undefined;
     }
     if (verdictText) {
@@ -152,7 +154,8 @@ SUGGESTIONS: (one per line, or "none")`;
         const num = parseFloat(text);
         return isNaN(num) ? 0.5 : Math.min(1.0, Math.max(0.0, num));
       });
-    } catch {
+    } catch (err) {
+      logger.debug(`[deep-coherence] Failed to parse CONFIDENCE from LLM response, defaulting to 0.5. ${err instanceof Error ? err.message : String(err)}`);
       confidenceText = undefined;
     }
     if (typeof confidenceText === 'number') {
@@ -167,7 +170,8 @@ SUGGESTIONS: (one per line, or "none")`;
       reasoningText = this.parseStructuredData(content, 'REASONING_TRACE', (text) => {
         return text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
       });
-    } catch {
+    } catch (err) {
+      logger.debug(`[deep-coherence] Failed to parse REASONING_TRACE from LLM response, using provider trace. ${err instanceof Error ? err.message : String(err)}`);
       reasoningText = undefined;
     }
     if (reasoningText) reasoningTrace = reasoningText;
@@ -178,7 +182,8 @@ SUGGESTIONS: (one per line, or "none")`;
       suggestionsText = this.parseStructuredData(content, 'SUGGESTIONS', (text) => {
         return text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0 && !line.startsWith('- '));
       });
-    } catch {
+    } catch (err) {
+      logger.debug(`[deep-coherence] Failed to parse SUGGESTIONS from LLM response, leaving empty. ${err instanceof Error ? err.message : String(err)}`);
       suggestionsText = undefined;
     }
     if (suggestionsText) suggestions = suggestionsText.slice(0, 5);

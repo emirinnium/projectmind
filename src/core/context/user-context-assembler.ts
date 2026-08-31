@@ -16,6 +16,8 @@
  * consuming agent can judge trust, not just order.
  */
 
+import { logger } from '../../utils/logger.js';
+
 export interface UserContextItem {
   path: string;
   score: number;
@@ -88,8 +90,9 @@ export function assembleUserContext(
       const isDirect = directIds.has(String(node.id));
       consider(pseudoInfo, isDirect ? 0.5 : 0.28, isDirect ? 'direct-dependent' : 'in-blast-radius');
     }
-  } catch {
+  } catch (err) {
     // graph engine unavailable → fall back to plain dependents list
+    logger.warn(`[user-context-assembler] Graph engine unavailable for impact radius computation on file ${fileId}, falling back to direct dependents. ${err instanceof Error ? err.message : String(err)}`);
     for (const d of kg.getDependents(fileId)) {
       consider(d, 0.5, 'direct-dependent');
       considered++;
@@ -105,8 +108,9 @@ export function assembleUserContext(
         considered++;
       }
     }
-  } catch {
+  } catch (err) {
     // embeddings unavailable → skip silently, structural signals remain
+    logger.warn(`[user-context-assembler] Embedding lookup failed for file ${fileId}, skipping semantic neighbors. ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // 4+5. Apply task-keyword boosts and test flags over the pooled set.
