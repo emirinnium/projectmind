@@ -58,7 +58,7 @@ export function asyncHandler<TArgs extends unknown[]>(
       await fn(...args);
     } catch (error) {
       handleCliError(error);
-      process.exit(1);
+      throw error;
     }
   };
 }

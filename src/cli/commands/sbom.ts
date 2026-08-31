@@ -116,7 +116,7 @@ export function createSbomCommand(): Command {
           writeFileSync(opts.output, content);
           output.success(`SBOM written to ${opts.output}`);
         } else {
-          console.log(content);
+          output.info(content);
         }
         
         if (opts.sign) {
