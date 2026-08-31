@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from '../../mcp/tools/types.js';
-import { registerScanCvesTool } from '../../mcp/tools/scan-cves.js';
+import { registerScanCvesTool } from '../../../src/mcp/tools/scan-cves.js';
 
 const TEST_PROJECT_ROOT = resolve(process.cwd(), 'fixtures-proj') || '/tmp/test-project';
 
