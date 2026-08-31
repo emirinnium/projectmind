@@ -15,15 +15,28 @@ dist-tests/
 tests/**/*.js
 tests/**/*.d.ts
 tests/**/*.js.map
+tests/**/*.d.ts.map
 tests/*.js
 tests/*.d.ts
 tests/*.js.map
+tests/*.d.ts.map
 !tests/**/*.test.ts
 !tests/*.test.ts
 !tests/global-teardown.ts
 !tests/integration.test.ts
 !tests/integration-vitest.test.ts
 !tests/vitest.test.ts
+
+# Auto-loop and debug outputs (local only)
+auto-loop.sh
+auto-loop.log
+debt*.txt
+debt-report-temp.json
+genome_output.txt
+final_genome.txt
+output.txt
+error.txt
+test_regex_debug.js
 
 # ProjectMind runtime data
 .projectmind/
