@@ -34,6 +34,7 @@ import { registerFindSymbolDefinitionTool } from '../symbol-def.js';
 import { registerSuggestNextFilesTool } from '../smart-context.js';
 import { registerRecommendSkillsTool } from '../skill-recommend.js';
 import { annotateToolRegistration, shouldRegisterParityTools } from '../guard.js';
+import { logger } from '../../../utils/logger.js';
 
 /**
  * Register all MCP tools - single entry point for tool registration.
@@ -159,9 +160,9 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   // for clients with a small active-tool budget (e.g. Cursor).
   if (shouldRegisterParityTools()) {
     const parityCount = await registerCliParityTools(server, deps);
-    console.info(`[mcp] dedicated tools + ${parityCount} CLI-parity tools registered (PROJECTMIND_TOOLS=all)`);
+    logger.info(`[mcp] dedicated tools + ${parityCount} CLI-parity tools registered (PROJECTMIND_TOOLS=all)`);
   } else {
-    console.info('[mcp] PROJECTMIND_TOOLS=core (default) — CLI-parity tools skipped. Set PROJECTMIND_TOOLS=all for full surface. run_cli bridge still available.');
+    logger.info('[mcp] PROJECTMIND_TOOLS=core (default) — CLI-parity tools skipped. Set PROJECTMIND_TOOLS=all for full surface. run_cli bridge still available.');
   }
 
   // Security analysis tools

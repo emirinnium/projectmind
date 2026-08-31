@@ -13,6 +13,12 @@ import type { KnowledgeGraph } from '../../storage/knowledge-graph.js';
 import type { FileInfo } from '../../storage/kg/types.js';
 import { logger } from '../../utils/logger.js';
 
+/** Score assigned to direct dependents in system context ranking. */
+const DIRECT_DEPENDENT_SCORE = 0.5;
+
+/** Score assigned to transitive dependents in system context ranking. */
+const TRANSITIVE_DEPENDENT_SCORE = 0.28;
+
 /**
  * System context item with structural metadata.
  */
@@ -94,7 +100,7 @@ export function assembleSystemContext(
       const isDirect = directIds.has(String(node.id));
       consider(
         pseudoInfo,
-        isDirect ? 0.5 : 0.28,
+        isDirect ? DIRECT_DEPENDENT_SCORE : TRANSITIVE_DEPENDENT_SCORE,
         isDirect ? 'direct-dependent' : 'in-blast-radius',
         isDirect ? 'system' : 'core',
       );

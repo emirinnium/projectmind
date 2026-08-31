@@ -142,7 +142,7 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
   // each child so top-level names become pm_<cmd>.
   for (const top of program.commands ?? []) walk(top, []);
 
-  console.info(`[mcp] CLI-parity tools registered: ${registered}`);
+  logger.info(`[mcp] CLI-parity tools registered: ${registered}`);
   
   return registered;
 }
