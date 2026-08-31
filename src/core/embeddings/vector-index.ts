@@ -158,8 +158,12 @@ export class VecIndex {
           `INSERT INTO ${VEC_TABLE_NAME}(rowid, embedding) VALUES (?, ?)`,
         ).run(bigId, vec);
       }
-    } catch {
+    } catch (e) {
       // Non-fatal – caller falls back to brute-force.
+      logger.warn('VecIndex upsert failed, skipping embedding update', {
+        id,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -168,8 +172,12 @@ export class VecIndex {
     if (!this._available) return;
     try {
       this.db.prepare(`DELETE FROM ${VEC_TABLE_NAME} WHERE rowid = ?`).run(BigInt(id));
-    } catch {
+    } catch (e) {
       // Non-fatal.
+      logger.warn('VecIndex remove failed, embedding may still persist', {
+        id,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -184,8 +192,12 @@ export class VecIndex {
       this.db
         .prepare(`DELETE FROM ${VEC_TABLE_NAME} WHERE rowid IN (SELECT id FROM files WHERE project_id = ?)`)
         .run(projectId);
-    } catch {
+    } catch (e) {
       // Non-fatal.
+      logger.warn('VecIndex removeByProject failed, orphaned embeddings may persist', {
+        projectId,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -214,7 +226,13 @@ export class VecIndex {
           ? (this.db.prepare(sql).all(vec, limit) as Array<{ rowid: bigint; distance: number }>)
           : (this.db.prepare(sql).all(vec, projectId, limit) as Array<{ rowid: bigint; distance: number }>);
       return rows.map((r) => ({ id: Number(r.rowid), distance: r.distance }));
-    } catch {
+    } catch (e) {
+      // Non-fatal — caller falls back to brute-force scan.
+      logger.warn('VecIndex findSimilar failed, returning empty results', {
+        ...(projectId !== undefined ? { projectId } : {}),
+        limit,
+        error: e instanceof Error ? e.message : String(e),
+      });
       return [];
     }
   }
@@ -252,8 +270,12 @@ export class VecIndex {
           );
           ins.run(BigInt(row.id), new Float32Array(floats));
           count++;
-        } catch {
+        } catch (e) {
           // Skip corrupt embedding.
+          logger.warn('VecIndex rebuild: skipping corrupt embedding during rebuild', {
+            fileId: row.id,
+            error: e instanceof Error ? e.message : String(e),
+          });
         }
       }
       logger.debug(`VecIndex rebuild: indexed ${count} embeddings`);

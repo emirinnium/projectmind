@@ -11,6 +11,7 @@
 
 import type { KnowledgeGraph } from '../../storage/knowledge-graph.js';
 import type { FileInfo } from '../../storage/kg/types.js';
+import { logger } from '../../utils/logger.js';
 
 /**
  * System context item with structural metadata.
@@ -98,7 +99,12 @@ export function assembleSystemContext(
         isDirect ? 'system' : 'core',
       );
     }
-  } catch {
+  } catch (e) {
+    // Graph traversal failed — fall back to direct dependents from the KG.
+    logger.error('Failed to compute impact radius via graph traversal, falling back to direct dependents', {
+      fileId,
+      error: e instanceof Error ? e.message : String(e),
+    });
     for (const d of kg.getDependents(fileId)) {
       consider(d, 0.5, 'direct-dependent', 'system');
       considered++;
@@ -114,8 +120,12 @@ export function assembleSystemContext(
         considered++;
       }
     }
-  } catch {
+  } catch (e) {
     // embeddings unavailable → skip silently
+    logger.warn('Failed to find similar files via embeddings, skipping semantic neighbors', {
+      fileId,
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
 
   // ---- Rank + token-budget cap ----------------------------------------

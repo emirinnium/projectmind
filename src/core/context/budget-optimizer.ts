@@ -24,6 +24,7 @@ import type {
 } from './types.js';
 import type { TaskType } from '../search/types.js';
 import { greedySelector, dpSelector, dpApplicable, type SelectionResult } from './knapsack.js';
+import { logger } from '../../utils/logger.js';
 
 /**
  * F31: multiplicative boost for items relevant to the current task type.
@@ -170,7 +171,12 @@ export class ContextBudgetOptimizer {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
       return Math.ceil(content.length / 4);
-    } catch {
+    } catch (e) {
+      // File unreadable or missing — fall back to default token estimate.
+      logger.warn('Failed to read file for token estimation, using default 100 tokens', {
+        filePath,
+        error: e instanceof Error ? e.message : String(e),
+      });
       return 100;
     }
   }

@@ -147,7 +147,12 @@ export class ProjectWatcher {
     let entries: Dirent[];
     try {
       entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
+    } catch (e) {
+      // Directory unreadable (permissions or deleted) — skip subtree.
+      logger.warn('Failed to read directory for watcher tree walk, skipping subtree', {
+        dir,
+        error: e instanceof Error ? e.message : String(e),
+      });
       return;
     }
     for (const entry of entries) {
@@ -175,8 +180,12 @@ export class ProjectWatcher {
   private reconcileRenamed(abs: string): void {
     try {
       if (statSync(abs).isDirectory()) this.watchTree(abs);
-    } catch {
+    } catch (e) {
       // deleted path — its watcher (if any) cleans itself up on error
+      logger.warn('Failed to stat renamed path in watcher, assuming deleted', {
+        path: abs,
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
