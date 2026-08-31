@@ -4,6 +4,8 @@ import type { CacheEntry, CacheOptions } from '../types.js';
 const PURGE_OPERATION_INTERVAL = 100;
 /** Time interval in ms between purge cycles (5 minutes). */
 const PURGE_TIME_INTERVAL_MS = 5 * 60 * 1000;
+/** Fallback size estimate in bytes when serialization fails for memory usage calculation. */
+const FALLBACK_ESTIMATE_SIZE = 100;
 
 /**
  * Handles cache eviction policies (LRU, TTL)
@@ -152,7 +154,7 @@ export class CacheEviction<K, V> {
         size += JSON.stringify(key).length;
         size += this.options.serialize(entry.value).length;
       } catch {
-        size += 100; // fallback estimate
+        size += FALLBACK_ESTIMATE_SIZE;
       }
     }
     return size;
