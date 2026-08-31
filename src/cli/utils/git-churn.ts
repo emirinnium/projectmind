@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { logger } from '../utils/logger.js';
 
 export interface GitChurnEntry {
   count: number;
@@ -36,8 +37,9 @@ export function collectGitChurn(projectRoot: string, sinceDays: number): Map<str
       entry.authors.add(currentAuthor);
       churn.set(normalized, entry);
     }
-  } catch {
+  } catch (e) {
     // Not a git repo / git missing: callers fall back to agent-touch signals.
+    logger.warn(`Failed to collect git churn: ${e instanceof Error ? e.message : String(e)}`);
   }
   return churn;
 }

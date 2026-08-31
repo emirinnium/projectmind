@@ -4,6 +4,7 @@ import { resolve, sep } from 'node:path';
 import type { IntentQuery, IntentType, HybridScore, SearchResult, TaskType } from './types.js';
 import { VecIndex, getVecIndex } from '../embeddings/vector-index.js';
 import { generateEmbedding, codeToEmbeddingAsync } from '../../parser/embeddings.js';
+import { logger } from '../../utils/logger.js';
 
 const DEFAULT_DIMENSION = 768;
 
@@ -232,8 +233,9 @@ export class IntentEngine {
       const fileEmb = await codeToEmbeddingAsync(fileContent, DEFAULT_DIMENSION);
       const sim = cosineSimilarity(queryEmb, fileEmb);
       return { score: Math.max(0, Math.min(1, sim)), source: 'embedding' };
-    } catch {
+    } catch (e) {
       // Graceful lexical fallback
+      logger.warn(`Embedding-based semantic score failed, falling back to lexical: ${e instanceof Error ? e.message : String(e)}`);
       const queryTokens = new Set(queryText.toLowerCase().split(/\W+/).filter(Boolean));
       let fileContent = '';
       try { if (readablePath) fileContent = readFileSync(readablePath, 'utf-8'); } catch { /* ignore */ }

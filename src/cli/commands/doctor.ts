@@ -371,7 +371,9 @@ export function createDoctorCommand(): Command {
           let baseApi: ExportedSymbol[] = [];
           try {
             baseApi = await getApiAtRef('HEAD~1', projectRoot);
-          } catch {}
+          } catch (e) {
+            output.warn(`Failed to get API at HEAD~1 for diff: ${e instanceof Error ? e.message : String(e)}`);
+          }
           
           if (baseApi && baseApi.length > 0) {
             const diff = computeDiff(baseApi, currentApi);

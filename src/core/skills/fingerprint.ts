@@ -8,6 +8,15 @@
 import ts from 'typescript';
 import type { AgentFingerprint, FingerprintMeasured, ErrorHandlingStyle, NamingConvention, TestPattern } from '../../storage/kg/types.js';
 
+/**
+ * Extract the name identifier string from a variable, function, or class declaration.
+ * Returns undefined if the declaration has no name (e.g., anonymous function exports).
+ */
+function getDeclarationName(node: ts.VariableDeclaration | ts.FunctionDeclaration | ts.ClassDeclaration): string | undefined {
+  const name = (node as ts.VariableDeclaration | ts.FunctionDeclaration | ts.ClassDeclaration).name;
+  return name && ts.isIdentifier(name) ? name.text : undefined;
+}
+
 export interface FileEdit {
   filePath: string;
   oldContent?: string;
@@ -91,7 +100,7 @@ export class AgentFingerprintExtractor {
 
       // Naming conventions from declarations
       if (ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) {
-        const name = (node as any).name?.text as string | undefined;
+        const name = getDeclarationName(node);
         if (name) {
           if (/^[A-Z]+(?:_[A-Z0-9]+)+$/.test(name)) screamingSnake++;
           else if (/^[a-z]+(?:_[a-z0-9]+)+$/.test(name)) snake++;
