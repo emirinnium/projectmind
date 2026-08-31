@@ -11,6 +11,7 @@ export { SKILL_CATALOG } from './skill-catalog.js';
 import { Result } from '../../utils/errors.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { getDatabase } from '../../storage/database.js';
+import { logger } from '../../utils/logger.js';
 
 const MAX_EVIDENCE_FILES = 8;
 
@@ -277,7 +278,7 @@ export function persistAgentProfile(agentName: string, fingerprint: AgentFingerp
     stmt.run(pseudonymizeAgentId(agentName), serialized);
     return true;
   } catch (e) {
-    console.warn('persistAgentProfile failed:', e);
+    logger.warn('persistAgentProfile failed', { error: e instanceof Error ? e.message : String(e) });
     return false;
   }
 }
@@ -313,12 +314,12 @@ export function loadAgentProfile(agentName: string, db?: DatabaseSync): Result<A
       const parsed = JSON.parse(row.fingerprint);
       const result = AgentFingerprintSchema.safeParse(parsed);
       if (!result.success) {
-        console.warn('loadAgentProfile zod validation failed:', result.error);
+        logger.warn('loadAgentProfile zod validation failed', { error: result.error.message });
         return { success: false, error: new Error("Agent profile validation failed") };
       }
       return { success: true, value: result.data as AgentFingerprint };
     } catch {
-      console.warn('loadAgentProfile parse failed');
+      logger.warn('loadAgentProfile parse failed');
       return { success: false, error: new Error("Agent profile parse failed") };
     }
   } catch {

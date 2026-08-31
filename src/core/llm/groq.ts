@@ -1,4 +1,4 @@
-import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS } from './types.js';
+import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_TOKENS } from './types.js';
 import { validateApiUrl } from './url-validator.js';
 
 interface GroqUsage {
@@ -21,12 +21,14 @@ export class GroqProvider implements LLMProvider {
   private apiKey: string;
   private apiUrl: string;
   private timeoutMs: number;
+  private maxTokens: number;
 
   constructor(config: LLMConfig) {
     this.model = config.model;
     this.apiKey = config.apiKey || '';
     this.apiUrl = validateApiUrl(config.apiUrl || 'https://api.groq.com/openai/v1', 'groq');
     this.timeoutMs = config.timeoutMs || DEFAULT_TIMEOUT_MS;
+    this.maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS;
   }
 
   isAvailable(): boolean {
@@ -62,7 +64,7 @@ export class GroqProvider implements LLMProvider {
         },
         body: JSON.stringify({
           model: this.model,
-          max_tokens: 4000,
+          max_tokens: this.maxTokens,
           temperature,
           messages,
         }),

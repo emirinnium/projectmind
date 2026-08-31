@@ -1,4 +1,4 @@
-import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS } from './types.js';
+import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_TOKENS } from './types.js';
 import { validateApiUrl } from './url-validator.js';
 
 interface GeminiCandidate {
@@ -23,12 +23,14 @@ export class GeminiProvider implements LLMProvider {
   private apiKey: string;
   private apiUrl: string;
   private timeoutMs: number;
+  private maxTokens: number;
 
   constructor(config: LLMConfig) {
     this.model = config.model;
     this.apiKey = config.apiKey || '';
     this.apiUrl = validateApiUrl(config.apiUrl || 'https://generativelanguage.googleapis.com/v1beta', 'gemini');
     this.timeoutMs = config.timeoutMs || DEFAULT_TIMEOUT_MS;
+    this.maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS;
   }
 
   isAvailable(): boolean {
@@ -56,7 +58,7 @@ export class GeminiProvider implements LLMProvider {
       }
       const requestBody: GeminiRequestBody = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature, maxOutputTokens: 4000 }
+        generationConfig: { temperature, maxOutputTokens: this.maxTokens }
       };
 
       // Gemini API expects systemInstruction as a separate field

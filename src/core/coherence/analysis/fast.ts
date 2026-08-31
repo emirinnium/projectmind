@@ -4,6 +4,13 @@ import { FileInfo } from '../../../storage/knowledge-graph.js';
 import { ContractEngine } from '../../contracts/engine.js';
 import { stableHash } from '../../../utils/hash.js';
 
+// Thresholds for fast-tier coherence analysis
+const MAX_FILE_LINES = 400;
+const MAX_IMPORT_COUNT = 20;
+const MAX_ANY_USAGE = 5;
+const MAX_CONSOLE_COUNT = 3;
+const MAX_DECISION_POINTS = 10;
+
 export interface LLMProvider {
   name: string;
   model: string;
@@ -70,21 +77,21 @@ export class FastCoherenceAnalyzer {
     reasoningTrace.push(...semanticIssues.reasoningTrace);
     suggestions.push(...semanticIssues.suggestions);
 
-    if (lines.length > 400) {
-      reasoningTrace.push(`Warning: File exceeds 400 lines (${lines.length}) — cognitive load concern`);
+    if (lines.length > MAX_FILE_LINES) {
+      reasoningTrace.push(`Warning: File exceeds ${MAX_FILE_LINES} lines (${lines.length}) — cognitive load concern`);
       suggestions.push('Consider splitting this file into smaller modules');
       issues++;
     }
 
     const importCount = (options.code.match(/^\s*import\s+/gm) || []).length;
-    if (importCount > 20) {
+    if (importCount > MAX_IMPORT_COUNT) {
       reasoningTrace.push(`Warning: High import count (${importCount}) — potential coupling issue`);
       suggestions.push('Review imports for unnecessary dependencies');
       issues++;
     }
 
     const anyUsage = (options.code.match(/\bany\b/g) || []).length;
-    if (anyUsage > 5) {
+    if (anyUsage > MAX_ANY_USAGE) {
       reasoningTrace.push(`Warning: Found ${anyUsage} uses of "any" — type safety concern`);
       suggestions.push('Replace "any" with specific types or unknown');
       issues++;
@@ -92,7 +99,7 @@ export class FastCoherenceAnalyzer {
 
     const consoleCount = (options.code.match(/console\.\w+/g) || []).length;
     const isExcludedPath = options.filePath.includes('/cli/commands/') || options.filePath.includes('\\cli\\commands\\') || options.filePath.includes('/scripts/') || options.filePath.includes('\\scripts\\') || options.filePath.includes('/tests/') || options.filePath.includes('\\tests\\');
-    if (consoleCount > 3 && !isExcludedPath) {
+    if (consoleCount > MAX_CONSOLE_COUNT && !isExcludedPath) {
       reasoningTrace.push(`Warning: ${consoleCount} console statements found`);
       suggestions.push('Remove console statements before production');
       issues++;
@@ -216,11 +223,11 @@ export class FastCoherenceAnalyzer {
     const functionBodies = code.match(/function\s*[^{]*{([\s\S]*?)}/g) || [];
     const complexFunctions = functionBodies.filter(body => {
       const decisionPoints = body.match(/\b(if|for|while|case|catch|\?|&&|\|\|)\b/g) || [];
-      return decisionPoints.length > 10;
+      return decisionPoints.length > MAX_DECISION_POINTS;
     });
-    
+
     if (complexFunctions.length > 0) {
-      reasoningTrace.push(`Warning: ${complexFunctions.length} functions with high cyclomatic complexity (>10 decision points)`);
+      reasoningTrace.push(`Warning: ${complexFunctions.length} functions with high cyclomatic complexity (>${MAX_DECISION_POINTS} decision points)`);
       suggestions.push('Refactor complex functions into smaller, more manageable pieces');
       issues += complexFunctions.length;
     }

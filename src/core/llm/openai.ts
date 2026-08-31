@@ -1,4 +1,4 @@
-import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS } from './types.js';
+import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_TOKENS } from './types.js';
 import { validateApiUrl } from './url-validator.js';
 
 export class OpenAIProvider implements LLMProvider {
@@ -7,12 +7,14 @@ export class OpenAIProvider implements LLMProvider {
   private apiKey: string;
   private apiUrl: string;
   private timeoutMs: number;
+  private maxTokens: number;
 
   constructor(config: LLMConfig) {
     this.model = config.model;
     this.apiKey = config.apiKey || '';
     this.apiUrl = validateApiUrl(config.apiUrl || 'https://api.openai.com/v1', 'openai');
     this.timeoutMs = config.timeoutMs || DEFAULT_TIMEOUT_MS;
+    this.maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS;
   }
 
   isAvailable(): boolean {
@@ -48,7 +50,7 @@ export class OpenAIProvider implements LLMProvider {
         },
         body: JSON.stringify({
           model: this.model,
-          max_tokens: 4000,
+          max_tokens: this.maxTokens,
           temperature,
           messages,
         }),
