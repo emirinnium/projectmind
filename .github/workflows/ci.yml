@@ -54,14 +54,15 @@ jobs:
           key: projectmind-cache-${{ hashFiles('.projectmindrc.json') }}-${{ hashFiles('src/**/*.ts') }}
       - run: npm ci --legacy-peer-deps
       - run: npm run build
-      - run: node -e "
-const { initDatabase } = require('./dist/storage/database-core.js');
-const db = initDatabase('.projectmind/pm-knowledge.db');
-const { KnowledgeGraph } = require('./dist/storage/kg/graph.js');
-const kg = new KnowledgeGraph(db);
-const cycles = kg.findCircularDependencies();
-process.exit(cycles.length > 0 ? 1 : 0);
-"
+      - run: |
+          node -e "
+          const { initDatabase } = require('./dist/storage/database-core.js');
+          const db = initDatabase('.projectmind/pm-knowledge.db');
+          const { KnowledgeGraph } = require('./dist/storage/kg/graph.js');
+          const kg = new KnowledgeGraph(db);
+          const cycles = kg.findCircularDependencies();
+          process.exit(cycles.length > 0 ? 1 : 0);
+          "
 
   health:
     runs-on: ubuntu-latest
