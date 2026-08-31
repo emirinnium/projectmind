@@ -164,7 +164,8 @@ export class ProjectWatcher {
         this.reconcileRenamed(resolve(d, filename.toString()));
       }
     });
-    w.on('error', () => {
+    w.on('error', (error) => {
+      logger.warn(`Directory watcher error for ${d}:`, { error: error instanceof Error ? error.message : String(error) });
       w.close();
       this.dirWatchers.delete(d);
     });
@@ -231,8 +232,9 @@ export class ProjectWatcher {
 
     try {
       this.options.onBatchProcessed?.({ updated, failed });
-    } catch {
+    } catch (error) {
       // consumer callback errors must not kill the watch loop
+      logger.warn('Watcher onBatchProcessed callback failed:', { error: error instanceof Error ? error.message : String(error) });
     }
   }
 }

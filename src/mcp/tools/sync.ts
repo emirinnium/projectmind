@@ -60,7 +60,9 @@ export function startLiveWatch(deps: McpDependencies, filePath: string, agentId:
             const rel = norm.startsWith(root) ? norm.slice(root.length + 1) : norm;
             void Promise.resolve(deps.kg.upsertFile(struct, rel))
               .then((fileId) => deps.kg.storeFileDetails(fileId, struct))
-              .catch(() => {});
+              .catch((error) => {
+                logger.warn(`Watcher KG upsert failed for ${rel}:`, { error: error instanceof Error ? error.message : String(error) });
+              });
           }
         } catch {
           // Refresh is opportunistic — never crash the watcher.
