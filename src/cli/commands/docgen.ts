@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { withService, asyncHandler, output, logger } from '@/cli/utils/shared.js';
 import { loadConfig } from '@/cli/utils/shared.js';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
-import { join, dirname } from '@/cli/utils/shared.js';
+import { join, dirname } from 'node:path';
 
 interface DocgenReport {
   modules: Array<{ path: string; fileCount: number }>;
