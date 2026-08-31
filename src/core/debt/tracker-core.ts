@@ -4,6 +4,7 @@ import { SCHEMA_SQL } from '../../storage/schema.js';
 import { KnowledgeGraph } from '../../storage/knowledge-graph.js';
 import { CoherenceEngine } from '../coherence/engine.js';
 import { loadConfig } from '../../utils/config.js';
+import { logger } from '../../utils/logger.js';
 import type { RedundancyDetector } from './detection/interfaces.js';
 import type { PatternDriftDetector } from './detection/interfaces.js';
 import type { ArchitecturalDriftDetector } from './detection/interfaces.js';
@@ -17,6 +18,7 @@ import { ArchitecturalDriftDetector as ArchitecturalDriftDetectorImpl } from './
 import { DebtPersistence as DebtPersistenceImpl } from './detection/persistence.js';
 import { GenomeComputer as GenomeComputerImpl } from './detection/genome.js';
 import { collectGitChurn, type GitChurnEntry } from './git-churn.js';
+import { COGNITIVE_LOAD_THRESHOLD } from './index.js';
 import { readFileSync } from 'node:fs';
 import type { FileInfo } from '../../storage/knowledge-graph.js';
 
@@ -74,7 +76,9 @@ export class DebtTracker {
         const content = readFileSync(file.path, 'utf-8');
         fileContents.set(file.path, content);
       } catch (e) {
-        // debug logging would go here
+        logger.warn(`Failed to read file contents for debt analysis: ${file.path}`, {
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
     });
     await Promise.all(readPromises);
@@ -212,7 +216,7 @@ export class DebtTracker {
 
     // 3. Cognitive Load Analysis — tiered scheme (consistent with architecture.ts)
     if (file.cognitiveLoad) {
-      if (file.cognitiveLoad > 0.7) {
+      if (file.cognitiveLoad > COGNITIVE_LOAD_THRESHOLD) {
         reasoningTrace.push(`High cognitive load detected (${file.cognitiveLoad})`);
         items.push(this.persistence.createDebtItem({
           type: 'cognitive_load',

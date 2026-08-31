@@ -1,6 +1,7 @@
 import type { DebtItem } from './detection/persistence.js';
 import type { FileInfo } from '../../storage/knowledge-graph.js';
 import type { GitChurnEntry } from './git-churn.js';
+import { COGNITIVE_LOAD_THRESHOLD } from './index.js';
 
 /**
  * Technical debt analysis detectors.
@@ -71,7 +72,7 @@ export function analyzeTechnicalDebt(
 
   // 3. Cognitive Load Analysis — tiered scheme (consistent with architecture.ts and tracker-core.ts)
     if (file.cognitiveLoad) {
-      if (file.cognitiveLoad > 0.7) {
+      if (file.cognitiveLoad > COGNITIVE_LOAD_THRESHOLD) {
         reasoningTrace.push(`High cognitive load detected (${file.cognitiveLoad})`);
         items.push({
           id: 0,
