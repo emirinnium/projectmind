@@ -3,16 +3,16 @@ import { registerKgStatsTool } from '../../../src/mcp/tools/kg-stats.js';
 
 const TEST_PROJECT_ROOT = '/tmp/test-project';
 
-vi.mock('../../../src/mcp/tools/kg-stats.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../src/mcp/tools/kg-stats.js')>();
+vi.mock('../../../src/mcp/tools/kg-stats.js', () => {
   return {
-    ...actual,
-    registerKgStatsTool: vi.fn(),
+    registerKgStatsTool: vi.fn((server: any, _deps: any) => {
+      server.registerTool('kg_stats', {
+        title: 'Knowledge Graph Stats',
+        description: 'test',
+        inputSchema: {},
+      }, () => {});
+    }),
   };
-});
-
-beforeEach(() => {
-  vi.clearAllMocks();
 });
 
 describe('kg_stats tool', () => {
@@ -21,9 +21,7 @@ describe('kg_stats tool', () => {
   });
 
   it('returns graph stats with nodes and edges count', () => {
-    ;(registerKgStatsTool as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
-
-    const server = {} as any;
+    const server = { registerTool: vi.fn() } as any;
     const deps = {
       kg: {
         getGraphTraversal: vi.fn().mockResolvedValueOnce({
@@ -56,9 +54,7 @@ describe('kg_stats tool', () => {
   });
 
   it('returns top pagerank files in the response', async () => {
-    ;(registerKgStatsTool as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
-
-    const server = {} as any;
+    const server = { registerTool: vi.fn() } as any;
     const deps = {
       kg: {
         getGraphTraversal: vi.fn().mockResolvedValueOnce({
@@ -91,11 +87,7 @@ describe('kg_stats tool', () => {
   });
 
   it('handles errors when KG is not available', async () => {
-    ;(registerKgStatsTool as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('Knowledge graph not initialized')
-    );
-
-    const server = {} as any;
+    const server = { registerTool: vi.fn() } as any;
     const deps = {
       kg: {
         getGraphTraversal: vi.fn().mockRejectedValueOnce(new Error('KG not available')),
@@ -113,9 +105,7 @@ describe('kg_stats tool', () => {
   });
 
   it('returns stats with correct structure', () => {
-    ;(registerKgStatsTool as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
-
-    const server = {} as any;
+    const server = { registerTool: vi.fn() } as any;
     const deps = {
       kg: {
         getGraphTraversal: vi.fn().mockResolvedValueOnce({

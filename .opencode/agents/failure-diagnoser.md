@@ -3,7 +3,7 @@ description: >
   Determines the root cause of failed implementation, tests, builds or
   verification.
 mode: subagent
-model: 'kilo/nvidia/nemotron-3-super-120b-a12b:free'
+model: 'kilo/meituan/longcat-2.0-free'
 permission:
   read: allow
   glob: allow

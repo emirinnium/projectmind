@@ -3,15 +3,9 @@ import { basename, dirname } from 'node:path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
-import type { CodeChange, PredictorConfig, PredictedFailure } from '../../core/predictive/types.js';
-
-/** Default predictor tuning — mirrors the `doctor scan-health` config. */
-const DEFAULT_PREDICTOR_CONFIG: PredictorConfig = {
-  bayesianPrior: 0.5,
-  crossModuleWeight: 0.8,
-  confidenceThreshold: 0.7,
-  modelUpdateRate: 0.1,
-};
+import { DEFAULT_PREDICTOR_CONFIG } from '../../core/predictive/config.js';
+import type { CodeChange, PredictedFailure } from '../../core/predictive/types.js';
+import { getOverallRiskLevel } from '../../core/predictive/risk-levels.js';
 
 /** Input accepted by the predict_impact_risk tool. */
 export interface PredictImpactRiskArgs {
@@ -23,15 +17,6 @@ export interface PredictImpactRiskArgs {
   previousContent?: string;
   /** Maximum predicted failures to return. */
   limit?: number;
-}
-
-/** Determine overall risk level from a set of predicted failures. */
-function overallRiskLevel(failures: PredictedFailure[]): 'low' | 'medium' | 'high' | 'critical' {
-  const levels = failures.map(f => f.riskLevel);
-  if (levels.includes('critical')) return 'critical';
-  if (levels.includes('high')) return 'high';
-  if (levels.includes('medium')) return 'medium';
-  return 'low';
 }
 
 /**
@@ -58,7 +43,7 @@ export function predictImpactForTool(deps: McpDependencies, args: PredictImpactR
   return {
     success: true,
     filePath: args.filePath,
-    riskLevel: overallRiskLevel(failures),
+    riskLevel: getOverallRiskLevel(failures.map(f => f.riskLevel ?? 'low')),
     failures,
     failureCount: failures.length,
   };

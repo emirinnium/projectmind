@@ -4,6 +4,11 @@ import { execSync } from 'node:child_process';
 // Track the mock implementation for predictTestBreaks
 let mockPredictTestBreaksImpl: ReturnType<typeof vi.fn>;
 
+// Track mock implementations for api-surface-utils (Gate 5)
+let mockExtractApiSurface: ReturnType<typeof vi.fn>;
+let mockGetApiAtRef: ReturnType<typeof vi.fn>;
+let mockComputeDiff: ReturnType<typeof vi.fn>;
+
 // Mock execSync from node:child_process
 vi.mock('node:child_process', () => {
   return {
@@ -46,6 +51,19 @@ vi.mock('../../src/storage/database.js', () => {
   };
 });
 
+// Mock the api-surface-utils module (Gate 5) with safe defaults.
+// Use mutable references so tests can override implementations.
+vi.mock('../../src/cli/commands/api-surface-utils.js', () => {
+  mockExtractApiSurface = vi.fn().mockResolvedValue([]);
+  mockGetApiAtRef = vi.fn().mockResolvedValue([]);
+  mockComputeDiff = vi.fn().mockReturnValue({ breaking: [] });
+  return {
+    extractApiSurface: mockExtractApiSurface,
+    getApiAtRef: mockGetApiAtRef,
+    computeDiff: mockComputeDiff,
+  };
+});
+
 // Mock the shared utils
 vi.mock('../../src/cli/utils/shared.js', () => {
   return {
@@ -78,6 +96,16 @@ describe('autopilot pre-commit', () => {
     if (mockPredictTestBreaksImpl) {
       mockPredictTestBreaksImpl.mockReturnValue([]);
     }
+    // Re-setup the api-surface-utils mock implementations (Gate 5).
+    if (mockExtractApiSurface) {
+      mockExtractApiSurface.mockResolvedValue([]);
+    }
+    if (mockGetApiAtRef) {
+      mockGetApiAtRef.mockResolvedValue([]);
+    }
+    if (mockComputeDiff) {
+      mockComputeDiff.mockReturnValue({ breaking: [] });
+    }
     const shared = await import('../../src/cli/utils/shared.js');
     mockOutput = shared.output;
   });
@@ -95,6 +123,7 @@ describe('autopilot pre-commit', () => {
     format?: string;
     impactRiskThreshold?: string;
     skipImpactCheck?: boolean;
+    allowBreakingApi?: boolean;
   }): Promise<{ exitCode: number | null; outputMock: any }> {
     // Spy on process.exit to capture gate failures without actually exiting.
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
@@ -111,6 +140,7 @@ describe('autopilot pre-commit', () => {
     if (opts.format !== undefined) args.push('--format', opts.format);
     if (opts.impactRiskThreshold !== undefined) args.push('--impact-risk-threshold', opts.impactRiskThreshold);
     if (opts.skipImpactCheck) args.push('--skip-impact-check');
+    if (opts.allowBreakingApi) args.push('--allow-breaking-api');
 
     let exitCode: number | null = null;
     try {
@@ -171,9 +201,12 @@ describe('autopilot pre-commit', () => {
 
       const { exitCode, outputMock } = await runPreCommitAction({});
 
-      // Gate should pass (timeout/error is treated as unknown, not failure).
-      expect(exitCode).toBeNull();
-      expect(outputMock.success).toHaveBeenCalledWith('All gates passed.');
+      // Fail closed: when staged files cannot be determined, the gate must fail.
+      expect(exitCode).toBe(1);
+      expect(outputMock.kv).toHaveBeenCalledWith(
+        expect.stringContaining('Impact risk'),
+        expect.stringContaining('could not determine staged files')
+      );
     });
 
     it('filters staged files to TypeScript/JavaScript extensions', async () => {
@@ -382,6 +415,75 @@ describe('autopilot pre-commit', () => {
       expect(riskLevels.has('medium')).toBe(true);
       expect(riskLevels.has('high')).toBe(true);
       expect(riskLevels.has('critical')).toBe(true);
+    });
+  });
+
+  describe('runGates - API surface compatibility gate', () => {
+    it('fails when breaking API changes detected', async () => {
+      mockExecSync.mockReturnValue('src/foo.ts\n');
+      // Provide a base API reference so the diff is computed.
+      mockGetApiAtRef.mockResolvedValue([{ name: 'existingFn', relativePath: 'src/foo.ts', type: 'function' }]);
+      mockComputeDiff.mockReturnValue({
+        breaking: [{ name: 'foo', relativePath: 'src/foo.ts', type: 'function' }],
+      });
+
+      const { exitCode, outputMock } = await runPreCommitAction({});
+
+      expect(exitCode).toBe(1);
+      expect(outputMock.error).toHaveBeenCalledWith(
+        expect.stringContaining('Gate FAILED')
+      );
+      expect(outputMock.kv).toHaveBeenCalledWith(
+        expect.stringContaining('API surface'),
+        expect.stringContaining('breaking')
+      );
+    });
+
+    it('passes when no breaking changes', async () => {
+      mockExecSync.mockReturnValue('src/foo.ts\n');
+      // Provide a base API reference so the diff is computed.
+      mockGetApiAtRef.mockResolvedValue([{ name: 'existingFn', relativePath: 'src/foo.ts', type: 'function' }]);
+      mockComputeDiff.mockReturnValue({ breaking: [] });
+
+      const { exitCode, outputMock } = await runPreCommitAction({});
+
+      expect(exitCode).toBeNull();
+      expect(outputMock.success).toHaveBeenCalledWith('All gates passed.');
+      expect(outputMock.kv).toHaveBeenCalledWith(
+        expect.stringContaining('API surface'),
+        expect.stringContaining('no breaking API changes')
+      );
+    });
+
+    it('is skipped with --allow-breaking-api', async () => {
+      mockExecSync.mockReturnValue('src/foo.ts\n');
+
+      const { exitCode, outputMock } = await runPreCommitAction({
+        allowBreakingApi: true,
+      });
+
+      expect(exitCode).toBeNull();
+      expect(outputMock.success).toHaveBeenCalledWith('All gates passed.');
+      expect(outputMock.kv).toHaveBeenCalledWith(
+        expect.stringContaining('API surface'),
+        expect.stringContaining('API surface check skipped')
+      );
+      // computeDiff should NOT have been called when gate is bypassed
+      expect(mockComputeDiff).not.toHaveBeenCalled();
+    });
+
+    it('passes when no base API reference (first commit scenario)', async () => {
+      mockExecSync.mockReturnValue('src/foo.ts\n');
+      mockGetApiAtRef.mockResolvedValue([]);
+
+      const { exitCode, outputMock } = await runPreCommitAction({});
+
+      expect(exitCode).toBeNull();
+      expect(outputMock.success).toHaveBeenCalledWith('All gates passed.');
+      expect(outputMock.kv).toHaveBeenCalledWith(
+        expect.stringContaining('API surface'),
+        expect.stringContaining('no base API reference')
+      );
     });
   });
 });

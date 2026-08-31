@@ -3,7 +3,7 @@ description: >
   Analyzes ProjectMind architecture, defects, technical debt and implementation
   state. Read-only.
 mode: subagent
-model: 'kilo/nvidia/nemotron-3-super-120b-a12b:free'
+model: 'kilo/cohere/north-mini-code:free'
 permission:
   read: allow
   glob: allow

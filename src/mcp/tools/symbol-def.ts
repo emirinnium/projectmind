@@ -6,6 +6,24 @@ import type { McpDependencies } from './types.js';
 import { createProjectLanguageService } from '@/cli/utils/language-service.js';
 import { confineToProject } from './_shared.js';
 
+const SYMBOL_PATTERNS: ReadonlyArray<{ pattern: RegExp; kind: string }> = [
+  { pattern: /(?:^|\s)export\s+const\s/, kind: 'const' },
+  { pattern: /(?:^|\s)export\s+let\s/, kind: 'let' },
+  { pattern: /(?:^|\s)export\s+function\s/, kind: 'function' },
+  { pattern: /(?:^|\s)export\s+class\s/, kind: 'class' },
+  { pattern: /(?:^|\s)export\s+interface\s/, kind: 'interface' },
+  { pattern: /(?:^|\s)export\s+type\s/, kind: 'type' },
+  { pattern: /(?:^|\s)export\s+enum\s/, kind: 'enum' },
+  { pattern: /(?:^|\s)const\s/, kind: 'const' },
+  { pattern: /(?:^|\s)let\s/, kind: 'let' },
+  { pattern: /(?:^|\s)function\s/, kind: 'function' },
+  { pattern: /(?:^|\s)class\s/, kind: 'class' },
+  { pattern: /(?:^|\s)interface\s/, kind: 'interface' },
+  { pattern: /(?:^|\s)type\s/, kind: 'type' },
+  { pattern: /(?:^|\s)enum\s/, kind: 'enum' },
+  { pattern: /(?:^|\s)var\s/, kind: 'var' },
+];
+
 /**
  * find_symbol_definition — locate the definition of a symbol in a file
  * using the REAL TypeScript language service (not string matching).
@@ -138,27 +156,11 @@ function guessSymbolKind(sourceText: string, charOffset: number): string {
   const before = sourceText.slice(0, charOffset);
   const lastNewline = before.lastIndexOf('\n');
   const line = lastNewline === -1 ? before : before.slice(lastNewline + 1);
+  const trimmed = line.trim() + ' ';
 
-  // Match common patterns: `const x =`, `let x =`, `function x`, `class x`,
-  // `interface x`, `type x`, `var x`, `export const x`, etc.
-  const trimmed = line.trim();
-
-  if (/(?:^|\s)export\s+const\s/.test(trimmed + ' ')) return 'const';
-  if (/(?:^|\s)export\s+let\s/.test(trimmed + ' ')) return 'let';
-  if (/(?:^|\s)export\s+function\s/.test(trimmed + ' ')) return 'function';
-  if (/(?:^|\s)export\s+class\s/.test(trimmed + ' ')) return 'class';
-  if (/(?:^|\s)export\s+interface\s/.test(trimmed + ' ')) return 'interface';
-  if (/(?:^|\s)export\s+type\s/.test(trimmed + ' ')) return 'type';
-  if (/(?:^|\s)export\s+enum\s/.test(trimmed + ' ')) return 'enum';
-  if (/(?:^|\s)const\s/.test(trimmed + ' ')) return 'const';
-  if (/(?:^|\s)let\s/.test(trimmed + ' ')) return 'let';
-  if (/(?:^|\s)function\s/.test(trimmed + ' ')) return 'function';
-  if (/(?:^|\s)class\s/.test(trimmed + ' ')) return 'class';
-  if (/(?:^|\s)interface\s/.test(trimmed + ' ')) return 'interface';
-  if (/(?:^|\s)type\s/.test(trimmed + ' ')) return 'type';
-  if (/(?:^|\s)enum\s/.test(trimmed + ' ')) return 'enum';
-  if (/(?:^|\s)var\s/.test(trimmed + ' ')) return 'var';
-
+  for (const { pattern, kind } of SYMBOL_PATTERNS) {
+    if (pattern.test(trimmed)) return kind;
+  }
   return 'identifier';
 }
 

@@ -6,7 +6,8 @@ import { execSync } from 'node:child_process';
 import { getStatement } from '../../storage/database.js';
 import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
 import { DEFAULT_PREDICTOR_CONFIG } from '../../core/predictive/config.js';
-import type { PredictorConfig } from '../../core/predictive/types.js';
+import { isRiskAtOrAbove, isValidRiskLevel, VALID_RISK_LEVELS } from '../../core/predictive/risk-levels.js';
+import type { RiskLevel } from '../../core/predictive/risk-levels.js';
 
 /**
  * Agent Autopilot — turns AGENTS.md guidance into ENFORCEMENT.
@@ -24,34 +25,14 @@ interface GateResult {
   detail: string;
 }
 
-/**
- * Risk level ordering for comparison.
- * Each level includes all higher levels (e.g., 'high' includes 'critical').
- */
-type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 
-const RISK_ORDER: Record<RiskLevel, number> = {
-  low: 0,
-  medium: 1,
-  high: 2,
-  critical: 3,
-};
 
-const VALID_RISK_LEVELS: readonly RiskLevel[] = ['low', 'medium', 'high', 'critical'];
-
-function isRiskAtOrAbove(risk: RiskLevel, threshold: RiskLevel): boolean {
-  return RISK_ORDER[risk] >= RISK_ORDER[threshold];
-}
-
-function isValidRiskLevel(value: string): value is RiskLevel {
-  return VALID_RISK_LEVELS.includes(value as RiskLevel);
-}
-
-function runGates(
+async function runGates(
   minGenome: number,
   impactRiskThreshold: RiskLevel = 'high',
-  skipImpactCheck: boolean = false
-): GateResult[] {
+  skipImpactCheck: boolean = false,
+  allowBreakingApi: boolean = false
+): Promise<GateResult[]> {
   const gates: GateResult[] = [];
 
   // Gate 1: no high-severity debt items open.
@@ -192,10 +173,11 @@ function runGates(
       } else {
         impactRiskDetail = 'no staged code files to analyze';
       }
-    } catch {
-      // Treat timeout/error as unknown — pass the gate but note the issue
-      impactRiskPassed = true;
-      impactRiskDetail = 'could not determine staged files (timeout/error)';
+    } catch (error) {
+      // Fail closed: if we can't determine staged files, we cannot verify safety.
+      // Report as failed with an actionable message.
+      impactRiskPassed = false;
+      impactRiskDetail = `could not determine staged files (${error instanceof Error ? error.message : String(error)}) — resolve git state or use --skip-impact-check`;
     }
   }
 
@@ -203,6 +185,81 @@ function runGates(
     name: `Impact risk (≥${impactRiskThreshold})`,
     passed: impactRiskPassed,
     detail: impactRiskDetail,
+  });
+
+  // Gate 5: API surface compatibility check
+  let apiSurfacePassed = true;
+  let apiSurfaceDetail = 'no staged code files to analyze';
+
+  if (allowBreakingApi) {
+    apiSurfacePassed = true;
+    apiSurfaceDetail = 'API surface check skipped (--allow-breaking-api)';
+  } else {
+    try {
+      const projectRoot = loadConfig().projectRoot || process.cwd();
+
+      const staged = execSync('git diff --cached --name-only --diff-filter=ACM', {
+        encoding: 'utf8',
+        timeout: 5000,
+        cwd: projectRoot,
+      })
+        .trim()
+        .split('\n')
+        .filter(f => f.length > 0);
+
+      const codeFiles = staged.filter(f =>
+        f.endsWith('.ts') || f.endsWith('.js') || f.endsWith('.tsx') || f.endsWith('.jsx')
+      );
+
+      if (codeFiles.length > 0) {
+        const { extractApiSurface, getApiAtRef, computeDiff } = await import('./api-surface-utils.js');
+
+        const stagedFiles = codeFiles.map(f => ({
+          path: join(projectRoot, f),
+          relativePath: f.replace(/\\/g, '/')
+        }));
+
+        const currentApi = await extractApiSurface(stagedFiles, projectRoot);
+        const baseApi = await getApiAtRef('HEAD~1', projectRoot);
+
+        if (baseApi.length > 0) {
+          const diff = computeDiff(baseApi, currentApi);
+
+          if (diff.breaking.length > 0) {
+            apiSurfacePassed = false;
+            const lines: string[] = [];
+            lines.push(`❌ API Surface Gate Failed (${diff.breaking.length} breaking change(s))`);
+            lines.push('Breaking changes detected:');
+            for (const sym of diff.breaking.slice(0, 10)) {
+              lines.push(`- ${sym.name} (${sym.relativePath}) - ${sym.type}`);
+            }
+            if (diff.breaking.length > 10) {
+              lines.push(`... and ${diff.breaking.length - 10} more breaking changes`);
+            }
+            lines.push('');
+            lines.push('Suggested Actions:');
+            lines.push('- Review API changes with `pm api-surface --base HEAD~1`');
+            lines.push('- Use --allow-breaking-api to bypass this gate if intentional');
+            lines.push('- Consider semantic version bump (major) for breaking changes');
+            apiSurfaceDetail = lines.join('\n');
+          } else {
+            apiSurfaceDetail = `no breaking API changes in ${codeFiles.length} staged file(s)`;
+          }
+        } else {
+          apiSurfaceDetail = 'no base API reference (first commit or no HEAD~1)';
+          apiSurfacePassed = true;
+        }
+      }
+    } catch (error) {
+      apiSurfacePassed = false;
+      apiSurfaceDetail = `could not compute API surface diff (${error instanceof Error ? error.message : String(error)}) — resolve git state or use --allow-breaking-api`;
+    }
+  }
+
+  gates.push({
+    name: 'API surface compatibility',
+    passed: apiSurfacePassed,
+    detail: apiSurfaceDetail,
   });
 
   return gates;
@@ -227,11 +284,17 @@ export function createAutopilotCommand(): Command {
       'Skip impact risk gate (useful for performance)',
       false
     )
+    .option(
+      '--allow-breaking-api',
+      'Allow breaking API surface changes (bypasses Gate 5)',
+      false
+    )
     .action(asyncHandler(async (opts: {
       minGenome: string;
       format: string;
       impactRiskThreshold?: string;
       skipImpactCheck?: boolean;
+      allowBreakingApi?: boolean;
     }) => {
       // Validate --impact-risk-threshold value before proceeding.
       const rawThreshold = opts.impactRiskThreshold || 'high';
@@ -247,10 +310,11 @@ export function createAutopilotCommand(): Command {
 
       // withService initializes the DB layer that runGates' statements need.
       await withService(['debt'], async () => {
-        const gates = runGates(
+        const gates = await runGates(
           parseInt(opts.minGenome, 10),
           threshold,
-          opts.skipImpactCheck || false
+          opts.skipImpactCheck || false,
+          opts.allowBreakingApi || false
         );
         const failed = gates.filter((g) => !g.passed);
         const allPassed = failed.length === 0;
@@ -312,7 +376,7 @@ export function createAutopilotCommand(): Command {
         // Windows filesystems may ignore chmod — git still executes the hook.
       }
       output.success(`✓ Pre-commit hook installed at ${hookPath}`);
-      output.kv('Gate', 'pm autopilot pre-commit (high-debt, cycles, genome threshold)');
+      output.kv('Gate', 'pm autopilot pre-commit (high-debt, cycles, genome threshold, API surface)');
       output.info('Use --uninstall to remove.');
     }));
 

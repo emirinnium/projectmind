@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFileSync } from 'node:child_process';
+import { computeRiskLevel } from './risk-levels.js';
 
 // Note on git history reliability (Question 6):
 // `git log --follow` is reliable for simple renames but has edge cases with
@@ -30,6 +31,16 @@ export class ImpactPredictor {
     if (change.diffText !== undefined) return change.diffText;
     try {
       const gitPath = change.filePath.replace(/\\/g, '/');
+      // Security hardening: reject paths that could be used for injection or
+      // traversal outside the repo. execFileSync with an argument array is
+      // already safe against shell metacharacters, but we additionally block
+      // null bytes and `..` segments that would escape the working tree.
+      if (gitPath.includes('\0')) {
+        return '';
+      }
+      if (gitPath.split('/').includes('..')) {
+        return '';
+      }
       // execFileSync with an argument array — filePath is user-controlled
       // (reachable via the predict_impact MCP tool) and must never be
       // interpolated into a shell command string. stderr is ignored so a
@@ -292,13 +303,7 @@ export class ImpactPredictor {
   }
 
   computeRiskLevel(failures: PredictedFailure[]): 'low' | 'medium' | 'high' | 'critical' {
-    const highConf = failures.filter(f => f.confidence >= 0.7).length;
-    const criticalConf = failures.filter(f => f.confidence >= 0.9).length;
-    const total = failures.length;
-    if (criticalConf > 0 || total >= 20) return 'critical';
-    if (highConf > 0 || total >= 10) return 'high';
-    if (total >= 3) return 'medium';
-    return 'low';
+    return computeRiskLevel(failures);
   }
 
   predictTestBreaks(change: CodeChange): PredictedFailure[] {

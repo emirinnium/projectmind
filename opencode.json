@@ -44,7 +44,7 @@
     }
   },
 
-  "model": "kilo/nvidia/nemotron-3-super-120b-a12b:free",
+  "model": "kilo/meituan/longcat-2.0-free",
   "small_model": "kilo/nvidia/nemotron-3.5-lightning:free",
 
   "instructions": [],

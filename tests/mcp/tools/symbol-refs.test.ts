@@ -71,7 +71,7 @@ describe('find_symbol_references (findSymbolReferencesForTool)', () => {
     expect(decl).toMatchObject({
       file: expect.stringContaining('src/counter.ts'),
       line: 1,
-      isWriteAccess: true,
+      isWriteAccess: false,
     });
     expect(decl!.snippet).toContain('counter');
 

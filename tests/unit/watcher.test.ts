@@ -47,6 +47,7 @@ describe('ProjectWatcher — cross-platform recursive watching', () => {
       storeFileDetails: async () => {},
     };
     const watcher = new ProjectWatcher(kg, { root: dir });
+    watcher.start();
 
     expect(watcher.isTrackable(join(dir, 'src/a.ts'))).toBe(true);
     expect(watcher.isTrackable(join(dir, 'node_modules/x.ts'))).toBe(false);

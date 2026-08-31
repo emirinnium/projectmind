@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { evaluateContracts } from '../../../src/mcp/tools/contracts.js';
@@ -31,6 +31,7 @@ describe('check_contracts (evaluateContracts)', () => {
 
   it('reports a no-eval violation for a single file containing a dynamic-execution call', async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'pm-contracts-'));
+    await mkdir(join(tmpRoot, 'src'), { recursive: true });
     const filePath = join(tmpRoot, 'src', 'bad.ts');
     await writeFile(filePath, `const x = ${EVAL_CALL}userInput);\n`, 'utf-8');
 
@@ -54,6 +55,7 @@ describe('check_contracts (evaluateContracts)', () => {
 
   it('returns no violations for a clean file', async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'pm-contracts-'));
+    await mkdir(join(tmpRoot, 'src'), { recursive: true });
     const filePath = join(tmpRoot, 'src', 'clean.ts');
     await writeFile(filePath, 'export function ok() { return 1; }\n', 'utf-8');
 
@@ -69,6 +71,7 @@ describe('check_contracts (evaluateContracts)', () => {
 
   it('scans the whole project when scope is project', async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'pm-contracts-'));
+    await mkdir(join(tmpRoot, 'src'), { recursive: true });
     await writeFile(join(tmpRoot, 'src', 'a.ts'), `const a = ${EVAL_CALL}x);\n`, 'utf-8');
     await writeFile(join(tmpRoot, 'src', 'b.ts'), 'export const b = 2;\n', 'utf-8');
 
@@ -83,6 +86,7 @@ describe('check_contracts (evaluateContracts)', () => {
 
   it('filters violations by severity', async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'pm-contracts-'));
+    await mkdir(join(tmpRoot, 'src'), { recursive: true });
     await writeFile(join(tmpRoot, 'src', 'a.ts'), `const a = ${EVAL_CALL}x);\n`, 'utf-8');
 
     // no-eval is severity 'error'; filtering to 'warning' should drop it.

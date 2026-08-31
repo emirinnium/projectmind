@@ -4,7 +4,7 @@ description: >
   manages the development state machine. Delegates ALL engineering work;
   never implements, analyzes, or verifies directly.
 mode: primary
-model: 'kilo/nvidia/nemotron-3-super-120b-a12b:free'
+model: 'kilo/meituan/longcat-2.0-free'
 color: '#ffb000'
 steps: 200
 permission:

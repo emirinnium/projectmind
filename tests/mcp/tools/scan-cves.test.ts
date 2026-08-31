@@ -46,7 +46,7 @@ describe('scan_cves tool', () => {
       signal: null,
     });
 
-    const server = {} as McpServer;
+    const server = { registerTool: vi.fn() } as unknown as McpServer;
     const deps: McpDependencies = {
       kg: {} as any,
       coherence: {} as any,
@@ -96,7 +96,7 @@ describe('scan_cves tool', () => {
       stderr: Buffer.from(''),
     });
 
-    const server = {} as McpServer;
+    const server = { registerTool: vi.fn() } as unknown as McpServer;
     const deps: McpDependencies = {
       kg: {} as any,
       coherence: {} as any,
@@ -112,8 +112,9 @@ describe('scan_cves tool', () => {
     const registeredCfg = (server.registerTool as unknown).mock.calls[0]?.[1];
     expect(registeredCfg?.inputSchema?.fix).toBeDefined();
     expect(registeredCfg?.inputSchema?.level).toBeDefined();
-    expect(registeredCfg?.inputSchema?.fix?.default).toBe(false);
-    expect(registeredCfg?.inputSchema?.level?.default).toBe('moderate');
+    // Zod schema: default value is exposed via _def.defaultValue getter
+    expect(registeredCfg?.inputSchema?.fix?._def?.defaultValue).toBe(false);
+    expect(registeredCfg?.inputSchema?.level?._def?.defaultValue).toBe('moderate');
   });
 
   it('filters vulnerabilities by level', () => {
@@ -153,7 +154,7 @@ describe('scan_cves tool', () => {
       stderr: Buffer.from(''),
     });
 
-    const server = {} as McpServer;
+    const server = { registerTool: vi.fn() } as unknown as McpServer;
     const deps: McpDependencies = {
       kg: {} as any,
       coherence: {} as any,
@@ -171,6 +172,7 @@ describe('scan_cves tool', () => {
   });
 
   it('handles error when npm is not available', () => {
+    const output = '{}';
     vi.mocked(spawnSync).mockReturnValueOnce({
       status: 0,
       stdout: Buffer.from(output),
@@ -180,7 +182,7 @@ describe('scan_cves tool', () => {
       signal: null,
     });
 
-    const server = {} as McpServer;
+    const server = { registerTool: vi.fn() } as unknown as McpServer;
     const deps: McpDependencies = {
       kg: {} as any,
       coherence: {} as any,
@@ -198,7 +200,7 @@ describe('scan_cves tool', () => {
   });
 
   it('has input schema with fix and level options', () => {
-    const server = {} as McpServer;
+    const server = { registerTool: vi.fn() } as unknown as McpServer;
     const deps: McpDependencies = {
       kg: {} as any,
       coherence: {} as any,
@@ -213,11 +215,12 @@ describe('scan_cves tool', () => {
     const registeredCfg = (server.registerTool as unknown).mock.calls[0]?.[1];
     // Schema should have fix (boolean, default false) and level (enum, default moderate)
     expect(registeredCfg?.inputSchema?.fix).toBeDefined();
-    expect(typeof registeredCfg?.inputSchema?.fix?.default).toBe('boolean');
-    expect(registeredCfg?.inputSchema?.fix?.default).toBe(false);
+    expect(registeredCfg?.inputSchema?.fix?._def?.innerType?.type).toBe('boolean');
+    expect(registeredCfg?.inputSchema?.fix?._def?.defaultValue).toBe(false);
     expect(registeredCfg?.inputSchema?.level).toBeDefined();
-    expect(Array.isArray(registeredCfg?.inputSchema?.level?.enum)).toBe(true);
-    expect(registeredCfg?.inputSchema?.level?.enum).toContain('moderate');
-    expect(registeredCfg?.inputSchema?.level?.enum).toContain('high');
+    const levelOptions = registeredCfg?.inputSchema?.level?._def?.innerType?.options;
+    expect(Array.isArray(levelOptions)).toBe(true);
+    expect(levelOptions).toContain('moderate');
+    expect(levelOptions).toContain('high');
   });
 });
