@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-31
+
+v0.9.0 — intent-driven search, predictive impact, hardening & coverage expansion (F1–F7).
+
+### Added
+- **Intent-driven semantic navigation (F1)** — hybrid search combining semantic embeddings, structural graph traversal and intent classification (`src/core/search/intent-engine.ts`).
+- **Predictive impact analysis (F2)** — static analysis + historical failure correlation to predict test breakage before refactor (`src/core/predictive/impact-predictor.ts`, risk levels).
+- **Autopilot pre-commit gates** — configurable genome threshold, timeouts and detailed reporting (`src/cli/commands/autopilot.ts`); **API surface gate (Gate 5)** against `HEAD~1` with `risk-levels` extraction and `--allow-breaking-api` flag.
+- **HTTP/OAuth security layer** extracted to `src/mcp/http-security.ts`.
+- **Test coverage expansion** — 946 new tests: coherence analysis (51), LLM providers (54), cache system (40 + LRU/persistence 62), fingerprint/semantic (20+), knapsack/context assemblers (77), genome/debt persistence/skill catalog/engine (186).
+
+### Changed
+- Extracted shared `RiskLevel` types to `src/core/predictive/risk-levels.ts` (eliminates duplication across autopilot/impact/mcp).
+- Improved type safety: `(node as any).name?.text` replaced with `getDeclarationName()` type guard in `fingerprint.ts`.
+- Made `max_tokens`, Ollama URL, LLM `maxTokens` and server bind IPs configurable via env/config.
+
+### Fixed
+- Hardened `impact-predictor` against path traversal / null-byte injection in git history lookup.
+- Fixed `process.exit` in core modules → `throw`/`process.exitCode` via `asyncHandler`; removed `process.exit` from `mcp-server` signal handlers.
+- Replaced silent `catch {}` blocks with structured `logger.warn/error` across `watcher`, `vector-index`, `context`, `intent-engine`, `debt/tracker`, `deep-coherence` and `user-context` modules.
+- Replaced `console.*` in non-CLI source files with project `logger` (`sbom`, `storage`, `skills/engine`, `mcp/tools`, etc.).
+- Moved `src/test-helpers/` → `tests/test-helpers/` and removed `src` test files (`__tests__`, `graph.test.ts`); cleaned `tests` build artifacts.
+- Extracted magic numbers to named constants: `MAX_TOKENS_PER_CHUNK`, `MAX_FILE_LINES`, `DEFAULT_MAX_TOKENS`, `PURGE_*`, `PERSIST_INTERVAL_MS`, `COGNITIVE_LOAD_THRESHOLD`, etc.
+
+### Security
+- Path traversal hardening in `ImpactPredictor` (`..` / null-byte rejection).
+
 ## [0.8.0] - 2026-08-27
 
 Living codebase intelligence — roadmap A+B: multi-language AST analysis,
