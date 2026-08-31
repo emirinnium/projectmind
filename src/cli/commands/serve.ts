@@ -86,14 +86,15 @@ export function createServeCommand(): Command {
         });
 
         // Daemon pattern: NO asyncHandler success-exit here (see mcp.ts lesson).
+        const host = process.env.PROJECTMIND_SERVER_HOST ?? '127.0.0.1';
         try {
-          await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+          await new Promise<void>((resolve) => server.listen(port, host, resolve));
         } catch (e) {
-          output.error(`Failed to bind 127.0.0.1:${port}: ${e instanceof Error ? e.message : String(e)}`);
+          output.error(`Failed to bind ${host}:${port}: ${e instanceof Error ? e.message : String(e)}`);
           process.exit(1);
         }
         output.section('ProjectMind Dashboard');
-        output.kv('URL', `http://127.0.0.1:${port}/`);
+        output.kv('URL', `http://${host}:${port}/`);
         output.info('Ctrl+C to stop.');
 
         process.on('SIGINT', () => {

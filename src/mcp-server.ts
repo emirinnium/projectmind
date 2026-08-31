@@ -242,10 +242,11 @@ export async function initMcpServer(): Promise<void> {
         })();
       });
 
-      await new Promise<void>((resolve) => httpServer.listen(httpPort, '127.0.0.1', resolve));
+      const httpHost = process.env.PROJECTMIND_HTTP_HOST ?? '127.0.0.1';
+      await new Promise<void>((resolve) => httpServer.listen(httpPort, httpHost, resolve));
       _httpServer = httpServer;
       logger.info(
-        `ProjectMind MCP HTTP (stateless) listening on http://127.0.0.1:${httpPort}/mcp (rate limit: ${HTTP_RATE_LIMIT_PER_MIN} req/min/IP${OAUTH_ENABLED ? ', OAuth DCR enabled' : ''})`,
+        `ProjectMind MCP HTTP (stateless) listening on http://${httpHost}:${httpPort}/mcp (rate limit: ${HTTP_RATE_LIMIT_PER_MIN} req/min/IP${OAUTH_ENABLED ? ', OAuth DCR enabled' : ''})`,
       );
       if (OAUTH_ENABLED) {
         logger.info(

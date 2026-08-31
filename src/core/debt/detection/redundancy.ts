@@ -6,6 +6,7 @@ import type { CacheStats } from '../../cache/types.js';
 import { DatabaseSync } from 'node:sqlite';
 import { getDatabase } from '../../../storage/database.js';
 import { getVecIndex, type VecIndex } from '../../embeddings/vector-index.js';
+import { logger } from '../../../utils/logger.js';
 
 // Canonical debt type declarations live in persistence.ts — re-exported here
 // to keep this module's public surface unchanged (no duplicate declarations).
@@ -42,7 +43,7 @@ export class RedundancyDetector {
 
     // Defensive null-check for embeddingCache
     if (!this.embeddingCache) {
-      console.warn('embeddingCache is not initialized, returning empty results');
+      logger.warn('embeddingCache is not initialized, returning empty results');
       return result;
     }
 

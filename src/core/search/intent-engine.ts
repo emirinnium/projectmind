@@ -238,7 +238,7 @@ export class IntentEngine {
       logger.warn(`Embedding-based semantic score failed, falling back to lexical: ${e instanceof Error ? e.message : String(e)}`);
       const queryTokens = new Set(queryText.toLowerCase().split(/\W+/).filter(Boolean));
       let fileContent = '';
-      try { if (readablePath) fileContent = readFileSync(readablePath, 'utf-8'); } catch { /* ignore */ }
+      try { if (readablePath) fileContent = readFileSync(readablePath, 'utf-8'); } catch (e) { logger.warn(`Failed to read file for lexical fallback: ${e instanceof Error ? e.message : String(e)}`, { filePath: readablePath ?? 'unknown' }); }
       const fileTokens = new Set(fileContent.toLowerCase().split(/\W+/).filter(Boolean));
       const intersection = new Set([...queryTokens].filter(t => fileTokens.has(t)));
       const union = new Set([...queryTokens, ...fileTokens]);
@@ -309,8 +309,8 @@ export class IntentEngine {
         const derived = this.deriveSemanticFromSimilar(queryEmb, similar, limit);
         semanticFiles = derived;
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      logger.warn(`Semantic baseline search failed: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     // Fallback: VecIndex
@@ -330,8 +330,8 @@ export class IntentEngine {
             semanticFiles.push({ path, score: derived, source: 'embedding' });
           }
         }
-      } catch {
-        // ignore
+      } catch (e) {
+        logger.warn(`VecIndex fallback search failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 
@@ -340,8 +340,8 @@ export class IntentEngine {
       try {
         const lexical = await this.computeSemanticScore(queryText, query.filePath);
         semanticFiles.push({ path: query.filePath, score: lexical.score, source: lexical.source });
-      } catch {
-        // ignore
+      } catch (e) {
+        logger.warn(`Lexical fallback search failed: ${e instanceof Error ? e.message : String(e)}`, { filePath: query.filePath });
       }
     }
 
@@ -401,8 +401,8 @@ export class IntentEngine {
             }
           }
         }
-      } catch {
-        // ignore
+      } catch (e) {
+        logger.warn(`Structural neighbor expansion failed: ${e instanceof Error ? e.message : String(e)}`, { filePath: query.filePath });
       }
     }
 
