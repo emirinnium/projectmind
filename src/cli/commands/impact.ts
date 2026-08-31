@@ -2,7 +2,8 @@ import { Command } from 'commander';
 import { basename, dirname } from 'node:path';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
-import type { CodeChange, PredictorConfig } from '../../core/predictive/types.js';
+import { DEFAULT_PREDICTOR_CONFIG } from '../../core/predictive/config.js';
+import type { CodeChange } from '../../core/predictive/types.js';
 
 export function createImpactCommand(): Command {
   return new Command('impact')
@@ -34,13 +35,7 @@ export function createImpactCommand(): Command {
         // HEAD signature diff + KG call-graph + historical test failures).
         // Any failure degrades gracefully to the dependency analysis below.
         try {
-          const predictorConfig: PredictorConfig = {
-            bayesianPrior: 0.5,
-            crossModuleWeight: 0.8,
-            confidenceThreshold: 0.7,
-            modelUpdateRate: 0.1,
-          };
-          const predictor = new ImpactPredictor(predictorConfig, ctx.db);
+          const predictor = new ImpactPredictor(DEFAULT_PREDICTOR_CONFIG, ctx.db);
           // previous content defaults to `git show HEAD:<file>` inside the
           // predictor — the cheap "recent git diff" path; without git history
           // it degrades to a signature-based what-if on the current content.

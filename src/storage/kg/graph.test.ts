@@ -127,8 +127,8 @@ describe('KnowledgeGraph', () => {
       // Mock KG methods that replayAgentActions calls internally
       const origUpsert = kg.upsertFile.bind(kg);
       kg.upsertFile = (async () => 42) as typeof origUpsert;
-      kg.storeFileDetails = (() => {}) as typeof kg.storeFileDetails;
-      kg.markAgentTouched = (() => {}) as typeof kg.markAgentTouched;
+kg.storeFileDetails = ((fileId: number, fileStruct: FileStructure) => Promise.resolve()) as typeof kg.storeFileDetails;
+kg.markAgentTouched = ((filePath: string, agentName: string) => Promise.resolve()) as typeof kg.markAgentTouched;
 
       const result = await kg.replayAgentActions('test-agent');
       expect(result.success).toBe(true);

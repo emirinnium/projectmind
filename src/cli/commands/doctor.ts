@@ -4,7 +4,8 @@ import { basename, dirname, join } from 'node:path';
 import { getStatement } from '../../storage/database.js';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
-import type { PredictorConfig, PredictedFailure } from '../../core/predictive/types.js';
+import { DEFAULT_PREDICTOR_CONFIG } from '../../core/predictive/config.js';
+import type { PredictedFailure } from '../../core/predictive/types.js';
 import { IntegrityGuard } from '../../core/kg/integrity-guard.js';
 import { extractApiSurface, getApiAtRef, computeDiff, generateMarkdownReport, ExportedSymbol } from './api-surface-utils.js';
 import { AliasResolver } from '../../parser/alias-resolver.js';
@@ -305,13 +306,7 @@ export function createDoctorCommand(): Command {
         // F39: run the predictor against the REAL project database instead of
         // a hardcoded sample change. Historical correlation uses a real
         // recently-changed file when the DB has one; otherwise skip clearly.
-        const predictorConfig: PredictorConfig = {
-          bayesianPrior: 0.5,
-          crossModuleWeight: 0.8,
-          confidenceThreshold: 0.7,
-          modelUpdateRate: 0.1,
-        };
-        const predictor = new ImpactPredictor(predictorConfig, ctx.db);
+        const predictor = new ImpactPredictor(DEFAULT_PREDICTOR_CONFIG, ctx.db);
         let recentFile: string | null = null;
         try {
           const touched = ctx.db

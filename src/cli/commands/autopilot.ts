@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { getStatement } from '../../storage/database.js';
 import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
+import { DEFAULT_PREDICTOR_CONFIG } from '../../core/predictive/config.js';
 import type { PredictorConfig } from '../../core/predictive/types.js';
 
 /**
@@ -23,7 +24,34 @@ interface GateResult {
   detail: string;
 }
 
-function runGates(minGenome: number): GateResult[] {
+/**
+ * Risk level ordering for comparison.
+ * Each level includes all higher levels (e.g., 'high' includes 'critical').
+ */
+type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
+const RISK_ORDER: Record<RiskLevel, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3,
+};
+
+const VALID_RISK_LEVELS: readonly RiskLevel[] = ['low', 'medium', 'high', 'critical'];
+
+function isRiskAtOrAbove(risk: RiskLevel, threshold: RiskLevel): boolean {
+  return RISK_ORDER[risk] >= RISK_ORDER[threshold];
+}
+
+function isValidRiskLevel(value: string): value is RiskLevel {
+  return VALID_RISK_LEVELS.includes(value as RiskLevel);
+}
+
+function runGates(
+  minGenome: number,
+  impactRiskThreshold: RiskLevel = 'high',
+  skipImpactCheck: boolean = false
+): GateResult[] {
   const gates: GateResult[] = [];
 
   // Gate 1: no high-severity debt items open.
@@ -75,49 +103,104 @@ function runGates(minGenome: number): GateResult[] {
       : `${Math.round(genomeScore * 100)}%`,
   });
 
-  // Gate 4: No critical predicted impact risk in staged files.
+  // Gate 4: Impact risk check with configurable threshold.
+  // When skipImpactCheck is true, the gate is bypassed entirely.
   let impactRiskPassed = true;
   let impactRiskDetail = 'no staged files';
-  try {
-    const staged = execSync('git diff --cached --name-only --diff-filter=ACM', { encoding: 'utf8' })
-      .trim()
-      .split('\n')
-      .filter(f => f.length > 0);
-    if (staged.length > 0) {
-      const predictorConfig: PredictorConfig = {
-        bayesianPrior: 0.5,
-        crossModuleWeight: 0.8,
-        confidenceThreshold: 0.7,
-        modelUpdateRate: 0.1,
-      };
-      const predictor = new ImpactPredictor(predictorConfig);
-      let criticalFound = false;
-      for (const file of staged) {
-        try {
-          const failures = predictor.predictTestBreaks({
-            filePath: file,
-            moduleName: file.split('/').slice(-2)[0] || file,
-            changeType: 'modify',
-            crossModule: false,
-          });
-          if (failures.some(f => f.riskLevel === 'critical')) {
-            criticalFound = true;
-            break;
+
+  if (skipImpactCheck) {
+    impactRiskPassed = true;
+    impactRiskDetail = 'impact check skipped';
+  } else {
+    try {
+      // Determine project root for the git command to avoid CWD-dependent behavior.
+      const projectRoot = loadConfig().projectRoot || process.cwd();
+      const staged = execSync('git diff --cached --name-only --diff-filter=ACM', {
+        encoding: 'utf8',
+        timeout: 5000,
+        cwd: projectRoot,
+      })
+        .trim()
+        .split('\n')
+        .filter(f => f.length > 0);
+
+      // Filter to TypeScript/JavaScript files to reduce overhead
+      const codeFiles = staged.filter(f =>
+        f.endsWith('.ts') || f.endsWith('.js') || f.endsWith('.tsx') || f.endsWith('.jsx')
+      );
+
+      if (codeFiles.length > 0) {
+        const predictor = new ImpactPredictor(DEFAULT_PREDICTOR_CONFIG);
+
+        // Track failures per file for detailed reporting
+        const fileFailures: Array<{
+          filePath: string;
+          failures: Array<{ functionName: string; riskLevel: RiskLevel; confidence: number; reason: string }>;
+        }> = [];
+
+        for (const file of codeFiles) {
+          try {
+            const failures = predictor.predictTestBreaks({
+              filePath: file,
+              moduleName: file.split('/').pop()?.replace(/\.[^.]+$/, '') || file,
+              changeType: 'modify',
+              crossModule: true,
+            });
+
+            // Filter failures at or above threshold
+            const significantFailures = failures
+              .filter(f => f.riskLevel && isRiskAtOrAbove(f.riskLevel, impactRiskThreshold))
+              .map(f => ({
+                functionName: f.functionName,
+                riskLevel: (f.riskLevel || 'low') as RiskLevel,
+                confidence: f.confidence,
+                reason: f.reason,
+              }));
+
+            if (significantFailures.length > 0) {
+              fileFailures.push({ filePath: file, failures: significantFailures });
+            }
+          } catch {
+            // ignore errors on individual files (e.g. binary, unreadable)
           }
-        } catch {
-          // ignore errors on individual files (e.g. binary, unreadable)
         }
+
+        const filesAtRisk = fileFailures.length;
+        if (filesAtRisk > 0) {
+          impactRiskPassed = false;
+          // Build detailed message
+          const lines: string[] = [];
+          lines.push(`❌ Impact Risk Gate Failed (${filesAtRisk}/${codeFiles.length} files at risk)`);
+          for (const { filePath, failures } of fileFailures) {
+            const riskLevel = failures[0].riskLevel;
+            lines.push(`- ${filePath}: ${failures.length} ${riskLevel}-risk failure(s)`);
+            for (const f of failures) {
+              lines.push(`  - ${f.functionName}: ${f.reason} (confidence: ${f.confidence.toFixed(2)})`);
+            }
+          }
+          lines.push('');
+          lines.push('Suggested Actions:');
+          for (const { filePath } of fileFailures) {
+            lines.push(`- Review changes with \`pm impact --file ${filePath}\``);
+          }
+          lines.push('- Update mocks or tests as needed.');
+          lines.push('- Consider lowering the threshold with --impact-risk-threshold low if appropriate.');
+          impactRiskDetail = lines.join('\n');
+        } else {
+          impactRiskDetail = `no ≥${impactRiskThreshold} risk in ${codeFiles.length} staged file(s)`;
+        }
+      } else {
+        impactRiskDetail = 'no staged code files to analyze';
       }
-      impactRiskPassed = !criticalFound;
-      impactRiskDetail = criticalFound
-        ? 'critical risk detected in staged files'
-        : `no critical risk in ${staged.length} staged file(s)`;
+    } catch {
+      // Treat timeout/error as unknown — pass the gate but note the issue
+      impactRiskPassed = true;
+      impactRiskDetail = 'could not determine staged files (timeout/error)';
     }
-  } catch {
-    impactRiskDetail = 'could not determine staged files';
   }
+
   gates.push({
-    name: 'Predicted impact risk (critical)',
+    name: `Impact risk (≥${impactRiskThreshold})`,
     passed: impactRiskPassed,
     detail: impactRiskDetail,
   });
@@ -134,10 +217,41 @@ export function createAutopilotCommand(): Command {
     .description('Quality gate for commits/CI: exits 1 when any check fails')
     .option('--min-genome <n>', 'Minimum genome score percent', '70')
     .option('--format <fmt>', 'Output: text|json', 'text')
-    .action(asyncHandler(async (opts: { minGenome: string; format: string }) => {
+    .option(
+      '--impact-risk-threshold <level>',
+      'Risk level to block (low|medium|high|critical)',
+      'high'
+    )
+    .option(
+      '--skip-impact-check',
+      'Skip impact risk gate (useful for performance)',
+      false
+    )
+    .action(asyncHandler(async (opts: {
+      minGenome: string;
+      format: string;
+      impactRiskThreshold?: string;
+      skipImpactCheck?: boolean;
+    }) => {
+      // Validate --impact-risk-threshold value before proceeding.
+      const rawThreshold = opts.impactRiskThreshold || 'high';
+      if (!isValidRiskLevel(rawThreshold)) {
+        output.error(
+          `Invalid --impact-risk-threshold value: "${rawThreshold}". ` +
+          `Must be one of: ${VALID_RISK_LEVELS.join(', ')}.`
+        );
+        process.exit(1);
+        return;
+      }
+      const threshold: RiskLevel = rawThreshold;
+
       // withService initializes the DB layer that runGates' statements need.
       await withService(['debt'], async () => {
-        const gates = runGates(parseInt(opts.minGenome, 10));
+        const gates = runGates(
+          parseInt(opts.minGenome, 10),
+          threshold,
+          opts.skipImpactCheck || false
+        );
         const failed = gates.filter((g) => !g.passed);
         const allPassed = failed.length === 0;
 
