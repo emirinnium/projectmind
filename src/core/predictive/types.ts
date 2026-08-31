@@ -1,9 +1,20 @@
+export interface PredictedFailure {
+  filePath: string;
+  functionName: string;
+  confidence: number;
+  reason: string;
+  suggestedFix: string;
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+}
+
 export interface CodeChange {
   filePath: string;
   moduleName: string;
   changeType: 'add' | 'modify' | 'delete';
   crossModule: boolean;
   affectedFunctions?: string[];
+  previousContent?: string;
+  diffText?: string;
 }
 
 export interface ImpactReport {
@@ -18,6 +29,7 @@ export interface ImpactReport {
 
 export interface ActualImpact {
   predictionId: string;
+  filePath: string;
   actualAffectedFiles: number;
   actualAffectedModules: string[];
   failureOccurred: boolean;

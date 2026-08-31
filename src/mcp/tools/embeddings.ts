@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { trackAgentAccess } from './types.js';
+import { confineToProject } from './_shared.js';
 import { initEmbeddingProvider, getCurrentProvider, generateEmbedding } from '@/parser/embeddings.js';
 
 export function registerEmbeddingTools(server: McpServer, deps: McpDependencies): void {
@@ -22,9 +23,11 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
           trackAgentAccess(deps.kg, deps.agentName, 'embedding-init');
         }
 
+        const modelPath = args.modelPath !== undefined ? confineToProject(args.modelPath, deps.projectRoot) : undefined;
+
         await initEmbeddingProvider({
           provider: args.provider,
-          modelPath: args.modelPath,
+          modelPath,
           dimension: args.dimension,
         });
 

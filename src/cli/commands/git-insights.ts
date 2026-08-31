@@ -38,7 +38,7 @@ export function createGitInsightsCommand(): Command {
       }
 
       // Author distribution + activity timeline.
-      const authorLines = (git(['log', '--follow', '--format=%an|%aI', '--', relForGit]) ?? '').split('\n').filter(Boolean);
+      const authorLines = (git(['log', '--follow', '--format=%an|%aI', '--', relForGit]) ?? '').split(/\r?\n/).filter(Boolean);
       const authors = new Map<string, number>();
       let lastTouch: string | null = null;
       for (const line of authorLines) {
@@ -52,7 +52,7 @@ export function createGitInsightsCommand(): Command {
       const statusBlock = git(['log', '--follow', '--name-status', '--format=@%h', '--', relForGit]) ?? '';
       const renames: Array<{ commit: string; detail: string }> = [];
       let currentCommit = '';
-      for (const line of statusBlock.split('\n')) {
+      for (const line of statusBlock.split(/\r?\n/)) {
         if (line.startsWith('@')) currentCommit = line.slice(1).trim();
         else if (/^R\d{3}/.test(line)) renames.push({ commit: currentCommit, detail: line });
       }
@@ -60,7 +60,7 @@ export function createGitInsightsCommand(): Command {
       // Recent commit subjects.
       const n = Math.max(1, parseInt(opts.commits, 10));
       const logRaw = git(['log', `-n`, String(n), '--format=%h%x09%an%x09%aI%x09%s', '--', relForGit]) ?? '';
-      const commits = logRaw.split('\n').filter(Boolean).map((l) => {
+      const commits = logRaw.split(/\r?\n/).filter(Boolean).map((l) => {
         const [hash, author, date, ...subject] = l.split('\t');
         return { hash, author, date, subject: subject.join('\t') };
       });

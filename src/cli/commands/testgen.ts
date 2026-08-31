@@ -51,7 +51,7 @@ export function createTestgenCommand(): Command {
           const testCode = generateTestFile(targetFile.relativePath, exports, opts.framework);
           
           if (opts.dryRun) {
-            console.log(testCode);
+            output.info(testCode);
           } else {
             const testDir = join(config.projectRoot, opts.target);
             if (!existsSync(testDir)) {
@@ -86,7 +86,7 @@ export function createTestgenCommand(): Command {
         return;
       }
       
-      console.log(generateTestFile(file, exports, opts.framework));
+      output.info(generateTestFile(file, exports, opts.framework));
     }));
 
   return testgenCmd;
@@ -123,17 +123,14 @@ function generateTestFile(sourceFile: string, exports: Array<{ name: string; typ
       return `
 describe('${exp.name}', () => {
   it('should work correctly', () => {
-    // TODO: Add test cases
-    // const result = ${exp.name}(${exp.params || ''});
-    // expect(result).toBeDefined();
+    expect(sut.${exp.name}).toBeDefined();
   });
 });`;
     } else if (exp.type === 'class') {
       return `
 describe('${exp.name}', () => {
   it('should instantiate', () => {
-    // const instance = new ${exp.name}();
-    // expect(instance).toBeInstanceOf(${exp.name});
+    expect(new sut.${exp.name}()).toBeInstanceOf(sut.${exp.name});
   });
 });`;
     }

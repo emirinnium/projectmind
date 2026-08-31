@@ -159,16 +159,36 @@ export function extractSince(doc?: string): string | undefined {
  * and runs the same regex extractor used for the working tree.
  */
 export async function getApiAtRef(ref: string, projectRoot: string): Promise<ExportedSymbol[]> {
-  const { spawnSync } = await import('node:child_process');
-  const run = (args: string[], maxBuffer = 32 * 1024 * 1024) =>
-    spawnSync('git', args, { cwd: projectRoot, encoding: 'utf-8', maxBuffer, shell: true });
+  const { execFileSync } = await import('node:child_process');
+  // SECURITY: execFileSync with an argument array and NO shell. The previous
+  // spawnSync(..., { shell: true }) interpolated the CLI --base/--since ref
+  // AND repo-derived filenames into a shell string (`git show ${ref}:${rel}`),
+  // so a repo file named `x&<cmd>.ts` executed arbitrary shell commands.
+  // With shell:false, ref and rel are passed as discrete argv entries and are
+  // never parsed by a shell. A leading '-' is rejected so a hostile ref cannot
+  // be misread as a git option (argument injection).
+  if (!ref || ref.startsWith('-')) return [];
+  const run = (args: string[], maxBuffer = 32 * 1024 * 1024): string | null => {
+    try {
+      return execFileSync('git', args, {
+        cwd: projectRoot,
+        encoding: 'utf-8',
+        maxBuffer,
+        // stderr is discarded on purpose: failures return null below and the
+        // caller treats them as "no base"; git's diagnostics are noise here.
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      return null; // unknown ref, missing file, or not a git repo
+    }
+  };
 
   const ls = run(['ls-tree', '-r', '--name-only', ref]);
-  if (ls.status !== 0 || !ls.stdout?.trim()) {
+  if (!ls || !ls.trim()) {
     return []; // unknown ref or not a git repo — caller treats as "no base"
   }
 
-  const files = ls.stdout
+  const files = ls
     .split(/\r?\n/)
     .filter((f) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(f))
     .filter((f) => !f.includes('node_modules/'))
@@ -177,9 +197,9 @@ export async function getApiAtRef(ref: string, projectRoot: string): Promise<Exp
   const symbols: ExportedSymbol[] = [];
   for (const rel of files.slice(0, 500)) {
     const show = run(['show', `${ref}:${rel}`], 8 * 1024 * 1024);
-    if (show.status !== 0 || !show.stdout) continue;
+    if (!show) continue;
     try {
-      symbols.push(...extractExportsFromFile(show.stdout, join(projectRoot, rel), rel.replace(/\\/g, '/')));
+      symbols.push(...extractExportsFromFile(show, join(projectRoot, rel), rel.replace(/\\/g, '/')));
     } catch {
       // Skip files whose content trips the extractor.
     }

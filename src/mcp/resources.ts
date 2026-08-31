@@ -4,7 +4,7 @@ import type { SQLOutputValue } from 'node:sqlite';
 import type { McpDependencies } from './tools/types.js';
 import { getStatement } from '../storage/database.js';
 import { loadConfig } from '../utils/config.js';
-import { logger } from '../cli/utils/logger.js';
+import { logger } from '../utils/logger.js';
 import { watch as fsWatch, type FSWatcher } from 'node:fs';
 import { toolCacheHintMeta } from './tools/list.js';
 
@@ -279,7 +279,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
             '1. debt_report — high-severity items must be 0.',
             '2. find_circular_deps — no new cycles introduced.',
             '3. genome_score — confirm score stays ≥ 70%.',
-            '4. run_cli ["doctor","scan-health"] — full health sweep.',
+            '4. Run the full health sweep via the CLI bridge: projectmind_run_cli ["doctor","scan-health"] (clients without the projectmind_ prefix: run_cli).',
             'Report each gate as PASS/FAIL with numbers before I commit.',
           ].join('\n'),
         },
@@ -300,7 +300,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
           type: 'text',
           text: [
             'Triage my technical debt:',
-            '1. Call debt_report, then debt-prioritize via run_cli for severity ordering.',
+            '1. Call projectmind_debt_report, then severity-order via projectmind_run_cli (clients without the projectmind_ prefix: debt_report / run_cli).',
             '2. Group findings into: FIX-NOW (high severity, small effort), SCHEDULE (systemic), ACCEPT (informational).',
             '3. For each FIX-NOW item propose the minimal change.',
           ].join('\n'),

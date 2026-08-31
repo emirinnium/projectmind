@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import type { Language, FileStructure, FunctionInfo, ClassInfo } from '../types.js';
 
+/** JSON module import extensions recognized during parsing */
+const JSON_EXTENSIONS = ['.json'];
+
 function getModifiers(node: ts.Node): ts.Modifier[] {
   if (ts.canHaveModifiers(node)) {
     const mods = ts.getModifiers(node);
@@ -56,7 +59,7 @@ export function parseTypeScriptFile(filePath: string, content?: string, language
   const imports: { source: string; named: string[]; kind: string }[] = [];
   const exports: string[] = [];
 
-  const hash = createHash('md5').update(sourceText).digest('hex');
+  const hash = createHash('sha256').update(sourceText).digest('hex');
 
   for (const node of sourceFile.statements) {
     if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) {
@@ -147,11 +150,30 @@ export function parseTypeScriptFile(filePath: string, content?: string, language
       if (node.importClause?.name) {
         named.unshift(node.importClause.name.getText());
       }
+      // Detect JSON module imports (e.g. `import data from './data.json'`)
+      const isJsonModule = JSON_EXTENSIONS.some(ext => source.endsWith(ext));
       imports.push({
         source,
         named,
-        kind: 'import',
+        kind: isJsonModule ? 'json' : 'import',
       });
+    }
+
+    // Detect dynamic imports: import('...') expressions
+    // These appear as CallExpression nodes with an ImportKeyword
+    if (ts.isVariableStatement(node)) {
+      for (const decl of node.declarationList.declarations) {
+        if (decl.initializer) {
+          const dynamicImport = extractDynamicImport(decl.initializer);
+          if (dynamicImport) {
+            imports.push({
+              source: dynamicImport,
+              named: [],
+              kind: 'dynamic-import',
+            });
+          }
+        }
+      }
     }
 
     if (ts.isExportDeclaration(node)) {
@@ -160,6 +182,9 @@ export function parseTypeScriptFile(filePath: string, content?: string, language
       }
     }
   }
+
+  // Recursively scan for dynamic imports throughout the AST
+  scanForDynamicImports(sourceFile, imports);
 
   return {
     filePath,
@@ -170,6 +195,63 @@ export function parseTypeScriptFile(filePath: string, content?: string, language
     imports,
     exports,
     hash,
-    lines: sourceText.split('\n').length,
+    lines: sourceText.split(/\r?\n/).length,
   };
+}
+
+/**
+ * Extract a dynamic import source from an expression if it's a call to
+ * `import('...')`. Returns the string literal source or null.
+ */
+function extractDynamicImport(node: ts.Expression): string | null {
+  if (!ts.isCallExpression(node)) return null;
+  // Dynamic import: import('...') - expression is an ImportKeyword token
+  if (node.expression.kind !== ts.SyntaxKind.ImportKeyword) return null;
+  if (node.arguments.length === 0) return null;
+  const arg = node.arguments[0]!;
+  if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
+    return arg.text;
+  }
+  return null;
+}
+
+/**
+ * Recursively scan the AST for dynamic import() calls and add them to the
+ * imports list. Handles imports nested in:
+ * - Variable declarations
+ * - Assignment expressions
+ * - Await expressions
+ * - Conditional expressions
+ * - Call expressions (Promise.all, etc.)
+ * - Object/array literals
+ */
+function scanForDynamicImports(
+  sourceFile: ts.SourceFile,
+  imports: { source: string; named: string[]; kind: string }[]
+): void {
+  const visited = new Set<ts.Node>();
+
+  function visit(node: ts.Node): void {
+    if (visited.has(node)) return;
+    visited.add(node);
+
+    // Dynamic import: import('...') - expression is an ImportKeyword token
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      if (node.arguments.length > 0) {
+        const arg = node.arguments[0]!;
+        if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
+          imports.push({
+            source: arg.text,
+            named: [],
+            kind: 'dynamic-import',
+          });
+          return; // Don't recurse into the import call arguments
+        }
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
 }

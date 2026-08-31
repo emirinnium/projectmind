@@ -22,8 +22,8 @@
   "scripts": {
     "build": "tsc && tsc-alias",
     "dev": "tsc && node --no-deprecation dist/cli.js",
-    "lint": "eslint src --ext .ts",
-    "lint:fix": "eslint src --fix --ext .ts",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
@@ -43,7 +43,7 @@
     "pm:resolve": "node dist/cli.js resolve",
     "pm:report": "node dist/cli.js report",
     "pm:ci": "npm run build && npm run pm:scan && npm run pm:genome && npm run pm:debt",
-    "ci": "npm run lint && npm run typecheck && npm run test:vitest && npm run test:coverage",
+    "circular-deps": "node dist/cli.js find-circular-deps",
     "prepare": "npm run build"
   },
   "keywords": [
@@ -97,7 +97,9 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.32.0",
     "prettier": "^3.9.6",
+    "ts-node": "^10.9.2",
     "tsc-alias": "^1.9.2",
+    "tsconfig-paths": "^4.2.0",
     "vitest": "^4.1.11"
   },
   "engines": {

@@ -106,9 +106,9 @@ SUGGESTIONS: (one per line, or "none")`;
   /**
    * Parse structured data from LLM response.
    */
-  private parseStructuredData<T>(content: string, key: string, parser: (text: string) => T): T | null {
+  private parseStructuredData<T>(content: string, key: string, parser: (text: string) => T): T {
     const startIndex = content.indexOf(`${key}:`);
-    if (startIndex === -1) return null;
+    if (startIndex === -1) throw new Error(`Missing key: ${key}`);
     
     const endIndex = content.indexOf('\n\n', startIndex);
     const section = endIndex === -1 ? content.substring(startIndex) : content.substring(startIndex, endIndex);
@@ -116,7 +116,7 @@ SUGGESTIONS: (one per line, or "none")`;
     try {
       return parser(section.substring(key.length + 1).trim());
     } catch {
-      return null;
+      throw new Error(`Failed to parse key: ${key}`);
     }
   }
 
@@ -131,29 +131,56 @@ SUGGESTIONS: (one per line, or "none")`;
     let reasoningTrace: string[] = response.reasoningTrace;
 
     // Parse verdict
-    const verdictText = this.parseStructuredData(content, 'VERDICT', (text) => {
-      const match = text.match(/(pass|warn|fail)/i);
-      return match ? match[1].toLowerCase() as 'pass' | 'warn' | 'fail' : 'warn';
-    });
-    if (verdictText) verdict = verdictText;
+    let verdictText: string | undefined;
+    try {
+      verdictText = this.parseStructuredData(content, 'VERDICT', (text) => {
+        const match = text.match(/(pass|warn|fail)/i);
+        return match ? match[1].toLowerCase() as 'pass' | 'warn' | 'fail' : 'warn';
+      });
+    } catch {
+      verdictText = undefined;
+    }
+    if (verdictText) {
+      // Narrow the string to the expected verdict type
+      verdict = verdictText as 'pass' | 'warn' | 'fail';
+    }
 
     // Parse confidence
-    const confidenceText = this.parseStructuredData(content, 'CONFIDENCE', (text) => {
-      const num = parseFloat(text);
-      return isNaN(num) ? 0.5 : Math.min(1.0, Math.max(0.0, num));
-    });
-    if (confidenceText) confidence = confidenceText;
+    let confidenceText: string | number | undefined;
+    try {
+      confidenceText = this.parseStructuredData(content, 'CONFIDENCE', (text) => {
+        const num = parseFloat(text);
+        return isNaN(num) ? 0.5 : Math.min(1.0, Math.max(0.0, num));
+      });
+    } catch {
+      confidenceText = undefined;
+    }
+    if (typeof confidenceText === 'number') {
+      confidence = confidenceText;
+    } else if (typeof confidenceText === 'string') {
+      confidence = parseFloat(confidenceText) || 0.5;
+    }
 
     // Parse reasoning trace
-    const reasoningText = this.parseStructuredData(content, 'REASONING_TRACE', (text) => {
-      return text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    });
+    let reasoningText: string[] | undefined;
+    try {
+      reasoningText = this.parseStructuredData(content, 'REASONING_TRACE', (text) => {
+        return text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+      });
+    } catch {
+      reasoningText = undefined;
+    }
     if (reasoningText) reasoningTrace = reasoningText;
 
     // Parse suggestions
-    const suggestionsText = this.parseStructuredData(content, 'SUGGESTIONS', (text) => {
-      return text.split('\n').map(line => line.trim()).filter(line => line.length > 0 && !line.startsWith('- '));
-    });
+    let suggestionsText: string[] | undefined;
+    try {
+      suggestionsText = this.parseStructuredData(content, 'SUGGESTIONS', (text) => {
+        return text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0 && !line.startsWith('- '));
+      });
+    } catch {
+      suggestionsText = undefined;
+    }
     if (suggestionsText) suggestions = suggestionsText.slice(0, 5);
 
     // Fallback parsing if structured data is missing
@@ -166,8 +193,8 @@ SUGGESTIONS: (one per line, or "none")`;
       
       const suggestionsStart = content.indexOf('SUGGESTIONS:');
       if (suggestionsStart >= 0) {
-        const suggestionsText = content.substring(suggestionsStart + 'SUGGESTIONS:'.length);
-        suggestions = suggestionsText.split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 5);
+        const st = content.substring(suggestionsStart + 'SUGGESTIONS:'.length);
+        suggestions = st.split(/\r?\n/).map((s) => s.trim()).filter(Boolean).slice(0, 5);
       }
     }
 

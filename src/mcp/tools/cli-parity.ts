@@ -4,6 +4,8 @@ import type { McpDependencies } from './types.js';
 import { buildProgram } from '../../cli/program.js';
 import { runCliCapture } from './cli-runner.js';
 import { isBlockedCliInvocation, parityAnnotations } from './guard.js';
+import { confineToProject, PathEscapesProjectError } from './_shared.js';
+import { logger } from '../../utils/logger.js';
 
 /**
  * CLI-parity generator.
@@ -66,7 +68,28 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
             argv.push(opt.long!);
             if (!opt.isBoolean() && typeof v !== 'boolean') argv.push(String(v));
           }
-          for (const p of a.args ?? []) argv.push(String(p));
+          for (const p of a.args ?? []) {
+            const s = String(p);
+            try {
+              confineToProject(s, deps.projectRoot);
+            } catch (e) {
+              if (e instanceof PathEscapesProjectError) {
+                return {
+                  content: [{
+                    type: 'text',
+                    text: JSON.stringify({
+                      cliCommand: `projectmind ${path.join(' ')}`,
+                      ok: false,
+                      exitCode: 1,
+                      error: `[blocked by ProjectMind guard] ${e.message}`,
+                    }, null, 2),
+                  }],
+                };
+              }
+              throw e;
+            }
+            argv.push(s);
+          }
 
           // RUNTIME guard (K3): the registration-time check above only sees the
           // static CLI path. The client can pass anything in `args`/`options`,
@@ -87,7 +110,9 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
           }
 
           if (deps.agentName) {
-            try { deps.kg.markAgentTouched(argv.filter(x => !x.startsWith('-')).join(' '), deps.agentName); } catch {}
+            deps.kg
+              .markAgentTouched(argv.filter(x => !x.startsWith('-')).join(' '), deps.agentName)
+              .catch((e) => logger.debug(`markAgentTouched failed for CLI parity invocation: ${e instanceof Error ? e.message : String(e)}`));
           }
 
           const res = await runCliCapture(argv, { timeoutMs: 180_000, projectRoot: deps.projectRoot });

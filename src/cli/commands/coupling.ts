@@ -1,7 +1,11 @@
-import { Command } from 'commander';
+
 import { withService, asyncHandler, output, loadConfig } from '@/cli/utils/shared.js';
+import { Command } from 'commander';
+
 import { readFileSync, writeFileSync } from 'node:fs';
+
 import { join } from 'node:path';
+
 import { getStatement } from '../../storage/database.js';
 
 interface ModuleCoupling {

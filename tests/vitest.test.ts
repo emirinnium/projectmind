@@ -25,6 +25,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // F44: close the last open connection first — on Windows an open SQLite
+  // handle locks the file and rmSync below would silently fail.
+  try {
+    closeDatabase();
+  } catch {
+    // already closed
+  }
   for (let i = 0; i < 5; i++) {
     try {
       if (existsSync(TEST_DB)) rmSync(TEST_DB);

@@ -23,14 +23,37 @@ export class PathEscapesProjectError extends Error {
 }
 
 /**
+ * Classify a user-supplied path by the convention it is written in,
+ * independent of the host platform. Drive-letter (`C:\x`, `C:/x`) and UNC
+ * (`\\server\share`, `//server/share`) paths are Windows-convention;
+ * `/x` paths are POSIX-convention; everything else is relative.
+ */
+export function classifyPath(p: string): 'posix-absolute' | 'windows-absolute' | 'relative' {
+  if (/^[A-Za-z]:/.test(p)) return 'windows-absolute';
+  if (/^[\\/]{2}/.test(p)) return 'windows-absolute';
+  if (p.startsWith('/')) return 'posix-absolute';
+  return 'relative';
+}
+
+/**
  * K5: Confine a user-supplied path to the project boundary.
  *
  * Relative paths are resolved against `projectRoot`; absolute paths are
- * checked directly. Returns the ABSOLUTE in-project path (which is safe to
- * hand to readFileSync/analyzeSource afterwards) or throws
+ * checked directly. A foreign-convention absolute path (e.g. `C:\...` on a
+ * POSIX host or `/etc/...` on Windows) can never be inside the project root,
+ * so it is rejected outright. Returns the ABSOLUTE in-project path (which is
+ * safe to hand to readFileSync/analyzeSource afterwards) or throws
  * {@link PathEscapesProjectError}.
  */
 export function confineToProject(filePath: string, projectRoot: string): string {
+  const kind = classifyPath(filePath);
+  if (kind !== 'relative') {
+    const convention = kind === 'windows-absolute' ? 'windows' : 'posix';
+    const hostConvention = process.platform === 'win32' ? 'windows' : 'posix';
+    if (convention !== hostConvention) {
+      throw new PathEscapesProjectError(filePath, projectRoot);
+    }
+  }
   const abs = isAbsolute(filePath) ? filePath : resolve(projectRoot, filePath);
   if (!isPathInside(projectRoot, abs)) {
     throw new PathEscapesProjectError(filePath, projectRoot);
@@ -39,7 +62,7 @@ export function confineToProject(filePath: string, projectRoot: string): string 
 }
 
 /** CLI flags whose VALUE is a filesystem path (arrow hight-risk read/write). */
-const PATH_VALUE_FLAGS = new Set(['-o', '--output', '-i', '--input', '--config', '--file', '--path']);
+const PATH_VALUE_FLAGS = new Set(['-o', '--output', '-i', '--input', '--config', '--file', '--path', '--root', '--dir']);
 
 /**
  * K4: Reject path-valued CLI flags whose value would read/write OUTSIDE the

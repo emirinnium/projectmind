@@ -1,8 +1,10 @@
+import type { DatabaseSync } from 'node:sqlite';
 import type { KnowledgeGraph } from '@/storage/knowledge-graph.js';
 import type { CoherenceEngine } from '@/core/coherence/engine.js';
 import type { DebtTracker } from '@/core/debt/tracker.js';
 import type { ScaleManager } from '@/core/scale/manager.js';
 import type { LLMProvider } from '@/core/llm/index.js';
+import { logger } from '../../utils/logger.js';
 
 export interface McpDependencies {
   kg: KnowledgeGraph;
@@ -15,13 +17,19 @@ export interface McpDependencies {
   agentName?: string;
   /** Optional LLM provider for deep/heuristic suggestions (e.g. team-memory conflict resolution). */
   llmProvider?: LLMProvider | null;
+  /** The server's live SQLite connection — tools that construct DB-backed
+   *  engines (IntentEngine, ImpactPredictor, IntentBroadcastService,
+   *  CrossProjectPatternEngine) receive it explicitly (F36/F38). */
+  db?: DatabaseSync;
 }
 
 /**
  * Wrapper to track agent file access through MCP tools
  */
 export function trackAgentAccess(kg: KnowledgeGraph, agentName: string, filePath: string): void {
-  kg.markAgentTouched(filePath, agentName);
+  kg.markAgentTouched(filePath, agentName).catch((e) =>
+    logger.warn(`trackAgentAccess failed for ${filePath}: ${e instanceof Error ? e.message : String(e)}`)
+  );
 }
 
 /**

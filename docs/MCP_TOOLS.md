@@ -65,3 +65,26 @@ projectmind mcp
 - `init_embedding_provider` — Initialize the embedding provider
 - `generate_embedding` — Generate an embedding vector for text or code
 - `get_embedding_provider` — Get the current embedding provider
+
+### Intelligence & Agent Coordination
+- `search_intent` — Semantic + structural search with a natural-language task query
+- `predict_impact` — Predict which tests/callers break when a file changes
+- `plan_context_budget` — Rank which files to load within a token budget
+- `broadcast_intent` — Announce planned edits so other agents avoid conflicts
+- `check_intent_conflicts` — Check whether other agents hold overlapping write intents
+- `agent_locks` — Advisory per-file locks for multi-agent coordination
+- `predict_merge_risk` — Predict merge collisions before multi-agent edits
+- `find_patterns` — Find previously learned design patterns by interface shape
+
+### Search & Analysis
+- `semantic_search` — Rank files purely by embedding similarity to a query
+- `structural_search` / `structural_replace` — AST-pattern find and rewrite
+- `kg_query` — Graph algorithms over the knowledge graph (PageRank, communities, paths)
+- `find_symbol_references` — Every reference of a symbol via the real TypeScript language service
+- `suggest_next_files` — Task-aware "what to read next" ranking over the knowledge graph
+
+### Skills
+- `recommend_skills{task, limit?}` — Given a free-text task description, rank the skill
+  catalog (label/description/whyItHelps/importance) by task-token overlap, repo evidence
+  (via the scale report) and importance. Returns `{ name, description, score, reason }`
+  per skill plus the CLI commands to apply each. Deterministic, no LLM required.

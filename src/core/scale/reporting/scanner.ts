@@ -10,6 +10,9 @@ import fg from 'fast-glob';
 import { loadConfig } from '../../../utils/config.js';
 import type { ScanProfile } from './types.js';
 
+/** Files larger than this are skipped (not counted as errors). */
+export const MAX_SCAN_FILE_BYTES = 2 * 1024 * 1024;
+
 /**
  * Handles project scanning with performance profiling
  */
@@ -33,30 +36,34 @@ export class ProjectScanner {
     const startMemory = process.memoryUsage().heapUsed;
     
     const root = rootPath ?? loadConfig().projectRoot;
+    const config = loadConfig();
     const ignorePatterns = [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/dist-tests/**',
-      '**/.git/**',
-      '**/*.min.*',
-      '**/*.map',
-      '**/*.d.ts',
-      '**/package-lock.json',
-      '**/yarn.lock',
-      '**/.next/**',
-      '**/.turbo/**',
-      '**/coverage/**',
-      '**/.cache/**',
-      '**/tmp/**',
-      '**/temp/**',
-      '**/.vscode/**',
-      '**/.idea/**',
-      '**/build/**',
-      '**/out/**',
-      '**/target/**',
-      '**/__pycache__/**',
-      '**/.venv/**',
-      '**/vendor/**',
+      ...new Set([
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/dist-tests/**',
+        '**/.git/**',
+        '**/*.min.*',
+        '**/*.map',
+        '**/*.d.ts',
+        '**/package-lock.json',
+        '**/yarn.lock',
+        '**/.next/**',
+        '**/.turbo/**',
+        '**/coverage/**',
+        '**/.cache/**',
+        '**/tmp/**',
+        '**/temp/**',
+        '**/.vscode/**',
+        '**/.idea/**',
+        '**/build/**',
+        '**/out/**',
+        '**/target/**',
+        '**/__pycache__/**',
+        '**/.venv/**',
+        '**/vendor/**',
+        ...config.ignorePatterns.map((p) => (p.startsWith('**') ? p : '**/' + p)),
+      ]),
     ];
 
     // Note: only extensions with a registered parser in multilang-parser
@@ -67,6 +74,8 @@ export class ProjectScanner {
       ignore: ignorePatterns,
       absolute: true,
     });
+
+    this.pruneDeletedFiles(files, root);
 
     // Incremental scanning: only process files that have changed since last scan
     const changedFiles = full ? files : this.filterChangedFiles(files, root);
@@ -85,7 +94,10 @@ export class ProjectScanner {
       try {
         for (const filePath of batch) {
           try {
-            const content = readFileSync(filePath, 'utf-8');
+            if (statSync(filePath).size > MAX_SCAN_FILE_BYTES) {
+              continue;
+            }
+            const content = readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, '');
             const fileStruct = parseFile(filePath, content);
             if (!fileStruct) {
               errors++;
@@ -127,7 +139,31 @@ export class ProjectScanner {
   }
 
   /**
-   * Filter files to only include those that have changed since last scan.
+   * Remove KG rows for files that no longer exist on disk within the scanned
+   * root. Project-scoped; chunked to respect SQLite's parameter limit.
+   * Best-effort: a prune failure must never abort the scan.
+   */
+  private pruneDeletedFiles(files: string[], root: string): void {
+    if (files.length === 0) return;
+    try {
+      const scanned = new Set(files.map((f) => relative(root, f).replace(/\\/g, '/')));
+      const rows = getStatement('SELECT relative_path FROM files WHERE project_id = ?')
+        .all(this.kg.getCurrentProjectId()) as Array<{ relative_path: string }>;
+      const missing = rows.map((r) => r.relative_path).filter((p) => !scanned.has(p));
+      const chunkSize = 999;
+      for (let i = 0; i < missing.length; i += chunkSize) {
+        const chunk = missing.slice(i, i + chunkSize);
+        const placeholders = chunk.map(() => '?').join(',');
+        getStatement(`DELETE FROM files WHERE project_id = ? AND relative_path IN (${placeholders})`)
+          .run(this.kg.getCurrentProjectId(), ...chunk);
+      }
+    } catch {
+      // best-effort prune — never abort the scan
+    }
+  }
+
+  /**
+    * Filter files to only include those that have changed since last scan.
    * Uses batch query for efficiency - fetches all last_scanned timestamps in a single query.
    */
   private filterChangedFiles(files: string[], root: string): string[] {

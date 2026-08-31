@@ -51,9 +51,9 @@ export function createDefCommand(): Command {
         for (const d of definitions) {
           const defText = ts.sys.readFile(d.fileName) ?? '';
           const before = defText.slice(0, d.textSpan.start);
-          const line = before.split('\n').length;
+          const line = before.split(/\r?\n/).length;
           const lineStart = before.lastIndexOf('\n') + 1;
-          const snippet = (defText.slice(lineStart).split('\n')[0] ?? '').trim().slice(0, 140);
+          const snippet = (defText.slice(lineStart).split(/\r?\n/)[0] ?? '').trim().slice(0, 140);
           output.kv(`  ${ls.norm(d.fileName)}:${line}`, snippet || d.name);
         }
         output.kv('Definitions', String(definitions.length));

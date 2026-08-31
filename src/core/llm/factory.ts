@@ -5,7 +5,7 @@ import { OllamaProvider } from './ollama.js';
 import { GeminiProvider } from './gemini.js';
 import { GroqProvider } from './groq.js';
 import { withProviderResilience } from './resilient.js';
-import { logger } from '../../cli/utils/logger.js';
+import { logger } from '../../utils/logger.js';
 
 export function createLLMProvider(config: LLMConfig): LLMProvider | null {
   try {

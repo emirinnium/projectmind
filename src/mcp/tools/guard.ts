@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { toolCacheHintMeta } from './list.js';
 
 /** Root commands that must never be launched through the MCP surface. */
 export const BLOCKED_ROOT_COMMANDS = new Set(['mcp', 'init']);
@@ -39,9 +40,15 @@ const DEDICATED_READ_ONLY = new Set([
   'analyze_taint',
   'check_architecture',
   'check_coherence',
+  'check_contracts',
+  'check_intent_conflicts',
   'debt_report',
+  'export_architecture_diagram',
   'find_circular_deps',
   'find_file_by_import',
+  'find_patterns',
+  'find_symbol_references',
+  'find_symbol_definition',
   'generate_embedding',
   'genome_score',
   'get_agent_sessions',
@@ -56,12 +63,20 @@ const DEDICATED_READ_ONLY = new Set([
   'get_team_memories',
   'kg_query',
   'list_projects',
+  'plan_context_budget',
+  'predict_impact',
+  'predict_merge_risk',
+  'recommend_skills',
+  'search_intent',
+  'semantic_search',
   'search_team_memories',
   'resolve_import',
   'resolve_path',
   'scale_report',
+  'suggest_next_files',
   'suggest_refactor',
   'trace_imports',
+  'scan_cves',
 ]);
 
 /**
@@ -87,6 +102,12 @@ function humanizeToolName(name: string): string {
  * Wrap server.registerTool so every DEDICATED registration made after this
  * call receives correct annotations without touching each tool file.
  *
+ * Every tool config also gets the `_meta` cache hint (ttlMs/cacheScope) via
+ * {@link toolCacheHintMeta} — the documented cache-hint feature
+ * (src/mcp/tools/list.ts) now applies to tools, not just resources. `_meta`
+ * is the MCP spec's standard extension channel, so this is additive and
+ * non-breaking for clients and tests.
+ *
  * Read-only tools get the full hint set:
  * - readOnlyHint + idempotentHint  → clients can skip approval dialogs
  * - destructiveHint: false         → explicitly non-destructive (spec default
@@ -103,6 +124,10 @@ export function annotateToolRegistration(server: McpServer): void {
   };
   const original = target.registerTool.bind(server);
   target.registerTool = (name, cfg, ...rest) => {
+    // Cache hints: spread toolCacheHintMeta(name) into every tool config
+    // (matches the resources.ts integration pattern). Stable tool definitions
+    // get a long TTL; tools reflecting live project state get a short TTL.
+    cfg._meta = toolCacheHintMeta(name)._meta as Record<string, JsonLike>;
     if (DEDICATED_READ_ONLY.has(name)) {
       const openWorld = !READ_ONLY_OPEN_WORLD_EXCEPTIONS.has(name);
       const annotations = (cfg as Record<string, JsonLike>).annotations as Record<string, JsonLike> | undefined;

@@ -42,7 +42,7 @@ const FIXERS: FixerMeta[] = [
   {
     id: 'add-return-types',
     description:
-      'Add explicit return types to functions/methods missing one (checker-inferred; safe primitives/Promise-of-primitive only)',
+      'Add explicit return types to functions/methods missing one (checker-inferred; safe literals/Promise-of-safe-literal only)',
   },
   { id: 'var-to-const', description: 'Convert var declarations to const where provably never reassigned' },
 ];
@@ -116,8 +116,8 @@ function localBindingName(specifier: string): string {
  */
 export function makeLineDiff(oldText: string, newText: string, contextLines = 2): string {
   if (oldText === newText) return '';
-  const a = oldText.split('\n');
-  const b = newText.split('\n');
+  const a = oldText.split(/\r?\n/);
+  const b = newText.split(/\r?\n/);
 
   let prefix = 0;
   while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix++;
@@ -297,10 +297,11 @@ export class AutoFixEngine {
 
       case 'add-return-types': {
         // Only safe, self-contained return types are written. Anything that
-        // would require an import (dotted names), resolve to any/unknown,
-        // or form complex unions is skipped rather than guessed.
+        // would require an import (dotted names), resolve to complex unions,
+        // or form dotted/parameterized types beyond the allowlist is skipped
+        // rather than guessed.
         const SAFE_RETURN =
-          /^(void|undefined|null|boolean|string|number|bigint|Promise<void>|Promise<undefined>|Promise<boolean>|Promise<string>|Promise<number>)$/;
+          /^(void|undefined|null|never|unknown|any|boolean|string|number|bigint|object|Function|Promise<void>|Promise<undefined>|Promise<never>|Promise<unknown>|Promise<any>|Promise<boolean>|Promise<string>|Promise<number>|Promise<object>|Promise<Function>)$/;
 
         // Pass A — checker over the on-disk file (this fixer runs first).
         let diskSf: ts.SourceFile | undefined;

@@ -9,5 +9,5 @@ import { createHash } from 'node:crypto';
  * overwrite each other's entries.
  */
 export function stableHash(input: string): string {
-  return createHash('md5').update(input).digest('hex');
+  return createHash('sha256').update(input).digest('hex');
 }

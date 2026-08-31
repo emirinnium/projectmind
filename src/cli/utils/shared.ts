@@ -3,8 +3,12 @@
  * Split across multiple modules for maintainability.
  */
 
-// Re-export commonly used utilities from barrels
-export { loadConfig, logger } from '@/index.js';
+// Re-export commonly used utilities from their ACTUAL source modules.
+// Never re-export from the root barrel here: shared.ts is re-exported BY
+// @/index.js (via utils/index.js), so importing the barrel back creates a
+// circular re-export chain (index.ts -> utils/index.ts -> shared.ts -> index.ts).
+export { loadConfig } from '@/utils/config.js';
+export { logger } from '@/utils/logger.js';
 export { join, dirname } from 'node:path';
 export { existsSync, mkdirSync, statSync } from 'node:fs';
 

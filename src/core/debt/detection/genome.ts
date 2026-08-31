@@ -1,8 +1,9 @@
 import { DatabaseSync } from 'node:sqlite';
-import { getDatabase, getStatement } from '../../../storage/database.js';
+import { getDatabase } from '../../../storage/database.js';
 import { KnowledgeGraph } from '../../../storage/knowledge-graph.js';
 import { PatternLibrary, Pattern } from '../../../parser/pattern-extractor.js';
 import { stableHash } from '../../../utils/hash.js';
+import { readFileSync } from 'node:fs';
 
 export interface GenomeResult {
   genomeData: string;
@@ -19,6 +20,7 @@ export interface GenomeBreakdown {
   agentSessions: number;
   importResolutionRate: number;
   circularDepPenalty: number;
+  markerCount: number;
 }
 
 /**
@@ -99,6 +101,32 @@ export class GenomeComputer {
       circularDepPenalty = 0;
     }
     
+    // Marker count from TODO/FIXME scanning across all project files.
+      // Marker count is recorded in the genome breakdown but does not penalty
+      // the coherence score (unlike violation/circular dep penalties).
+    let markerCount = 0;
+    try {
+      const allFiles = this.kg.getAllFiles();
+      let totalMarkers = 0;
+      for (const file of allFiles) {
+        try {
+          const content = readFileSync(file.path, 'utf-8');
+          const lines = content.split(/\r?\n/);
+          for (const line of lines) {
+            const match = line.match(/\b(TODO|FIXME)\b[:\s]+(.*)/);
+            if (match) {
+              totalMarkers++;
+            }
+          }
+        } catch {
+          // Skip files that can't be read
+        }
+      }
+      markerCount = totalMarkers;
+    } catch {
+      markerCount = 0;
+    }
+    
     // Agent coverage bonus (0-5%)
     const agentSessions = this.kg.getAgentSessions().length;
     const agentCoverage = Math.min(agentSessions / 10, 1); // Max bonus at 10 sessions
@@ -117,12 +145,14 @@ export class GenomeComputer {
       agentSessions,
       importResolutionRate: Math.round(importResolutionRate * 1000) / 1000,
       circularDepPenalty: Math.round(circularDepPenalty * 1000) / 1000,
+      markerCount,
     };
 
     const genomeData = JSON.stringify({
       patternCount: projectPatterns.length,
       violationCount,
       agentSessions,
+      markerCount,
       coherenceScore,
       breakdown,
       computedAt: new Date().toISOString(),

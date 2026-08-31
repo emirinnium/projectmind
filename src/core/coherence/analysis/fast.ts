@@ -58,7 +58,7 @@ export class FastCoherenceAnalyzer {
     reasoningTrace.push(`File: ${options.filePath}`);
     reasoningTrace.push(`Code length: ${options.code.length} characters`);
 
-    const lines = options.code.split('\n');
+    const lines = options.code.split(/\r?\n/);
     reasoningTrace.push(`Line count: ${lines.length}`);
 
     let issues = 0;

@@ -1,5 +1,5 @@
 import type { LLMProvider, LLMResponse } from './types.js';
-import { logger } from '../../cli/utils/logger.js';
+import { logger } from '../../utils/logger.js';
 
 /**
  * Resilience decorator for LLM providers:

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import type { FileStructure } from './ast-parser.js';
 import { KnowledgeGraph } from '../storage/knowledge-graph.js';
 import { createLangParser, type LangSyntaxNode, type StructuralLanguage } from './language-service.js';
+import { sanitizeIdentity } from './taint-utils.js';
 
 export interface TaintSource {
   kind: 'FILE' | 'NETWORK' | 'DATABASE' | 'ENV' | 'STDIN' | 'STDOUT' | 'STDERR' | 'SOCKET';
@@ -38,44 +39,44 @@ export interface TaintFlow {
 // Known source patterns: module.function or function name -> kind
 const SOURCE_PATTERNS: Array<{ pattern: RegExp; kind: TaintSource['kind']; extractIdentity: (text: string) => string; languages?: string[] }> = [
   // TypeScript/JavaScript
-  { pattern: /^fs\.readFile(Sync)?$/, kind: 'FILE', extractIdentity: (text) => text.replace(/^fs\.readFile(Sync)?\(/, '').replace(/[)'"]/g, '').trim(), languages: ['typescript', 'javascript'] },
-  { pattern: /^fs\.createReadStream$/, kind: 'FILE', extractIdentity: (text) => text.replace(/^fs\.createReadStream\(/, '').replace(/[)'"]/g, '').trim(), languages: ['typescript', 'javascript'] },
-  { pattern: /^process\.env$/, kind: 'ENV', extractIdentity: (text) => text.replace(/^process\.env\./, '').trim(), languages: ['typescript', 'javascript'] },
+  { pattern: /^fs\.readFile(Sync)?$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^fs\.readFile(Sync)?\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
+  { pattern: /^fs\.createReadStream$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^fs\.createReadStream\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
+  { pattern: /^process\.env$/, kind: 'ENV', extractIdentity: (text) => sanitizeIdentity(text.replace(/^process\.env\./, '')), languages: ['typescript', 'javascript'] },
   { pattern: /^process\.stdin$/, kind: 'STDIN', extractIdentity: () => 'process.stdin', languages: ['typescript', 'javascript'] },
-  { pattern: /^fetch$/, kind: 'NETWORK', extractIdentity: (text) => text.replace(/^fetch\(/, '').replace(/[)'"]/g, '').trim(), languages: ['typescript', 'javascript'] },
-  { pattern: /^http\.request$/, kind: 'NETWORK', extractIdentity: (text) => text.replace(/^http\.request\(/, '').replace(/[)'"]/g, '').trim(), languages: ['typescript', 'javascript'] },
-  { pattern: /^https\.request$/, kind: 'NETWORK', extractIdentity: (text) => text.replace(/^https\.request\(/, '').replace(/[)'"]/g, '').trim(), languages: ['typescript', 'javascript'] },
-  { pattern: /^net\.connect$/, kind: 'SOCKET', extractIdentity: (text) => text.replace(/^net\.connect\(/, '').replace(/[)'"]/g, '').trim(), languages: ['typescript', 'javascript'] },
+  { pattern: /^fetch$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^fetch\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
+  { pattern: /^http\.request$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^http\.request\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
+  { pattern: /^https\.request$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^https\.request\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
+  { pattern: /^net\.connect$/, kind: 'SOCKET', extractIdentity: (text) => sanitizeIdentity(text.replace(/^net\.connect\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
 
   // Python
-  { pattern: /^open$/, kind: 'FILE', extractIdentity: (text) => text.replace(/^open\(/, '').replace(/[)'"]/g, '').trim(), languages: ['python'] },
-  { pattern: /^os\.environ$/, kind: 'ENV', extractIdentity: (text) => text.replace(/^os\.environ\[/, '').replace(/[\]'"]/g, '').trim(), languages: ['python'] },
+  { pattern: /^open$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^open\(/, '').replace(/[)'"]/g, '')), languages: ['python'] },
+  { pattern: /^os\.environ$/, kind: 'ENV', extractIdentity: (text) => sanitizeIdentity(text.replace(/^os\.environ\[/, '').replace(/[\]'"]/g, '')), languages: ['python'] },
   { pattern: /^sys\.stdin$/, kind: 'STDIN', extractIdentity: () => 'sys.stdin', languages: ['python'] },
-  { pattern: /^requests\.get$/, kind: 'NETWORK', extractIdentity: (text) => text.replace(/^requests\.get\(/, '').replace(/[)'"]/g, '').trim(), languages: ['python'] },
-  { pattern: /^requests\.post$/, kind: 'NETWORK', extractIdentity: (text) => text.replace(/^requests\.post\(/, '').replace(/[)'"]/g, '').trim(), languages: ['python'] },
-  { pattern: /^subprocess\.run$/, kind: 'SOCKET', extractIdentity: (text) => text.replace(/^subprocess\.run\(/, '').replace(/[)'"]/g, '').trim(), languages: ['python'] },
+  { pattern: /^requests\.get$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^requests\.get\(/, '').replace(/[)'"]/g, '')), languages: ['python'] },
+  { pattern: /^requests\.post$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^requests\.post\(/, '').replace(/[)'"]/g, '')), languages: ['python'] },
+  { pattern: /^subprocess\.run$/, kind: 'SOCKET', extractIdentity: (text) => sanitizeIdentity(text.replace(/^subprocess\.run\(/, '').replace(/[)'"]/g, '')), languages: ['python'] },
 
   // Go
-  { pattern: /^os\.Open$/, kind: 'FILE', extractIdentity: (text) => text.replace(/^os\.Open\(/, '').replace(/[)'"]/g, '').trim(), languages: ['go'] },
-  { pattern: /^os\.Getenv$/, kind: 'ENV', extractIdentity: (text) => text.replace(/^os\.Getenv\(/, '').replace(/[)'"]/g, '').trim(), languages: ['go'] },
-  { pattern: /^http\.Get$/, kind: 'NETWORK', extractIdentity: (text) => text.replace(/^http\.Get\(/, '').replace(/[)'"]/g, '').trim(), languages: ['go'] },
-  { pattern: /^http\.Post$/, kind: 'NETWORK', extractIdentity: (text) => text.replace(/^http\.Post\(/, '').replace(/[)'"]/g, '').trim(), languages: ['go'] },
-  { pattern: /^exec\.Command$/, kind: 'SOCKET', extractIdentity: (text) => text.replace(/^exec\.Command\(/, '').replace(/[)'"]/g, '').trim(), languages: ['go'] },
+  { pattern: /^os\.Open$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^os\.Open\(/, '').replace(/[)'"]/g, '')), languages: ['go'] },
+  { pattern: /^os\.Getenv$/, kind: 'ENV', extractIdentity: (text) => sanitizeIdentity(text.replace(/^os\.Getenv\(/, '').replace(/[)'"]/g, '')), languages: ['go'] },
+  { pattern: /^http\.Get$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^http\.Get\(/, '').replace(/[)'"]/g, '')), languages: ['go'] },
+  { pattern: /^http\.Post$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^http\.Post\(/, '').replace(/[)'"]/g, '')), languages: ['go'] },
+  { pattern: /^exec\.Command$/, kind: 'SOCKET', extractIdentity: (text) => sanitizeIdentity(text.replace(/^exec\.Command\(/, '').replace(/[)'"]/g, '')), languages: ['go'] },
 
   // Rust
-  { pattern: /^std::fs::File::open$/, kind: 'FILE', extractIdentity: (text) => text.replace(/^std::fs::File::open\(/, '').replace(/[)'"]/g, '').trim(), languages: ['rust'] },
-  { pattern: /^std::env::var$/, kind: 'ENV', extractIdentity: (text) => text.replace(/^std::env::var\(/, '').replace(/[)'"]/g, '').trim(), languages: ['rust'] },
-  { pattern: /^reqwest::get$/, kind: 'NETWORK', extractIdentity: (text) => text.replace(/^reqwest::get\(/, '').replace(/[)'"]/g, '').trim(), languages: ['rust'] },
-  { pattern: /^std::process::Command::new$/, kind: 'SOCKET', extractIdentity: (text) => text.replace(/^std::process::Command::new\(/, '').replace(/[)'"]/g, '').trim(), languages: ['rust'] },
+  { pattern: /^std::fs::File::open$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^std::fs::File::open\(/, '').replace(/[)'"]/g, '')), languages: ['rust'] },
+  { pattern: /^std::env::var$/, kind: 'ENV', extractIdentity: (text) => sanitizeIdentity(text.replace(/^std::env::var\(/, '').replace(/[)'"]/g, '')), languages: ['rust'] },
+  { pattern: /^reqwest::get$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^reqwest::get\(/, '').replace(/[)'"]/g, '')), languages: ['rust'] },
+  { pattern: /^std::process::Command::new$/, kind: 'SOCKET', extractIdentity: (text) => sanitizeIdentity(text.replace(/^std::process::Command::new\(/, '').replace(/[)'"]/g, '')), languages: ['rust'] },
 
   // Java
-  { pattern: /^Files\.readAllBytes$/, kind: 'FILE', extractIdentity: (text) => text.replace(/^Files\.readAllBytes\(/, '').replace(/[)'"]/g, '').trim(), languages: ['java'] },
-  { pattern: /^System\.getenv$/, kind: 'ENV', extractIdentity: (text) => text.replace(/^System\.getenv\(/, '').replace(/[)'"]/g, '').trim(), languages: ['java'] },
+  { pattern: /^Files\.readAllBytes$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^Files\.readAllBytes\(/, '').replace(/[)'"]/g, '')), languages: ['java'] },
+  { pattern: /^System\.getenv$/, kind: 'ENV', extractIdentity: (text) => sanitizeIdentity(text.replace(/^System\.getenv\(/, '').replace(/[)'"]/g, '')), languages: ['java'] },
   { pattern: /^System\.in$/, kind: 'STDIN', extractIdentity: () => 'System.in', languages: ['java'] },
   { pattern: /^HttpClient\.newHttpClient$/, kind: 'NETWORK', extractIdentity: () => 'HttpClient', languages: ['java'] },
   // `Runtime.getRuntime().exec(...)` may render as either `getRuntime().exec` or
   // (after AGENT name normalization) `getRuntime.exec` — accept both forms.
-  { pattern: /^Runtime\.getRuntime(\(\))?\.exec$/, kind: 'SOCKET', extractIdentity: (text) => text.replace(/^Runtime\.getRuntime(\(\))?\.exec\(/, '').replace(/[)'"]/g, '').trim(), languages: ['java'] },
+  { pattern: /^Runtime\.getRuntime(\(\))?\.exec$/, kind: 'SOCKET', extractIdentity: (text) => sanitizeIdentity(text.replace(/^Runtime\.getRuntime(\(\))?\.exec\(/, '').replace(/[)'"]/g, '')), languages: ['java'] },
 ];
 
 // Known sink patterns: function name -> kind
@@ -83,38 +84,38 @@ const SINK_PATTERNS: Array<{ pattern: RegExp; kind: TaintSink['kind']; extractId
   // TypeScript/JavaScript
   { pattern: /^eval$/, kind: 'ENV', extractIdentity: () => 'eval', languages: ['typescript', 'javascript'] },
   { pattern: /^Function$/, kind: 'ENV', extractIdentity: () => 'Function', languages: ['typescript', 'javascript'] },
-  { pattern: /^exec$/, kind: 'SOCKET', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^execSync$/, kind: 'SOCKET', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^execFile$/, kind: 'SOCKET', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^spawn$/, kind: 'SOCKET', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^child_process\.exec$/, kind: 'SOCKET', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^child_process\.spawn$/, kind: 'SOCKET', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^query$/, kind: 'DATABASE', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^execute$/, kind: 'DATABASE', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^send$/, kind: 'NETWORK', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^write$/, kind: 'FILE', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^writeFile$/, kind: 'FILE', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^writeFileSync$/, kind: 'FILE', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
-  { pattern: /^createWriteStream$/, kind: 'FILE', extractIdentity: (t) => t, languages: ['typescript', 'javascript'] },
+  { pattern: /^exec$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^execSync$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^execFile$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^spawn$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^child_process\.exec$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^child_process\.spawn$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^query$/, kind: 'DATABASE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^execute$/, kind: 'DATABASE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^send$/, kind: 'NETWORK', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^write$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^writeFile$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^writeFileSync$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  { pattern: /^createWriteStream$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
 
   // Python
   { pattern: /^eval$/, kind: 'ENV', extractIdentity: () => 'eval', languages: ['python'] },
   { pattern: /^exec$/, kind: 'ENV', extractIdentity: () => 'exec', languages: ['python'] },
-  { pattern: /^subprocess\.run$/, kind: 'SOCKET', extractIdentity: (t) => t, languages: ['python'] },
-  { pattern: /^subprocess\.Popen$/, kind: 'SOCKET', extractIdentity: (t) => t, languages: ['python'] },
-  { pattern: /^open$/, kind: 'FILE', extractIdentity: (t) => t, languages: ['python'] },
+  { pattern: /^subprocess\.run$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['python'] },
+  { pattern: /^subprocess\.Popen$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['python'] },
+  { pattern: /^open$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['python'] },
 
   // Go
-  { pattern: /^exec\.Command$/, kind: 'SOCKET', extractIdentity: (t) => t, languages: ['go'] },
-  { pattern: /^os\.Create$/, kind: 'FILE', extractIdentity: (t) => t, languages: ['go'] },
+  { pattern: /^exec\.Command$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['go'] },
+  { pattern: /^os\.Create$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['go'] },
 
   // Rust
-  { pattern: /^std::process::Command::new$/, kind: 'SOCKET', extractIdentity: (t) => t, languages: ['rust'] },
-  { pattern: /^std::fs::File::create$/, kind: 'FILE', extractIdentity: (t) => t, languages: ['rust'] },
+  { pattern: /^std::process::Command::new$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['rust'] },
+  { pattern: /^std::fs::File::create$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['rust'] },
 
   // Java
-  { pattern: /^Runtime\.getRuntime(\(\))?\.exec$/, kind: 'SOCKET', extractIdentity: (t) => t, languages: ['java'] },
-  { pattern: /^Files\.write$/, kind: 'FILE', extractIdentity: (t) => t, languages: ['java'] },
+  { pattern: /^Runtime\.getRuntime(\(\))?\.exec$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['java'] },
+  { pattern: /^Files\.write$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['java'] },
 ];
 
 /**
@@ -208,19 +209,19 @@ export class TaintAnalyzer {
 
     const extractIdentityFromInit = (initNode: ts.Node, source: { identity: string }): string => {
       if (ts.isCallExpression(initNode) && initNode.arguments.length > 0) {
-        return initNode.arguments[0]!.getText(sourceFile).replace(/[)'"]/g, '').trim();
+        return sanitizeIdentity(initNode.arguments[0]!.getText(sourceFile).replace(/[)'"]/g, ''));
       }
       if (ts.isPropertyAccessExpression(initNode)) {
-        return initNode.name.text;
+        return sanitizeIdentity(initNode.name.text);
       }
-      return source.identity;
+      return sanitizeIdentity(source.identity);
     };
 
     const extractIdentityFromCall = (callNode: ts.CallExpression, source: { identity: string }): string => {
       if (callNode.arguments.length > 0) {
-        return callNode.arguments[0]!.getText(sourceFile).replace(/[)'"]/g, '').trim();
+        return sanitizeIdentity(callNode.arguments[0]!.getText(sourceFile).replace(/[)'"]/g, ''));
       }
-      return source.identity;
+      return sanitizeIdentity(source.identity);
     };
 
     const visit = (node: ts.Node, currentFunctionName: string | undefined, path: TaintPathNode[] = []): void => {
@@ -228,7 +229,7 @@ export class TaintAnalyzer {
 
       if (ts.isVariableDeclaration(node) && node.initializer) {
         const initNode = node.initializer;
-        const calleeText = getQualifiedName(initNode);
+        const calleeText = sanitizeIdentity(getQualifiedName(initNode));
         const source = this.matchSource(calleeText, language);
         if (source && node.name) {
           const identity = extractIdentityFromInit(initNode, source);
@@ -243,7 +244,7 @@ export class TaintAnalyzer {
       }
 
       if (ts.isCallExpression(node)) {
-        const calleeText = getQualifiedName(node.expression);
+        const calleeText = sanitizeIdentity(getQualifiedName(node.expression));
         const source = this.matchSource(calleeText, language);
         if (source) {
           const identity = extractIdentityFromCall(node, source);
@@ -328,7 +329,7 @@ export class TaintAnalyzer {
               ];
               flows.push({
                 source: varSource,
-                sink: { qualifiedName: calleeText, kind: sinkInfo.kind, identity: sinkInfo.identity, node },
+                sink: { qualifiedName: calleeText, kind: sinkInfo.kind, identity: sanitizeIdentity(sinkInfo.identity), node },
                 viaFunction: currentFunctionName,
                 viaVariable: arg,
                 path: flowPath,
@@ -512,24 +513,24 @@ export class TaintAnalyzer {
     const extractFromFirstArg = (n: LangSyntaxNode): string | undefined => {
       const first = argNodesList(n)[0];
       if (!first) return undefined;
-      return first.text.trim().replace(/^['"]|['"]$/g, '');
+      return sanitizeIdentity(first.text.replace(/^['"]|['"]$/g, ''));
     };
 
     const identityFromInit = (init: LangSyntaxNode, source: TaintSource): string => {
       if (isCallNode(init)) {
-        return extractFromFirstArg(init) ?? source.identity;
+        return extractFromFirstArg(init) ?? sanitizeIdentity(source.identity);
       }
       if (init.type === 'subscript') {
         const idx = init.childForFieldName('subscript');
-        return idx ? idx.text.replace(/^['"]|['"]$/g, '') : source.identity;
+        return idx ? sanitizeIdentity(idx.text.replace(/^['"]|['"]$/g, '')) : sanitizeIdentity(source.identity);
       }
       if (init.type === 'attribute') {
-        return init.childForFieldName('attribute')?.text ?? source.identity;
+        return sanitizeIdentity(init.childForFieldName('attribute')?.text ?? source.identity);
       }
       if (init.type === 'field_access') {
-        return init.childForFieldName('field')?.text ?? source.identity;
+        return sanitizeIdentity(init.childForFieldName('field')?.text ?? source.identity);
       }
-      return source.identity;
+      return sanitizeIdentity(source.identity);
     };
 
     // Extract a single-name variable declaration from a node, per language grammar.
@@ -611,7 +612,7 @@ export class TaintAnalyzer {
       // Variable declarations initialize taint.
       const decl = declInfo(n);
       if (decl) {
-        const calleeText = getQualified(chainRoot(decl.init));
+        const calleeText = sanitizeIdentity(getQualified(chainRoot(decl.init)));
         const source = this.matchSource(calleeText, language);
         if (source) {
           const src: TaintSource = { ...source, node: decl.init };
@@ -622,7 +623,7 @@ export class TaintAnalyzer {
       }
 
       if (isCallNode(n)) {
-        const calleeText = getQualified(chainRoot(n));
+        const calleeText = sanitizeIdentity(getQualified(chainRoot(n)));
         const bareName: string | undefined =
           calleeText && !calleeText.includes('.') && !calleeText.includes('(') && !calleeText.includes(':') ? calleeText : undefined;
 
@@ -676,7 +677,7 @@ export class TaintAnalyzer {
             if (varSource) {
               flows.push({
                 source: varSource,
-                sink: { qualifiedName: calleeText, kind: sinkInfo.kind, identity: sinkInfo.identity, node: n },
+                sink: { qualifiedName: calleeText, kind: sinkInfo.kind, identity: sanitizeIdentity(sinkInfo.identity), node: n },
                 viaFunction: currentFunctionName,
                 viaVariable: arg,
                 path: [

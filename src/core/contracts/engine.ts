@@ -119,7 +119,7 @@ export class ContractEngine {
       // 1. Check forbidden keywords (supports both literal strings and regex patterns)
       if (contract.forbiddenKeywords) {
         for (const kw of contract.forbiddenKeywords) {
-          const lines = code.split('\n');
+          const lines = code.split(/\r?\n/);
           const regex = ContractEngine.tryParseRegex(kw);
           lines.forEach((lineText, idx) => {
             const matches = regex ? regex.test(lineText) : lineText.includes(kw);
@@ -171,7 +171,7 @@ export class ContractEngine {
 
       // 4. Check max lines
       if (contract.maxLines) {
-        const lineCount = code.split('\n').length;
+        const lineCount = code.split(/\r?\n/).length;
         if (lineCount > contract.maxLines) {
           violations.push({
             contractId: contract.id,

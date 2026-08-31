@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 interface SbomPackage {
@@ -208,7 +208,7 @@ function validateSbom(content: string, format: string): { valid: boolean; errors
     if (format === 'spdx' || format === 'spdx-tag') {
       // SPDX 2.x tag-value structural checks.
       const tags = new Map<string, string[]>();
-      for (const line of content.split('\n')) {
+      for (const line of content.split(/\r?\n/)) {
         const idx = line.indexOf(':');
         if (idx <= 0 || line.startsWith('#')) continue;
         const key = line.slice(0, idx).trim();
@@ -314,8 +314,13 @@ function escapeXml(str: string): string {
  * Uses keyless OIDC flow unless COSIGN_KEY is set in the environment.
  */
 function signWithCosign(filePath: string): void {
-  const probe = spawnSync('cosign', ['version'], { encoding: 'utf-8', shell: true });
-  if (probe.status !== 0) {
+  // SECURITY: execFileSync with an argument array and NO shell. filePath comes
+  // from the CLI --output option and COSIGN_KEY from the environment; with
+  // shell:true either could inject shell commands (self-injection class).
+  // With shell:false they are discrete argv entries never parsed by a shell.
+  try {
+    execFileSync('cosign', ['version'], { encoding: 'utf-8' });
+  } catch {
     output.warn('cosign CLI not found on PATH — signing skipped.');
     output.info('Install sigstore/cosign or run manually:');
     output.kv('  cosign sign-blob', `--key=<key> --output-signature=${filePath}.sig ${filePath}`);
@@ -326,10 +331,13 @@ function signWithCosign(filePath: string): void {
   if (process.env.COSIGN_KEY) {
     args.push('--key', process.env.COSIGN_KEY);
   }
-  const result = spawnSync('cosign', [...args, filePath], { encoding: 'utf-8', shell: true });
-  if (result.status === 0) {
+  args.push(filePath);
+  try {
+    execFileSync('cosign', args, { encoding: 'utf-8' });
     output.success(`SBOM signed: ${filePath}.sig`);
-  } else {
-    output.warn(`cosign failed (exit ${result.status}): ${(result.stderr || '').slice(0, 200)}`);
+  } catch (err) {
+    const e = err as { status?: number | null; stderr?: string | Buffer };
+    const stderr = typeof e.stderr === 'string' ? e.stderr : (e.stderr?.toString('utf-8') ?? '');
+    output.warn(`cosign failed (exit ${e.status ?? 'unknown'}): ${stderr.slice(0, 200)}`);
   }
 }

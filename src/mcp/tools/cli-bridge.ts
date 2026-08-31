@@ -30,6 +30,15 @@ export const ALLOWLISTED_CLI_COMMANDS = new Set([
   'skill-recommend',
   'deps-fresh',
   'secrets-life',
+  'git-insights',
+  'workspace',
+  'coupling',
+  'def',
+  'refs',
+  'export_architecture_diagram',
+  'find_symbol_references',
+  'onboard',
+  'migrate',
 ]);
 
 /**
@@ -52,6 +61,7 @@ export const ALLOWLISTED_CLI_COMMANDS = new Set([
 const SUBCOMMAND_WHITELIST: Record<string, ReadonlyArray<ReadonlyArray<string>>> = {
   doctor: [['scan-health']],
   license: [['check'], ['report']],
+  migrate: [['check-deps']],
 };
 
 /**

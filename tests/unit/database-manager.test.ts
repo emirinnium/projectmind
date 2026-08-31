@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { DatabaseManager } from '../../src/storage/database.js';
+import { DatabaseManager, initDatabase, closeDatabase } from '../../src/storage/database.js';
 
 describe('DatabaseManager', () => {
   let manager: DatabaseManager;
@@ -165,6 +165,26 @@ describe('DatabaseManager', () => {
       const stmt = manager.getStatement('SELECT 1 as test');
       const result = stmt.get() as { test: number };
       expect(result.test).toBe(1);
+    });
+  });
+
+  describe('busy_timeout (SQLITE_BUSY mitigation)', () => {
+    it('DatabaseManager.init() sets busy_timeout to 5000ms', () => {
+      manager = new DatabaseManager();
+      manager.init();
+
+      const row = manager.getDb().prepare('PRAGMA busy_timeout').get() as { busy_timeout: number };
+      expect(row.busy_timeout).toBe(5000);
+    });
+
+    it('initDatabase() sets busy_timeout to 5000ms', () => {
+      const db = initDatabase('tests/tmp-busy-timeout.db');
+      try {
+        const row = db.prepare('PRAGMA busy_timeout').get() as { busy_timeout: number };
+        expect(row.busy_timeout).toBe(5000);
+      } finally {
+        closeDatabase();
+      }
     });
   });
 });

@@ -79,7 +79,7 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   private extractReasoningTrace(content: string): string[] {
-    const lines = content.split('\n');
+    const lines = content.split(/\r?\n/);
     const trace: string[] = [];
     let inTrace = false;
 

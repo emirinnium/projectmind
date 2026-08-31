@@ -13,17 +13,28 @@ let diagnostics: DiagnosticManager | null = null;
 export async function activate(context: vscode.ExtensionContext) {
   console.log('ProjectMind extension activated');
 
-  // Initialize MCP client — pin it to the first workspace folder so the
-  // server scans the user's project, not the VS Code installation dir.
-  mcpClient = new MCPClient();
+  const mcpClient = initializeMCPClient(context);
+  const diagnostics = initializeDiagnostics(mcpClient);
+  setupRuntime(context, mcpClient, diagnostics);
+}
+
+function initializeMCPClient(context: vscode.ExtensionContext): MCPClient {
+  const mcpClient = new MCPClient();
   mcpClient.workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  return mcpClient;
+}
 
-  // Initialize status bar
-  statusBar = new StatusBarManager(context);
+function initializeDiagnostics(mcpClient: MCPClient): DiagnosticManager {
+  const diagnostics = new DiagnosticManager(mcpClient);
+  return diagnostics;
+}
 
-  // Inline coherence diagnostics (previously dead code — now wired)
-  diagnostics = new DiagnosticManager(mcpClient);
-  context.subscriptions.push({ dispose: () => diagnostics?.dispose() });
+function setupRuntime(
+  context: vscode.ExtensionContext,
+  mcpClient: MCPClient,
+  diagnostics: DiagnosticManager
+) {
+  const statusBar = new StatusBarManager(context);
 
   // CodeLens ("N dependents · load X" + Show Impact) and hover intelligence.
   registerIntelligence(context, mcpClient);

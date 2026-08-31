@@ -51,6 +51,7 @@ export async function buildProgram(): Promise<Command> {
     { path: './commands/onboard.js', name: 'createOnboardCommand' },
     { path: './commands/test-quality.js', name: 'createTestQualityCommand' },
     { path: './commands/deps-fresh.js', name: 'createDepsFreshCommand' },
+    { path: './commands/find-circular-deps.js', name: 'createFindCircularDepsCommand' },
     { path: './commands/refactor-roi.js', name: 'createRefactorRoiCommand' },
     { path: './commands/flags.js', name: 'createFlagsCommand' },
     { path: './commands/secrets-life.js', name: 'createSecretsLifeCommand' },
@@ -84,3 +85,4 @@ export async function buildProgram(): Promise<Command> {
 
   return program;
 }
+

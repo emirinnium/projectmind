@@ -21,6 +21,11 @@ export class ScaleManager {
     this.reporter = new ScaleReporter(this.kg);
   }
 
+  /** Public accessor for the underlying knowledge graph (no private-member access needed by callers). */
+  getKnowledgeGraph(): KnowledgeGraph {
+    return this.kg;
+  }
+
   async scanProject(rootPath?: string, full?: boolean): Promise<{ scanned: number; errors: number; totalFiles: number }> {
     const profile = await this.scanner.scanProjectWithProfile(rootPath, full);
     return { scanned: profile.scannedFiles, errors: profile.errorFiles, totalFiles: profile.totalFiles };

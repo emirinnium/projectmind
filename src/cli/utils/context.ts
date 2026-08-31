@@ -1,10 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
-import {
-  loadConfig,
-  initDatabase,
-  closeDatabase,
-  KnowledgeGraph,
-} from '@/index.js';
+import { loadConfig } from '@/utils/config.js';
+import { initDatabase, closeDatabase } from '@/storage/database.js';
+import { KnowledgeGraph } from '@/storage/kg/graph.js';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 

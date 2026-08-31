@@ -287,6 +287,76 @@ describe('handleOauthRoute — HTTP surface', () => {
     const result = handleOauthRoute('/oauth/nope', '{}', 'application/json', ctx());
     expect(result.handled).toBe(false);
   });
+
+  describe('scope allowlist (allowedScopes)', () => {
+    function scopeClient(reg: ClientRegistry): ClientRegistrationResponse {
+      return reg.register({
+        client_name: 'scope-svc',
+        redirect_uris: ['https://s.example.com/cb'],
+        grant_types: ['client_credentials'],
+      });
+    }
+
+    it('grants an authorized requested scope', () => {
+      const reg = new ClientRegistry(db);
+      const client = scopeClient(reg);
+      const result = handleOauthRoute(
+        '/oauth/token',
+        JSON.stringify({
+          grant_type: 'client_credentials',
+          client_id: client.client_id,
+          client_secret: client.client_secret,
+          scope: 'projectmind:mcp',
+        }),
+        'application/json',
+        { ...ctx({ registry: reg }), allowedScopes: ['projectmind:mcp'] },
+      );
+      expect(result.handled).toBe(true);
+      if (!result.handled) return;
+      expect(result.status).toBe(200);
+      expect(result.payload.scope).toBe('projectmind:mcp');
+    });
+
+    it('rejects a fully unauthorized scope request with invalid_scope', () => {
+      const reg = new ClientRegistry(db);
+      const client = scopeClient(reg);
+      const result = handleOauthRoute(
+        '/oauth/token',
+        JSON.stringify({
+          grant_type: 'client_credentials',
+          client_id: client.client_id,
+          client_secret: client.client_secret,
+          scope: 'admin:all',
+        }),
+        'application/json',
+        { ...ctx({ registry: reg }), allowedScopes: ['projectmind:mcp'] },
+      );
+      expect(result.handled).toBe(true);
+      if (!result.handled) return;
+      expect(result.status).toBe(400);
+      expect(result.payload.error).toBe('invalid_scope');
+    });
+
+    it('issues only the authorized subset of a mixed scope request', () => {
+      const reg = new ClientRegistry(db);
+      const client = scopeClient(reg);
+      const result = handleOauthRoute(
+        '/oauth/token',
+        JSON.stringify({
+          grant_type: 'client_credentials',
+          client_id: client.client_id,
+          client_secret: client.client_secret,
+          scope: 'projectmind:mcp admin:all',
+        }),
+        'application/json',
+        { ...ctx({ registry: reg }), allowedScopes: ['projectmind:mcp'] },
+      );
+      expect(result.handled).toBe(true);
+      if (!result.handled) return;
+      expect(result.status).toBe(200);
+      expect(result.payload.scope).toBe('projectmind:mcp');
+    });
+  });
 });
 
 describe('SQLite persistence — OAuth data survives service restarts', () => {

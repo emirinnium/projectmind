@@ -278,4 +278,7 @@ async function testDatabase(): Promise<void> {
   process.exit(0);
 }
 
-testDatabase().catch(console.error);
+testDatabase().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

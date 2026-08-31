@@ -121,13 +121,23 @@ export function getAgentSessions(ctx: KgContext, agentName?: string, limit: numb
     ? getStatement(sql).all(agentName, limit)
     : getStatement(sql).all(limit)
   ) as Record<string, SQLOutputValue>[];
+  // Corrupt JSON in a single row must not throw through every session reader
+  // (e.g. the skill-recommend CLI) — fall back to the empty-column semantics.
+  const parseJsonColumn = (value: SQLOutputValue): unknown => {
+    if (!value) return null;
+    try {
+      return JSON.parse(value as string);
+    } catch {
+      return null;
+    }
+  };
   return rows.map((r) => ({
     id: r.id as number,
     agentName: r.agent_name as string,
     startedAt: r.started_at as string,
     endedAt: r.ended_at as string | null,
     contextHash: r.context_hash as string,
-    decisions: r.decisions ? JSON.parse(r.decisions as string) : null,
-    fingerprint: r.fingerprint ? JSON.parse(r.fingerprint as string) : null,
+    decisions: parseJsonColumn(r.decisions) as AgentSession['decisions'],
+    fingerprint: parseJsonColumn(r.fingerprint) as AgentSession['fingerprint'],
   }));
 }

@@ -166,7 +166,7 @@ export function createFlagsCommand(): Command {
 
 function findFeatureFlags(content: string, relativePath: string, _filePath: string): FeatureFlag[] {
   const flags: FeatureFlag[] = [];
-  const lines = content.split('\n');
+  const lines = content.split(/\r?\n/);
   
   // Common feature flag patterns
   const patterns = [
@@ -245,7 +245,7 @@ function extractConfigFlags(content: string, relativePath: string): FeatureFlag[
     flags.push({
       name: match[1],
       file: relativePath,
-      line: content.substring(0, match.index).split('\n').length,
+      line: content.substring(0, match.index).split(/\r?\n/).length,
       type: 'config',
       framework: 'custom',
       defaultValue: match[2] === 'true',

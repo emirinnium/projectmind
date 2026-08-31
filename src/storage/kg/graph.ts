@@ -1,12 +1,11 @@
 import { DatabaseSync } from 'node:sqlite';
 import { getDatabase } from '../database.js';
 import { SCHEMA_SQL } from '../schema.js';
-import { FileStructure } from '../../parser/ast-parser.js';
+import { parseFile as parseFileAst, FileStructure } from '../../parser/ast-parser.js';
 import type { FileInfo, MemoryEntry, AgentSession } from './types.js';
 import type { KgContext } from './helpers/context.js';
 import { createGraphTraversal } from './graph-traversal.js';
 import { getVecIndex } from '../../core/embeddings/vector-index.js';
-import { stat } from 'node:fs/promises';
 
 import {
   ensureDefaultProject,
@@ -96,7 +95,7 @@ export interface KnowledgeGraphDeps {
     stat?: (path: string) => Promise<{ mtime: Date }>;
   };
   parser: {
-    parseFile: (content: string) => FileStructure;
+    parseFile: (content: string, filePath?: string) => FileStructure | null;
   };
   embedding: {
     generateEmbedding: (text: string) => Promise<number[]>;
@@ -141,14 +140,7 @@ export class KnowledgeGraph {
         },
       },
       parser: {
-        parseFile: (content: string) => {
-          // Lazy sync import to avoid circular dependency.
-          // This is the only synchronous require in the codebase because
-          // the parser interface demands a sync call.
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { parseFile: parse } = require('../../parser/ast-parser.js') as { parseFile: (c: string) => FileStructure };
-          return parse(content);
-        },
+        parseFile: (content: string, filePath?: string) => parseFileAst(filePath ?? 'inline.ts', content),
       },
       embedding: {
         generateEmbedding: async (text: string) => {
@@ -233,6 +225,7 @@ export class KnowledgeGraph {
 
   deleteProject(projectId: number): { success: boolean; deletedFiles: number; error?: string } {
     const result = deleteProject(this.ctx, projectId);
+    this._traversal = null;
     if (result.success && this.currentProjectId === projectId) {
       this.currentProjectId = 1;
     }
@@ -273,15 +266,17 @@ export class KnowledgeGraph {
 
   // ===== File Operations =====
   async upsertFile(fileStruct: FileStructure, relativePath: string): Promise<number> {
-    return upsertFile(this.ctx, fileStruct, relativePath);
+    const fileId = await upsertFile(this.ctx, fileStruct, relativePath);
+    this._traversal = null;
+    return fileId;
   }
 
-  storeFileDetails(fileId: number, fileStruct: FileStructure): void {
-    storeFileDetails(this.ctx, fileId, fileStruct);
+  async storeFileDetails(fileId: number, fileStruct: FileStructure): Promise<void> {
+    return storeFileDetails(this.ctx, fileId, fileStruct);
   }
 
-  markAgentTouched(filePath: string, agentName: string): void {
-    markAgentTouched(this.ctx, filePath, agentName);
+  markAgentTouched(filePath: string, agentName: string): Promise<void> {
+    return markAgentTouched(this.ctx, filePath, agentName);
   }
 
   getFileByPath(path: string, projectId?: number): FileInfo | null {
@@ -522,7 +517,7 @@ export class KnowledgeGraph {
 
     for (const memory of memories) {
       try {
-        const parsed = JSON.parse(memory.value as string) as AgentAction;
+        const parsed = typeof memory.value === 'string' ? JSON.parse(memory.value) as AgentAction : memory.value as AgentAction;
         const { action, filePath, details } = parsed;
 
         // Replay the action — update the knowledge graph to reflect what the agent did.
@@ -531,11 +526,15 @@ export class KnowledgeGraph {
           case 'create': {
             // (Re-)parse the file and upsert it into the KG, then mark as agent-touched.
             const content = await this.deps.fs.readFile(filePath, 'utf-8');
-            const fileStruct = this.deps.parser.parseFile(content);
+            const fileStruct = this.deps.parser.parseFile(content, filePath);
+            if (!fileStruct) {
+              errors.push(`Failed to parse ${filePath}`);
+              break;
+            }
             const relativePath = filePath.replace(/\\/g, '/');
             const fileId = await this.upsertFile(fileStruct, relativePath);
-            this.storeFileDetails(fileId, fileStruct);
-            this.markAgentTouched(filePath, agentName);
+            await this.storeFileDetails(fileId, fileStruct);
+            await this.markAgentTouched(filePath, agentName);
             actions.push({ action, filePath, details, timestamp: memory.createdAt });
             break;
           }
@@ -547,6 +546,7 @@ export class KnowledgeGraph {
               // embedding search.
               getVecIndex(this.db).remove(fileInfo.id);
               this.db.prepare('DELETE FROM files WHERE id = ?').run(fileInfo.id);
+              this._traversal = null;
             }
             actions.push({ action, filePath, details, timestamp: memory.createdAt });
             break;
@@ -616,9 +616,13 @@ export class KnowledgeGraph {
         if (lastModified > lastSynced || isWatched) {
           // Parse the file and update its details in the knowledge graph
           const fileContent = await this.deps.fs.readFile(filePath, 'utf-8');
-          const fileStruct = this.deps.parser.parseFile(fileContent);
+          const fileStruct = this.deps.parser.parseFile(fileContent, filePath);
+          if (!fileStruct) {
+            errors.push(`Failed to parse ${filePath}`);
+            continue;
+          }
           await this.upsertFile(fileStruct, filePath);
-          this.storeFileDetails(fileInfo.id, fileStruct);
+          await this.storeFileDetails(fileInfo.id, fileStruct);
 
           // Update the last synced time
           this.db.prepare('UPDATE files SET last_synced = ? WHERE id = ?').run(now, fileInfo.id);

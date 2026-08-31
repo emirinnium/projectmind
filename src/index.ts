@@ -1,5 +1,7 @@
 // ProjectMind Root Barrel
-// Main entry point - re-exports all public APIs
+// Main entry point — re-exports all public APIs organized by domain.
+// See src/core/index.ts for core services, src/storage for storage,
+// src/parser for AST operations, and other directories for specialized APIs.
 
 // Core Services
 export * from './core/index.js';

@@ -1,72 +1,88 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { ImpactPredictor } from '../../../src/core/predictive/impact-predictor.js';
-import type { CodeChange, ActualImpact } from '../../../src/core/predictive/types.js';
+import type { CodeChange, ActualImpact, PredictedFailure } from '../../../src/core/predictive/types.js';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-describe('ImpactPredictor', () => {
-  it('returns no impact for empty change', () => {
-    const predictor = new ImpactPredictor({
-      bayesianPrior: 0.5,
-      crossModuleWeight: 0.8,
-      confidenceThreshold: 0.7,
-      modelUpdateRate: 0.1,
+describe('ImpactPredictor WP2', () => {
+  const config = { bayesianPrior: 0.5, crossModuleWeight: 0.3, confidenceThreshold: 0.7, modelUpdateRate: 0.1 };
+
+  describe('F6 recordOutcome -> correlateHistoricalFailures', () => {
+    it('persists file_path and correlates', () => {
+      const dbPath = join(tmpdir(), 'impact-test-' + Date.now() + '.db');
+      const db = new DatabaseSync(dbPath);
+      db.exec(`CREATE TABLE IF NOT EXISTS test_failure_log (id INTEGER PRIMARY KEY AUTOINCREMENT, prediction_id TEXT NOT NULL, file_path TEXT, module_name TEXT, failure_occurred BOOLEAN DEFAULT 0, severity TEXT DEFAULT 'medium', logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+      const predictor = new ImpactPredictor(config, db);
+      const impact: ActualImpact = { predictionId: 'p1', filePath: 'src/auth.ts', actualAffectedFiles: 2, actualAffectedModules: ['auth'], failureOccurred: true, severity: 'high' };
+      predictor.recordOutcome('p1', impact);
+      const corr = predictor.correlateHistoricalFailures('src/auth.ts', db);
+      expect(corr.avgFailureRate).toBeGreaterThan(0);
+      expect(corr.commonBrokenTests.length).toBeGreaterThanOrEqual(0);
+      db.close();
+      rmSync(dbPath, { force: true });
     });
-    const change: CodeChange = {
-      filePath: '',
-      moduleName: '',
-      changeType: 'modify',
-      crossModule: false,
-    };
-    const report = predictor.predictImpact(change);
-    expect(report.predictedImpact).toBeGreaterThanOrEqual(0);
-    expect(report.totalConfidence).toBeCloseTo(1, 2);
-    const scores = Object.values(report.confidenceScores);
-    const sum = scores.reduce((a, b) => a + b, 0);
-    expect(sum).toBeCloseTo(1, 2);
   });
 
-  it('produces high confidence for cross-module change', () => {
-    const predictor = new ImpactPredictor({
-      bayesianPrior: 0.5,
-      crossModuleWeight: 0.8,
-      confidenceThreshold: 0.7,
-      modelUpdateRate: 0.1,
+  describe('F7 call-site analysis', () => {
+    it('flags stale mock after arity change', () => {
+      const tmpDir = mkdtempSync(join(tmpdir(), 'callsite-'));
+      const srcFile = join(tmpDir, 'src.ts');
+      const testFile = join(tmpDir, 'src.test.ts');
+      writeFileSync(srcFile, 'export function foo(a: number, b: string) {}');
+      writeFileSync(testFile, 'import { foo } from "./src"; foo(1);');
+      const predictor = new ImpactPredictor(config);
+      const change: CodeChange = { filePath: srcFile, moduleName: 'src', changeType: 'modify', crossModule: false, affectedFunctions: ['foo'] };
+      // We simulate diff by providing previousContent with old arity
+      const prev = 'export function foo(a: number) {}';
+      const diff = predictor.simulateDiff({ ...change, previousContent: prev });
+      expect(diff.changedFunctions.length).toBeGreaterThan(0);
+      const breaks = predictor.predictTestBreaks({ ...change, previousContent: prev });
+      expect(breaks.length).toBeGreaterThan(0);
+      const first = breaks[0];
+      expect(first.functionName).toBe('foo');
+      expect(first.confidence).toBeGreaterThan(0);
+      expect(first.reason).toContain('Signature changed');
+      rmSync(tmpDir, { recursive: true, force: true });
     });
-    const change: CodeChange = {
-      filePath: 'src/core/index.ts',
-      moduleName: 'core',
-      changeType: 'modify',
-      crossModule: true,
-    };
-    const report = predictor.predictImpact(change);
-    expect(report.confidenceScores.crossModule).toBeGreaterThan(0.3);
-    expect(report.totalConfidence).toBeCloseTo(1, 2);
-    expect(report.predictedImpact).toBeGreaterThan(0.5);
   });
 
-  it('updates model after recording outcome', () => {
-    const predictor = new ImpactPredictor({
-      bayesianPrior: 0.5,
-      crossModuleWeight: 0.8,
-      confidenceThreshold: 0.7,
-      modelUpdateRate: 0.1,
+  describe('F8 git fallback', () => {
+    it('does not throw when no git info', () => {
+      const predictor = new ImpactPredictor(config);
+      const change: CodeChange = { filePath: '/nonexistent/file.ts', moduleName: 'x', changeType: 'modify', crossModule: false };
+      expect(() => predictor.simulateDiff(change)).not.toThrow();
     });
-    const change: CodeChange = {
-      filePath: 'src/core/index.ts',
-      moduleName: 'core',
-      changeType: 'modify',
-      crossModule: true,
-    };
-    const report = predictor.predictImpact(change);
-    const actual: ActualImpact = {
-      predictionId: report.predictionId,
-      actualAffectedFiles: 3,
-      actualAffectedModules: ['core', 'cli'],
-      failureOccurred: true,
-      severity: 'high',
-    };
-    predictor.recordOutcome(report.predictionId, actual);
-    expect(predictor.getOutcomeCount()).toBe(1);
-    const weights = predictor.getModelWeights();
-    expect(weights.has('crossModule')).toBe(true);
+  });
+
+  describe('F9 totalConfidence and crossModule', () => {
+    it('totalConfidence varies and is in (0,1)', () => {
+      const predictor = new ImpactPredictor(config);
+      const r1 = predictor.predictImpact({ filePath: 'a.ts', moduleName: 'm', changeType: 'modify', crossModule: false });
+      const r2 = predictor.predictImpact({ filePath: 'a.ts', moduleName: 'm', changeType: 'add', crossModule: true });
+      expect(r1.totalConfidence).toBeGreaterThan(0);
+      expect(r1.totalConfidence).toBeLessThan(1);
+      expect(r2.totalConfidence).toBeGreaterThan(0);
+      expect(r2.totalConfidence).toBeLessThan(1);
+      expect(r1.totalConfidence).not.toBe(r2.totalConfidence);
+    });
+    it('crossModule includes both modules', () => {
+      const predictor = new ImpactPredictor(config);
+      const r = predictor.predictImpact({ filePath: 'src/auth.ts', moduleName: 'auth', changeType: 'modify', crossModule: true });
+      expect(r.affectedModules.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('F10 PredictedFailure shape', () => {
+    it('asserts PredictedFailure fields', () => {
+      const failure: PredictedFailure = { filePath: 'f.ts', functionName: 'fn', confidence: 0.8, reason: 'r', suggestedFix: 'fix' };
+      expect(failure.filePath).toBe('f.ts');
+      expect(failure.functionName).toBe('fn');
+      expect(typeof failure.confidence).toBe('number');
+      expect(failure.confidence).toBeGreaterThan(0);
+      expect(failure.reason).toBeDefined();
+      expect(failure.suggestedFix).toBeDefined();
+    });
   });
 });

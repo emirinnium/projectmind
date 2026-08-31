@@ -1,21 +1,44 @@
-import { z } from 'zod';
-import { watch, type FSWatcher } from 'node:fs';
+
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { McpDependencies } from './types.js';
+
+import { watch, type FSWatcher } from 'node:fs';
+import { z } from 'zod';
+
+import { logger } from '../../utils/logger.js';
+
 import { parseFile } from '../../parser/ast-parser.js';
+
 import { loadConfig } from '../../utils/config.js';
-import { logger } from '../../cli/utils/logger.js';
+
+import type { McpDependencies } from './types.js';
 
 // Session-scoped registry of live watchers + intent records.
 // Watchers perform REAL change detection: on any file event the file is
 // flagged as agent-touched so subsequent scans/status reflect the activity.
 const fileWatches = new Map<string, { agentId: string; callback?: string; registeredAt: string }[]>();
 const liveWatchers = new Map<string, FSWatcher>();
+// Intentional stops must NOT reschedule: without this set the 'close'/'error'
+// handlers resurrect every watcher ~5s after unregister_file_watch.
+const intentionalStops = new Set<string>();
+const pendingRestarts = new Map<string, NodeJS.Timeout>();
 
-function startLiveWatch(deps: McpDependencies, filePath: string, agentId: string): void {
+function scheduleRestart(key: string, startWatcher: () => void): void {
+  if (intentionalStops.has(key)) return;
+  if (pendingRestarts.has(key)) return;
+  pendingRestarts.set(
+    key,
+    setTimeout(() => {
+      pendingRestarts.delete(key);
+      startWatcher();
+    }, 5000)
+  );
+}
+
+export function startLiveWatch(deps: McpDependencies, filePath: string, agentId: string): void {
   const key = `${filePath}::${agentId}`;
   if (liveWatchers.has(key)) return;
-  
+  intentionalStops.delete(key);
+
   const startWatcher = () => {
     try {
       const w = watch(filePath, { persistent: false }, (eventType) => {
@@ -35,47 +58,69 @@ function startLiveWatch(deps: McpDependencies, filePath: string, agentId: string
             const root = loadConfig().projectRoot.replace(/\\/g, '/');
             const norm = filePath.replace(/\\/g, '/');
             const rel = norm.startsWith(root) ? norm.slice(root.length + 1) : norm;
-            void Promise.resolve(deps.kg.upsertFile(struct, rel)).catch(() => {});
+            void Promise.resolve(deps.kg.upsertFile(struct, rel))
+              .then((fileId) => deps.kg.storeFileDetails(fileId, struct))
+              .catch(() => {});
           }
         } catch {
           // Refresh is opportunistic — never crash the watcher.
         }
       });
-      
+
       w.on('error', (error) => {
         logger.warn(`Watcher error for ${filePath}:`, { error: error instanceof Error ? error.message : String(error) });
         liveWatchers.delete(key);
-        // Restart watcher after a delay
-        setTimeout(() => startWatcher(), 5000);
+        scheduleRestart(key, startWatcher);
       });
-      
+
       w.on('close', () => {
         liveWatchers.delete(key);
-        // Restart watcher after a delay
-        setTimeout(() => startWatcher(), 5000);
+        if (intentionalStops.has(key)) {
+          intentionalStops.delete(key);
+          return;
+        }
+        scheduleRestart(key, startWatcher);
       });
-      
+
       liveWatchers.set(key, w);
       logger.info(`Started watching ${filePath} for agent ${agentId}`);
     } catch (error) {
       logger.warn(`Failed to start watcher for ${filePath}:`, { error: error instanceof Error ? error.message : String(error) });
-      // Retry after a delay
-      setTimeout(() => startWatcher(), 5000);
+      scheduleRestart(key, startWatcher);
     }
   };
-  
+
   startWatcher();
 }
 
-function stopLiveWatch(filePath: string, agentId: string): void {
+export function stopLiveWatch(filePath: string, agentId: string): void {
   const key = `${filePath}::${agentId}`;
+  intentionalStops.add(key);
+  const pending = pendingRestarts.get(key);
+  if (pending) {
+    clearTimeout(pending);
+    pendingRestarts.delete(key);
+  }
   liveWatchers.get(key)?.close();
   liveWatchers.delete(key);
 }
 
 export function closeAllLiveWatchers(): void {
-  for (const [, w] of liveWatchers) w.close();
+  for (const [key, w] of liveWatchers) {
+    intentionalStops.add(key);
+    w.close();
+  }
+  for (const [, t] of pendingRestarts) clearTimeout(t);
+  pendingRestarts.clear();
   liveWatchers.clear();
+}
+
+export function liveWatcherStats(): { active: number; pendingRestarts: number } {
+  return { active: liveWatchers.size, pendingRestarts: pendingRestarts.size };
+}
+
+export function hasLiveWatch(filePath: string, agentId: string): boolean {
+  return liveWatchers.has(`${filePath}::${agentId}`);
 }
 
 export function registerFileWatchTool(server: McpServer, deps: McpDependencies): void {

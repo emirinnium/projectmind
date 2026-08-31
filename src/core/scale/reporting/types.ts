@@ -20,6 +20,7 @@ export interface ScaleReport {
   avgCognitiveLoad: number;
   topHotspots: FileInfo[];
   uncoveredFiles: FileInfo[];
+  fingerprints: { asyncPreference: number; typeStrictness: number; errorHandlingStyle: string; namingConvention: string; testPattern: string; favoriteAbstractions: string[]; }[];
   scanDurationMs?: number;
   scanErrors?: string[];
 }

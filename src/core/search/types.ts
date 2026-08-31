@@ -1,7 +1,12 @@
 export type IntentType = 'read' | 'write' | 'validate' | 'transform';
+export type TaskType = 'bug fix' | 'feature' | 'refactor' | 'test';
 
 export interface IntentQuery {
-  text: string;
+  naturalLanguage?: string;
+  /** Deprecated alias — kept for backward compatibility. */
+  text?: string;
+  structuralHints?: string[];
+  expectedOutputs?: string[];
   context?: string;
   filePath?: string;
 }
@@ -18,4 +23,5 @@ export interface SearchResult {
   score: HybridScore;
   rank: number;
   snippet?: string;
+  source?: 'embedding' | 'lexical';
 }

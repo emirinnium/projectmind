@@ -52,6 +52,7 @@ function makeReport(): ScaleReport {
     avgCognitiveLoad: 0.35,
     topHotspots: [],
     uncoveredFiles: [],
+    fingerprints: [],
   };
 }
 

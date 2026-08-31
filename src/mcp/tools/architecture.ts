@@ -1,7 +1,9 @@
 import { z } from 'zod';
+import { readFile } from 'node:fs/promises';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
-import { getStatement } from '../../storage/database.js';
+import { getStatement } from '../../storage/database.js'; // TODO: migrate to KnowledgeGraph abstraction
+import { confineToProject } from './_shared.js';
 
 export function registerCheckArchitectureTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -12,6 +14,7 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
       inputSchema: {
         filePath: z.string().describe('Path of the file to check'),
         strict: z.boolean().default(false).describe('Use strict mode for more thorough checks'),
+        maxMarkers: z.number().int().default(500).describe('Maximum number of TODO/FIXME markers to report'),
       },
     },
     async (args) => {
@@ -78,9 +81,30 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
       }
 
       // Strict mode checks
+      let markerCount = 0;
       if (args.strict) {
-        // Check for TODO/FIXME comments (would need source content)
-        suggestions.push('Strict mode: Consider running deep coherence check for detailed analysis');
+        // Real TODO/FIXME scan over the source content. The read is confined
+        // to the project root (K5); an unreadable or escaping path degrades
+        // gracefully to "no markers reported" instead of failing the check.
+        try {
+          const absPath = confineToProject(file.path, deps.projectRoot);
+          const content = await readFile(absPath, 'utf-8');
+          const lines = content.split(/\r?\n/);
+          const markerLimit = args.maxMarkers ?? 500;
+          for (let i = 0; i < lines.length && markerCount < markerLimit; i++) {
+            const match = lines[i].match(/\b(TODO|FIXME)\b[:\s]+(.*)/);
+            if (match) {
+              markerCount++;
+              const note = (match[2] ?? '').trim();
+              warnings.push(`${match[1]} marker at line ${i + 1}${note ? `: ${note.slice(0, 120)}` : ''}`);
+            }
+          }
+          if (markerCount >= markerLimit) {
+            warnings.push(`Marker count reached limit of ${markerLimit}; further markers were not reported.`);
+          }
+        } catch {
+          // File unreadable or outside the project root — skip the scan.
+        }
       }
 
       return {
@@ -100,6 +124,7 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
                 classCount: classes.length,
                 externalImports: externalImports.length,
                 agentTouched: file.agentTouched,
+                markerCount: markerCount,
               },
             }, null, 2),
           },
@@ -292,45 +317,45 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
           for (const otherFile of allFiles) {
             if (otherFile.id === file.id) continue;
             const otherFuncs = deps.kg.getFunctions(otherFile.id);
-             for (const otherFn of otherFuncs) {
-               const otherSig = otherFn.signature?.replace(/\s+/g, ' ').trim() ?? '';
-               for (const currentFn of currentFileFuncs) {
-                 if (currentFn.name === otherFn.name && currentFn.signature !== otherSig) {
-                   suggestions.push({
-                     type: 'duplication',
-                     priority: 'low',
-                     message: `Function "${currentFn.name}" has similar signature in ${otherFile.relativePath}`,
-                     details: `Current: ${currentFn.signature} (${file.relativePath})\nOther: ${otherSig} (${otherFile.relativePath})`,
-                   });
+            for (const otherFn of otherFuncs) {
+              const otherSig = otherFn.signature?.replace(/\s+/g, ' ').trim() ?? '';
+              for (const currentFn of currentFileFuncs) {
+                if (currentFn.name === otherFn.name && currentFn.signature !== otherSig) {
+                  suggestions.push({
+                    type: 'duplication',
+                    priority: 'low',
+                    message: `Function "${currentFn.name}" has similar signature in ${otherFile.relativePath}`,
+                    details: `Current: ${currentFn.signature} (${file.relativePath})\nOther: ${otherSig} (${otherFile.relativePath})`,
+                  });
+                }
               }
-          }
-        }
-
-        // Cross-file BODY duplication from the persisted redundancy detector
-        // (debt_items type='redundancy'), which compares real code bodies via
-        // embeddings — far beyond same-file signature matching above.
-        try {
-          const cols = (getStatement('PRAGMA table_info(debt_items)').all() as Array<{ name: string }>).map((c) => c.name);
-          if (cols.includes('type') && cols.includes('description')) {
-            const fileCol = cols.includes('file_path') ? 'file_path' : cols.includes('filePath') ? 'filePath' : null;
-            const rows = (
-              fileCol
-                ? getStatement(`SELECT description, ${fileCol} AS loc FROM debt_items WHERE type='redundancy' AND (${fileCol} = ? OR description LIKE ?) ORDER BY rowid DESC LIMIT 5`).all(file.relativePath, `%${file.relativePath}%`)
-                : getStatement(`SELECT description, '' AS loc FROM debt_items WHERE type='redundancy' AND description LIKE ? ORDER BY rowid DESC LIMIT 5`).all(`%${file.relativePath}%`)
-            ) as Array<{ description: string; loc: string }>;
-            for (const row of rows) {
-              suggestions.push({
-                type: 'duplication',
-                priority: 'medium',
-                message: `Redundancy detector: similar logic found involving this file`,
-                details: row.description,
-              });
             }
           }
-        } catch {
-          // debt_items not available in this database — skip silently.
-        }
-      }
+
+          // Cross-file BODY duplication from the persisted redundancy detector
+          // (debt_items type='redundancy'), which compares real code bodies via
+          // embeddings — far beyond same-file signature matching above.
+          try {
+            const cols = (getStatement('PRAGMA table_info(debt_items)').all() as Array<{ name: string }>).map((c) => c.name);
+            if (cols.includes('type') && cols.includes('description')) {
+              const fileCol = cols.includes('file_path') ? 'file_path' : cols.includes('filePath') ? 'filePath' : null;
+              const rows = (
+                fileCol
+                  ? getStatement(`SELECT description, ${fileCol} AS loc FROM debt_items WHERE type='redundancy' AND (${fileCol} = ? OR description LIKE ?) ORDER BY rowid DESC LIMIT 5`).all(file.relativePath, `%${file.relativePath}%`)
+                  : getStatement(`SELECT description, '' AS loc FROM debt_items WHERE type='redundancy' AND description LIKE ? ORDER BY rowid DESC LIMIT 5`).all(`%${file.relativePath}%`)
+              ) as Array<{ description: string; loc: string }>;
+              for (const row of rows) {
+                suggestions.push({
+                  type: 'duplication',
+                  priority: 'medium',
+                  message: `Redundancy detector: similar logic found involving this file`,
+                  details: row.description,
+                });
+              }
+            }
+          } catch {
+            // debt_items not available in this database — skip silently.
+          }
         }
       }
 

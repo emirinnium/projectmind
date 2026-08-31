@@ -1,4 +1,4 @@
-import { logger } from '@/index.js';
+import { logger } from '@/utils/logger.js';
 
 type DebugValue = string | number | boolean | null | DebugValue[] | { [key: string]: DebugValue };
 

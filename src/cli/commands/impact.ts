@@ -1,5 +1,8 @@
 import { Command } from 'commander';
+import { basename, dirname } from 'node:path';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
+import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
+import type { CodeChange, PredictorConfig } from '../../core/predictive/types.js';
 
 export function createImpactCommand(): Command {
   return new Command('impact')
@@ -26,6 +29,53 @@ export function createImpactCommand(): Command {
         output.kv('File', targetFile.path);
         output.kv('Cognitive load', targetFile.cognitiveLoad.toFixed(3));
         output.kv('Agent touched', targetFile.agentTouched ? 'yes' : 'no');
+
+        // F39: predictive analysis via ImpactPredictor (working tree vs git
+        // HEAD signature diff + KG call-graph + historical test failures).
+        // Any failure degrades gracefully to the dependency analysis below.
+        try {
+          const predictorConfig: PredictorConfig = {
+            bayesianPrior: 0.5,
+            crossModuleWeight: 0.8,
+            confidenceThreshold: 0.7,
+            modelUpdateRate: 0.1,
+          };
+          const predictor = new ImpactPredictor(predictorConfig, ctx.db);
+          // previous content defaults to `git show HEAD:<file>` inside the
+          // predictor — the cheap "recent git diff" path; without git history
+          // it degrades to a signature-based what-if on the current content.
+          const change: CodeChange = {
+            filePath: targetFile.path,
+            moduleName: basename(dirname(targetFile.path)) || targetFile.path,
+            changeType: 'modify',
+            crossModule: false,
+          };
+          const prediction = predictor.predictImpact(change);
+          const historical = predictor.correlateHistoricalFailures(targetFile.path);
+          const breaks = predictor.predictTestBreaks(change);
+
+          output.section('Predicted Impact (ImpactPredictor)');
+          output.kv('Predicted impact', `${(prediction.predictedImpact * 100).toFixed(1)}%`);
+          output.kv('Confidence', `${(prediction.totalConfidence * 100).toFixed(1)}%`);
+          output.kv('Affected modules', prediction.affectedModules.join(', ') || 'none');
+          output.kv('Historical failure rate', `${(historical.avgFailureRate * 100).toFixed(1)}%`);
+          if (historical.commonBrokenTests.length > 0) {
+            output.kv('Common broken tests', historical.commonBrokenTests.join(', '));
+          }
+          if (breaks.length > 0) {
+            output.section(`Predicted Test Breaks (${breaks.length})`);
+            for (const b of breaks.slice(0, 10)) {
+              output.warn(`  ${b.functionName} (${Math.round(b.confidence * 100)}%): ${b.reason.substring(0, 120)}`);
+            }
+            if (breaks.length > 10) output.info(`...and ${breaks.length - 10} more`);
+          } else {
+            output.info('No signature/type-level breakage predicted for the current diff.');
+          }
+        } catch (error) {
+          output.info(
+            `ImpactPredictor unavailable (${error instanceof Error ? error.message : String(error)}) — using dependency analysis below.`
+          );
+        }
 
         // Test impact: BFS over the reverse-dependency closure via the KG.
         if (opts.tests) {

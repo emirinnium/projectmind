@@ -55,7 +55,7 @@ export class OllamaProvider implements LLMProvider {
       const content = data.message?.content || '';
 
       const reasoningTrace = content.includes('<thinking>')
-        ? content.split('<thinking>')[1]?.split('</thinking>')[0]?.split('\n') ?? [content]
+        ? content.split('<thinking>')[1]?.split('</thinking>')[0]?.split(/\r?\n/) ?? [content]
         : [content];
 
       return {

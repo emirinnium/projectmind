@@ -1,6 +1,9 @@
-import { Command } from 'commander';
+
 import { withService, asyncHandler, output, logger } from '@/cli/utils/shared.js';
+import { Command } from 'commander';
+
 import { readFileSync, writeFileSync } from 'node:fs';
+
 import { getStatement } from '../../storage/database.js';
 
 interface TestFile {

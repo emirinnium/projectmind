@@ -42,7 +42,6 @@ CREATE INDEX IF NOT EXISTS idx_test_failure_pred ON test_failure_log(prediction_
 
 CREATE INDEX IF NOT EXISTS idx_team_memories_scope ON team_memories(scope);
 CREATE INDEX IF NOT EXISTS idx_team_memories_agent ON team_memories(agent_name);
-CREATE INDEX IF NOT EXISTS idx_team_memories_project ON team_memories(project_id);
 
 CREATE TABLE IF NOT EXISTS files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,8 +145,8 @@ CREATE TABLE IF NOT EXISTS pattern_violations (
   severity TEXT CHECK(severity IN ('high', 'medium', 'low')),
   detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   resolved BOOLEAN DEFAULT 0,
-  FOREIGN KEY (pattern_id) REFERENCES patterns(id),
-  FOREIGN KEY (file_id) REFERENCES files(id)
+  FOREIGN KEY (pattern_id) REFERENCES patterns(id) ON DELETE CASCADE,
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS agent_sessions (
@@ -192,13 +191,13 @@ CREATE TABLE IF NOT EXISTS coherence_decisions (
   analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   llm_provider TEXT,
   response_time_ms INTEGER,
-  FOREIGN KEY (file_id) REFERENCES files(id)
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS debt_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   file_id INTEGER,
-  type TEXT CHECK(type IN ('pattern_drift', 'architectural_drift', 'redundancy', 'agent_conflict', 'complexity', 'code_age', 'cognitive_load')),
+  type TEXT CHECK(type IN ('pattern_drift', 'architectural_drift', 'redundancy', 'agent_conflict', 'complexity', 'code_age', 'cognitive_load', 'change_frequency')),
   description TEXT,
   severity TEXT CHECK(severity IN ('high', 'medium', 'low')),
   suggestion TEXT,
@@ -206,7 +205,7 @@ CREATE TABLE IF NOT EXISTS debt_items (
   detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   resolved BOOLEAN DEFAULT 0,
   resolved_at TIMESTAMP,
-  FOREIGN KEY (file_id) REFERENCES files(id)
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS reasoning_traces (
@@ -292,6 +291,8 @@ CREATE TABLE IF NOT EXISTS agent_file_locks (
 CREATE INDEX IF NOT EXISTS idx_agent_file_locks_path ON agent_file_locks(file_path);
 
 -- Collaborative agent intent tracking (live broadcast + conflict prediction)
+-- F20: broadcast_at / expires_at are INTEGER unix milliseconds (canonical).
+-- F17: expected_changes holds JSON describing planned signature/type changes.
 CREATE TABLE IF NOT EXISTS pending_intents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_id TEXT NOT NULL,
@@ -299,8 +300,9 @@ CREATE TABLE IF NOT EXISTS pending_intents (
   target_files TEXT NOT NULL,
   session_id TEXT,
   description TEXT,
-  broadcast_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  expires_at TIMESTAMP NOT NULL DEFAULT (datetime('now', '+5 minutes'))
+  expected_changes TEXT,
+  broadcast_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000),
+  expires_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s', 'now') AS INTEGER) * 1000 + 300000)
 );
 
 CREATE INDEX IF NOT EXISTS idx_pending_intents_agent ON pending_intents(agent_id);
@@ -316,7 +318,6 @@ CREATE INDEX IF NOT EXISTS idx_classes_file ON classes(file_id);
 CREATE INDEX IF NOT EXISTS idx_patterns_category ON patterns(category);
 CREATE INDEX IF NOT EXISTS idx_patterns_confidence ON patterns(confidence);
 CREATE INDEX IF NOT EXISTS idx_patterns_name_hash ON patterns(name, code_hash);
-CREATE INDEX IF NOT EXISTS idx_patterns_project ON patterns(project_id);
 CREATE INDEX IF NOT EXISTS idx_imports_file ON imports(file_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_agent ON agent_sessions(agent_name, started_at);
 CREATE INDEX IF NOT EXISTS idx_memory_scope ON agent_memory(scope);
@@ -329,6 +330,7 @@ CREATE INDEX IF NOT EXISTS idx_genome_checksum ON project_genome(checksum);
 -- Note: Indexes for columns added by migrations (project_id, etc.) are created in migrations
 CREATE INDEX IF NOT EXISTS idx_functions_name ON functions(name);
 CREATE INDEX IF NOT EXISTS idx_imports_source ON imports(source);
+CREATE INDEX IF NOT EXISTS idx_imports_resolved_path ON imports(resolved_path);
 CREATE INDEX IF NOT EXISTS idx_calls_workload_dynamic ON calls(workload_id, dynamic);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_session ON agent_memory(session_id);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_scope ON agent_memory(scope, key);

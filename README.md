@@ -279,4 +279,31 @@ MIT
 
 See [docs/MCP.md](docs/MCP.md) for connecting Claude Code, Cursor,
 OpenCode, Windsurf or any MCP client — 28 dedicated tools plus the
-`run_cli` bridge exposing the full CLI surface.
+`run_cli` bridge exposing the full CLI surface (exposed as
+`projectmind_run_cli` on clients that prefix MCP tools by server, e.g. opencode).
+
+## Roadmap / Next Steps
+
+The v0.9.0 roadmap is tracked in [docs/roadmap.md](docs/roadmap.md). Key 
+implementations completed in this cycle:
+
+- **Task 1**: Split `smart-assembler.ts` into user- and system-context assemblers 
+  with wrapper re-exports and updated `src/core/index.ts` exports.
+- **Task 2**: Enhanced `src/index.ts` barrel exports with clarification comment and 
+  verified export coverage.
+- **Task 3**: Added layer config, color-coding, and circular dependency detection to 
+  `architecture-diagram.ts` Mermaid output.
+- **Task 4**: Created `docs/roadmap.md` from `docs/v0.9.0-spec.md` and added Roadmap 
+  section to this README.
+- **Task 5**: Added JSDoc and undefined-case comments to `advanced-cache.ts` return types.
+
+For the full v0.9.0 feature set, see the roadmap document. Ongoing work includes 
+predictive impact analysis, self-healing knowledge graph, and context window budget 
+optimization for M3 phase delivery.
+
+## MCP / AI Agent Integration
+
+See [docs/MCP.md](docs/MCP.md) for connecting Claude Code, Cursor,
+OpenCode, Windsurf or any MCP client — 28 dedicated tools plus the
+`run_cli` bridge exposing the full CLI surface (exposed as
+`projectmind_run_cli` on clients that prefix MCP tools by server, e.g. opencode).

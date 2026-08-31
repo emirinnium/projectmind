@@ -35,6 +35,7 @@ function makeScaleReport(): ScaleReport {
     avgCognitiveLoad: 0.35,
     topHotspots: [],
     uncoveredFiles: [],
+    fingerprints: [],
   };
 }
 
@@ -42,7 +43,7 @@ function makeDebtReport(): DebtReport {
   return {
     totalItems: 10,
     bySeverity: { high: 1, medium: 3, low: 6 },
-    byType: { pattern_drift: 2, architectural_drift: 3, redundancy: 4, agent_conflict: 0, complexity: 1, code_age: 0, cognitive_load: 0 },
+    byType: { pattern_drift: 2, architectural_drift: 3, redundancy: 4, agent_conflict: 0, complexity: 1, code_age: 0, cognitive_load: 0, change_frequency: 0 },
     coherenceGenomeScore: 0.8,
     items: [],
     hasMore: false,

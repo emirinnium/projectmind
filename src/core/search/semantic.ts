@@ -12,7 +12,7 @@ export async function searchSemantic(
   fileEmbeddings: Map<string, number[]>,
   options: SemanticSearchOptions = {}
 ): Promise<Array<{ filePath: string; score: number }>> {
-  const text = typeof query === 'string' ? query : query.text;
+  const text = typeof query === 'string' ? query : (query.naturalLanguage ?? query.text ?? '');
   const queryEmbedding = await embeddingGenerator(text);
   const limit = options.limit ?? 5;
   const threshold = options.threshold ?? 0.7;

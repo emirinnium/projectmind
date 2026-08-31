@@ -22,6 +22,8 @@ export interface OauthRouteContext {
   tokens: TokenService;
   /** Raw `Authorization` header, used to honor client_secret_basic on the token endpoint. */
   authorization?: string;
+  /** When provided, requested scopes are intersected with this allowlist at issuance. */
+  allowedScopes?: readonly string[];
 }
 
 /** Parse a request body as JSON or URL-encoded form. Throws {@link AuthError} on garbage. */
@@ -78,7 +80,18 @@ function handleToken(params: Record<string, unknown>, ctx: OauthRouteContext): O
     throw new AuthError('Invalid client credentials', 400, 'invalid_client');
   }
 
-  const scope = typeof params.scope === 'string' && params.scope.length > 0 ? params.scope : undefined;
+  let scope: string | undefined;
+  if (ctx.allowedScopes) {
+    const requested =
+      typeof params.scope === 'string' && params.scope.length > 0 ? params.scope.split(/\s+/).filter(Boolean) : [];
+    const granted = requested.filter((s) => ctx.allowedScopes!.includes(s));
+    if (requested.length > 0 && granted.length === 0) {
+      throw new AuthError('The requested scope is not authorized', 400, 'invalid_scope');
+    }
+    scope = granted.length > 0 ? granted.join(' ') : undefined;
+  } else {
+    scope = typeof params.scope === 'string' && params.scope.length > 0 ? params.scope : undefined;
+  }
   return {
     handled: true,
     status: 200,

@@ -38,12 +38,14 @@ export function createAuditCommand(): Command {
           { regex: /new Function\s*\(/g, type: 'function-constructor', severity: 'high' },
           { regex: /crypto\.createCipher\(|crypto\.createDecipher\(/g, type: 'weak-crypto', severity: 'medium' },
           { regex: /md5|sha1/g, type: 'weak-hash', severity: 'medium' },
+        { regex: /sha256/g, type: 'integrity-check', severity: 'low',
+          message: 'Integrity check: prefer SHA-256 for new code' },
         ];
         
         for (const file of filesToScan) {
           try {
             const content = readFileSync(file.path, 'utf-8');
-            const lines = content.split('\n');
+            const lines = content.split(/\r?\n/);
             for (let i = 0; i < lines.length; i++) {
               for (const pattern of secretPatterns) {
                 // Use match() instead of test() to avoid lastIndex state issues with /g flag

@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { createRequire } from 'node:module';
 import { logger } from '../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -87,6 +88,17 @@ export class VectorIndex {
 
 const VEC_TABLE_NAME = 'pm_vec_files';
 const DEFAULT_DIMENSION = 768;
+
+/**
+ * ESM-safe `require`. A bare `require()` is undefined under `"type": "module"`,
+ * which previously threw a `ReferenceError` that the try/catch silently
+ * swallowed — leaving `isAvailable()` permanently `false` even when the
+ * sqlite-vec native binary was present.
+ */
+const esmRequire = createRequire(import.meta.url);
+
+/** Warn exactly once per process when sqlite-vec fails to load. */
+let vecLoadWarned = false;
 
 /** One VecIndex per DatabaseSync instance, lazily created. */
 const vecIndexRegistry = new WeakMap<DatabaseSync, VecIndex>();
@@ -260,16 +272,24 @@ export class VecIndex {
     try {
       // Dynamic import so the module never crashes when sqlite-vec is
       // unavailable or the native binary is missing.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const vec = require('sqlite-vec') as { load: (db: DatabaseSync) => void };
+      const vec = esmRequire('sqlite-vec') as { load: (db: DatabaseSync) => void };
       vec.load(this.db);
 
       this.db.exec(
         `CREATE VIRTUAL TABLE IF NOT EXISTS ${VEC_TABLE_NAME} USING vec0(embedding float[${this.dim}])`,
       );
       return true;
-    } catch {
+    } catch (e) {
       // sqlite-vec unavailable or extension loading disabled – degrade.
+      // Log a clear ONE-TIME warning with the real reason (previously the
+      // failure was swallowed silently and callers could not tell why
+      // vector search was stuck on the brute-force path).
+      if (!vecLoadWarned) {
+        vecLoadWarned = true;
+        logger.warn(
+          `sqlite-vec unavailable — vector search falls back to brute-force: ${e instanceof Error ? e.message : String(e)}`
+        );
+      }
       return false;
     }
   }

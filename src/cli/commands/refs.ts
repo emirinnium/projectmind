@@ -87,7 +87,7 @@ function pickDeclarationPosition(sourceText: string, symbol: string): number {
 
 function describeSpan(text: string, start: number): { line: number; column: number; snippet: string } {
   const before = text.slice(0, start);
-  const line = before.split('\n').length;
+  const line = before.split(/\r?\n/).length;
   const lastNewline = before.lastIndexOf('\n');
   const column = start - lastNewline;
   const lineStart = lastNewline + 1;

@@ -94,7 +94,7 @@ class HealthCommand extends BaseCommand {
             }
 
             if (health.status !== 'healthy') {
-              process.exit(1);
+              throw new Error("Health check failed");
             }
           }
         });

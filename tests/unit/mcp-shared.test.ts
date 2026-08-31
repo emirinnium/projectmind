@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { join, resolve } from 'node:path';
 import {
+  classifyPath,
   confineToProject,
   confinePathValueFlags,
   isPathInside,
@@ -90,5 +91,47 @@ describe('isPathInside boundary semantics', () => {
     expect(isPathInside(ROOT, outside)).toBe(false);
     // Prefix trick: /proj2 inside /proj must be false, not just startsWith.
     expect(isPathInside(resolve(process.cwd(), 'proj'), resolve(process.cwd(), 'proj2'))).toBe(false);
+  });
+});
+
+describe('classifyPath (convention detection)', () => {
+  it('detects drive-letter Windows absolutes (both slash styles)', () => {
+    expect(classifyPath('C:\\x')).toBe('windows-absolute');
+    expect(classifyPath('C:/x')).toBe('windows-absolute');
+    expect(classifyPath('D:')).toBe('windows-absolute');
+  });
+
+  it('detects UNC absolutes (both slash styles)', () => {
+    expect(classifyPath('\\\\server\\share')).toBe('windows-absolute');
+    expect(classifyPath('//server/share')).toBe('windows-absolute');
+  });
+
+  it('detects POSIX absolutes', () => {
+    expect(classifyPath('/x')).toBe('posix-absolute');
+    expect(classifyPath('/usr/local/bin')).toBe('posix-absolute');
+  });
+
+  it('detects relative paths', () => {
+    expect(classifyPath('rel/path')).toBe('relative');
+    expect(classifyPath('./x')).toBe('relative');
+    expect(classifyPath('../up')).toBe('relative');
+    expect(classifyPath('C')).toBe('relative');
+  });
+});
+
+describe('confineToProject cross-platform convention rejection', () => {
+  it('rejects foreign-convention absolutes on ANY host', () => {
+    expect(() => confineToProject('D:/evil', ROOT)).toThrow(PathEscapesProjectError);
+    expect(() => confineToProject('\\\\server\\share\\x', ROOT)).toThrow(PathEscapesProjectError);
+    expect(() => confineToProject('//server/share/x', ROOT)).toThrow(PathEscapesProjectError);
+  });
+
+  it('accepts same-convention in-project absolute paths', () => {
+    const abs = join(ROOT, 'src', 'a.ts');
+    expect(confineToProject(abs, ROOT)).toBe(abs);
+  });
+
+  it('still resolves backslash-free relative paths', () => {
+    expect(confineToProject('src/a.ts', ROOT)).toBe(join(ROOT, 'src/a.ts'));
   });
 });

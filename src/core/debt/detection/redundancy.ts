@@ -2,35 +2,20 @@ import { FileInfo } from '../../../storage/knowledge-graph.js';
 import { cosineSimilarity } from '../../../parser/embeddings.js';
 import { AdvancedCache } from '../../cache/advanced-cache.js';
 import { EmbeddingCache, globalCacheRegistry } from '../../cache/index.js';
+import type { CacheStats } from '../../cache/types.js';
 import { DatabaseSync } from 'node:sqlite';
 import { getDatabase } from '../../../storage/database.js';
 import { getVecIndex, type VecIndex } from '../../embeddings/vector-index.js';
 
-export type DebtType = 'pattern_drift' | 'architectural_drift' | 'redundancy' | 'agent_conflict' | 'complexity' | 'code_age' | 'cognitive_load';
-export type Severity = 'high' | 'medium' | 'low';
+// Canonical debt type declarations live in persistence.ts — re-exported here
+// to keep this module's public surface unchanged (no duplicate declarations).
+export type { DebtType, Severity, DebtItem, DebtReport } from './persistence.js';
 
-export interface DebtItem {
-  id: number;
-  type: DebtType;
-  description: string;
-  severity: Severity;
-  suggestion: string;
-  reasoningTrace: string[];
-  detectedAt: string;
-  resolved: boolean;
-  filePath: string | null;
-}
-
-export interface DebtReport {
-  totalItems: number;
-  bySeverity: Record<Severity, number>;
-  byType: Record<DebtType, number>;
-  coherenceGenomeScore: number;
-  items: DebtItem[];
-}
+import type { GenomeComputer } from './genome.js';
 
 /**
  * Handles detection of code redundancy through embedding similarity
+ * Structurally matches the RedundancyDetector interface for loose coupling.
  */
 export class RedundancyDetector {
   private embeddingCache: AdvancedCache<string, number[]>;
@@ -42,6 +27,9 @@ export class RedundancyDetector {
     this.db = db || getDatabase();
     this.vecIndex = getVecIndex(this.db);
   }
+  getCacheStats(): CacheStats | { error: string } {
+    return this.embeddingCache?.getStats?.() ?? { error: 'Cache not initialized' };
+  }
 
   /**
    * Batch-fetch embeddings for all file IDs in a single query.
@@ -51,6 +39,12 @@ export class RedundancyDetector {
   getFileEmbeddings(fileIds: number[]): Map<number, number[]> {
     const result = new Map<number, number[]>();
     if (fileIds.length === 0) return result;
+
+    // Defensive null-check for embeddingCache
+    if (!this.embeddingCache) {
+      console.warn('embeddingCache is not initialized, returning empty results');
+      return result;
+    }
 
     // Check cache first
     const cachedEmbeddings = new Map<number, number[]>();

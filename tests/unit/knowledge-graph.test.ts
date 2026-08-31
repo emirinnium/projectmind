@@ -1,7 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { SCHEMA_SQL } from '../../src/storage/schema.js';
 import { runMigrations } from '../../src/storage/migrations.js';
+import { KnowledgeGraph } from '../../src/storage/kg/graph.js';
+import { initDatabase, closeDatabase } from '../../src/storage/database.js';
+import type { FileStructure } from '../../src/parser/ast-parser.js';
 
 // Create a fresh in-memory database with schema
 function createTestDb(): DatabaseSync {
@@ -251,5 +254,100 @@ describe('Settings Operations', () => {
 
     const row = db.prepare('SELECT * FROM settings WHERE key = ?').get('test_key') as { value: string };
     expect(row.value).toBe('updated');
+  });
+});
+
+describe('KnowledgeGraph — dynamic calls + path lookup hardening', () => {
+  let db: DatabaseSync;
+  let kg: KnowledgeGraph;
+
+  function makeStruct(filePath: string): FileStructure {
+    return {
+      filePath,
+      language: 'typescript',
+      sizeBytes: 120,
+      hash: `hash-${filePath}`,
+      imports: [],
+      functions: [
+        {
+          name: 'knownFn',
+          signature: 'knownFn(): void',
+          returnType: 'void',
+          startLine: 1,
+          endLine: 3,
+          complexity: 1,
+          kind: 'function',
+          parameters: [],
+          isExported: true,
+          isAsync: false,
+          cyclomaticComplexity: 1,
+        },
+      ],
+      classes: [],
+      exports: ['knownFn'],
+      lines: 3,
+    };
+  }
+
+  beforeEach(() => {
+    // initDatabase sets the singleton the kg helpers reach through
+    // getStatement()/getDatabase() — graph and helpers share one connection.
+    db = initDatabase(':memory:');
+    kg = new KnowledgeGraph(db);
+  });
+
+  afterEach(() => {
+    closeDatabase();
+  });
+
+  describe('ingestDynamicCalls — ensureFunction never fabricates rows', () => {
+    it('unknown function names insert nothing and report errors', async () => {
+      const struct = makeStruct('/proj/src/a.ts');
+      const fileId = await kg.upsertFile(struct, 'src/a.ts');
+      await kg.storeFileDetails(fileId, struct);
+
+      const before = (db.prepare('SELECT COUNT(*) AS n FROM functions').get() as { n: number }).n;
+      expect(before).toBe(1); // only knownFn from storeFileDetails
+
+      const result = kg.ingestDynamicCalls([
+        { fromFunctionName: 'ghostFrom', toFunctionName: 'ghostTo', workloadId: 'w1' },
+      ]);
+
+      expect(result.inserted).toBe(0);
+      expect(result.updated).toBe(0);
+      expect(result.errors.length).toBeGreaterThan(0);
+
+      // No phantom function rows under arbitrary files.
+      const after = (db.prepare('SELECT COUNT(*) AS n FROM functions').get() as { n: number }).n;
+      expect(after).toBe(before);
+    });
+
+    it('known function names insert the dynamic call', async () => {
+      const struct = makeStruct('/proj/src/b.ts');
+      const fileId = await kg.upsertFile(struct, 'src/b.ts');
+      await kg.storeFileDetails(fileId, struct);
+
+      const result = kg.ingestDynamicCalls([
+        { fromFunctionName: 'knownFn', toFunctionName: 'knownFn', workloadId: 'w1' },
+      ]);
+
+      expect(result.inserted + result.updated).toBe(1);
+      expect(result.errors).toEqual([]);
+    });
+  });
+
+  describe('getFileByPath — normalization + case-insensitive fallback', () => {
+    it('resolves backslash-separated and wrong-case lookups to the same file', async () => {
+      const struct = makeStruct('/proj/src/deep/Mod.ts');
+      const fileId = await kg.upsertFile(struct, 'src/deep/Mod.ts');
+
+      const byBackslash = kg.getFileByPath('src\\deep\\Mod.ts');
+      expect(byBackslash).not.toBeNull();
+      expect(byBackslash?.id).toBe(fileId);
+
+      const byWrongCase = kg.getFileByPath('src/deep/mod.ts');
+      expect(byWrongCase).not.toBeNull();
+      expect(byWrongCase?.id).toBe(fileId);
+    });
   });
 });

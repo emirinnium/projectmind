@@ -1,24 +1,47 @@
-import http from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { registerAllTools } from './mcp/tools/registry/index.js';
-import { registerCoreResources, registerWorkflowPrompts } from './mcp/resources.js';
-import { logger } from './cli/utils/logger.js';
-import { initializeDependencies, getDependencies, getMcpSessionId } from './mcp/dependencies.js';
-import { closeDatabase, getDatabase } from './storage/database.js';
-import { resolvePackageVersion, currentModuleDir } from './utils/version.js';
+import { timingSafeEqual } from 'node:crypto';
+import http from 'node:http';
 import { pathToFileURL } from 'node:url';
-import { registerResourceSubscriptionTool } from './mcp/resources.js';
-import { validateRequestMeta, MetaValidationError } from './mcp/tools/types.js';
+import { handleOauthRoute } from './auth/http.js';
 import { ClientRegistry } from './auth/registry.js';
 import { TokenService } from './auth/tokens.js';
-import { handleOauthRoute } from './auth/http.js';
+import { logger } from './cli/utils/logger.js';
+import { initializeDependencies, getDependencies, getMcpSessionId } from './mcp/dependencies.js';
+import { registerCoreResources, registerWorkflowPrompts, registerResourceSubscriptionTool } from './mcp/resources.js';
+import { stopPeriodicCleanup } from './mcp/tools/locks.js';
+import { registerAllTools } from './mcp/tools/registry/index.js';
+import { closeAllLiveWatchers } from './mcp/tools/sync.js';
+import { validateRequestMeta, MetaValidationError } from './mcp/tools/types.js';
+import { closeDatabase, getDatabase } from './storage/database.js';
+import { resolvePackageVersion, currentModuleDir } from './utils/version.js';
 
 let _server: McpServer | null = null;
 let _httpServer: http.Server | null = null;
 let _initialized = false;
+let _signalHandlersRegistered = false;
+
+/**
+ * Register graceful-shutdown signal handlers on the SERVER STARTUP path only.
+ * Importing this module as a library (src/index.ts re-exports it) must never
+ * touch process signals; only an actual server start does. Guarded so repeated
+ * initMcpServer() calls never register duplicate handlers.
+ */
+function registerSignalHandlers(): void {
+  if (_signalHandlersRegistered) return;
+  _signalHandlersRegistered = true;
+
+  process.on('SIGINT', async () => {
+    await shutdownMcpServer();
+    process.exit(0);
+  });
+
+  process.on('SIGTERM', async () => {
+    await shutdownMcpServer();
+    process.exit(0);
+  });
+}
 
 /**
  * Notify connected clients that the tool and resource lists have changed.
@@ -104,18 +127,6 @@ function getOauthTokens(): TokenService {
   return (_oauthTokens ??= new TokenService(getDatabase(), OAUTH_TOKEN_TTL));
 }
 
-/** Length-safe, timing-attack-resistant string comparison. */
-function safeTokenEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a, 'utf8');
-  const bb = Buffer.from(b, 'utf8');
-  if (ab.length !== bb.length) {
-    // Burn comparable time so response latency does not leak token length.
-    try { timingSafeEqual(ab, ab); } catch { /* unreachable for equal buffers */ }
-    return false;
-  }
-  return timingSafeEqual(ab, bb);
-}
-
 function extractBearerOrHeaderToken(req: http.IncomingMessage): string | undefined {
   const auth = req.headers['authorization'];
   if (typeof auth === 'string' && auth.toLowerCase().startsWith('bearer ')) {
@@ -129,10 +140,12 @@ function extractBearerOrHeaderToken(req: http.IncomingMessage): string | undefin
 /** Static-token check only (used by /mcp auth and the protected /oauth/register). */
 function isStaticTokenValid(req: http.IncomingMessage): boolean {
   const presented = extractBearerOrHeaderToken(req);
-  return presented !== undefined && presented.length > 0 && safeTokenEqual(presented, HTTP_AUTH_TOKEN);
+  if (presented === undefined) return false;
+  return timingSafeEqual(Buffer.from(presented, 'utf8'), Buffer.from(HTTP_AUTH_TOKEN ?? '', 'utf8'));
 }
 
-function isHttpAuthorized(req: http.IncomingMessage): boolean {
+/** HTTP authorization check (static token and/or OAuth). */
+function isHttpAuthorized(req: http.IncomingMessage): true | { error: string } {
   // Static bearer (admin) token wins when configured.
   if (HTTP_AUTH_TOKEN && isStaticTokenValid(req)) return true;
   // Dual mode: a valid OAuth access token also authorizes /mcp — but only
@@ -143,12 +156,18 @@ function isHttpAuthorized(req: http.IncomingMessage): boolean {
     const presented = extractBearerOrHeaderToken(req);
     if (presented !== undefined && presented.length > 0) {
       const entry = getOauthTokens().verify(presented);
-      if (entry !== null && entry.scope === MCP_ACCESS_SCOPE) return true;
+      if (entry !== null && (entry.scope ?? '').split(/\s+/).includes(MCP_ACCESS_SCOPE)) return true;
     }
   }
   // Open loopback mode ONLY when no authentication is configured at all.
   if (!HTTP_AUTH_TOKEN && !OAUTH_ENABLED) return true;
-  return false;
+  return { error: "Unauthorized: no token provided." };
+}
+
+/** Timing-safe token comparison. */
+function safeTokenEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
 }
 
 /** Sliding-window per-IP rate limiter (60s window). */
@@ -183,6 +202,9 @@ function jsonError(res: http.ServerResponse, status: number, payload: Record<str
 }
 
 export async function initMcpServer(): Promise<void> {
+  // Server startup path: arm graceful shutdown handlers (never at import time).
+  registerSignalHandlers();
+
   try {
     await ensureInitialized();
 
@@ -228,6 +250,12 @@ export async function initMcpServer(): Promise<void> {
     if (Number.isFinite(httpPort) && httpPort > 0) {
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
       await server.connect(transport);
+      try {
+        const deps = getDependencies();
+        deps.agentName = process.env.PROJECTMIND_AGENT_NAME || server.server.getClientVersion?.()?.name || 'mcp-client';
+      } catch {
+        // client info unavailable — keep fallback
+      }
 
       const httpServer = http.createServer((req, res) => {
         void (async () => {
@@ -288,6 +316,7 @@ export async function initMcpServer(): Promise<void> {
                 registry: getOauthRegistry(),
                 tokens: getOauthTokens(),
                 authorization: req.headers['authorization'],
+                allowedScopes: [MCP_ACCESS_SCOPE],
               });
               if (!result.handled) {
                 jsonError(res, 500, { error: 'OAuth route failed' });
@@ -350,6 +379,12 @@ export async function initMcpServer(): Promise<void> {
     const transport = new StdioServerTransport();
     logger.info('ProjectMind MCP Server starting...');
     await server.connect(transport);
+    try {
+      const deps = getDependencies();
+      deps.agentName = process.env.PROJECTMIND_AGENT_NAME || server.server.getClientVersion?.()?.name || 'mcp-client';
+    } catch {
+      // client info unavailable — keep fallback
+    }
     logger.info('ProjectMind MCP Server ready.');
   } catch (e) {
     logger.error('Failed to initialize MCP server:', { error: e instanceof Error ? e.message : String(e) });
@@ -381,20 +416,20 @@ export async function shutdownMcpServer(): Promise<void> {
         logger.warn('Failed to end MCP agent session:', { error: e instanceof Error ? e.message : String(e) });
       }
     }
+    try {
+      stopPeriodicCleanup();
+    } catch (e) {
+      logger.warn('Failed to stop periodic cleanup:', { error: e instanceof Error ? e.message : String(e) });
+    }
+    try {
+      closeAllLiveWatchers();
+    } catch (e) {
+      logger.warn('Failed to close live watchers:', { error: e instanceof Error ? e.message : String(e) });
+    }
     closeDatabase();
     _initialized = false;
   }
 }
-
-process.on('SIGINT', async () => {
-  await shutdownMcpServer();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  await shutdownMcpServer();
-  process.exit(0);
-});
 
 // Main-module detection hardened: process.argv[1] is undefined under
 // `node -e` / embedded ESM evaluation, and Windows paths need file:// URLs.

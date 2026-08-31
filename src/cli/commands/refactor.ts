@@ -16,7 +16,7 @@ export function createRefactorCommand(): Command {
       
       const content = readFileSync(file, 'utf-8');
       
-      const lines = content.split('\n');
+      const lines = content.split(/\r?\n/);
       const imports: string[] = [];
       const other: string[] = [];
       let inImports = false;
@@ -47,7 +47,7 @@ export function createRefactorCommand(): Command {
       if (opts.dryRun) {
         output.info('DRY RUN - showing diff:');
         const diff = generateDiff(content, newContent);
-        console.log(diff);
+        output.info(diff);
       } else {
         writeFileSync(file, newContent);
         output.success('Imports organized');
@@ -112,7 +112,7 @@ export function createRefactorCommand(): Command {
         output.success(result.reason ?? 'nothing to do');
         return;
       }
-      console.log(result.diff ?? '');
+       output.info(result.diff ?? '');
       if (result.written) {
         output.success('Applied (written to disk). Review with your VCS before committing.');
       } else {
@@ -124,8 +124,8 @@ export function createRefactorCommand(): Command {
 }
 
 function generateDiff(oldContent: string, newContent: string): string {
-  const oldLines = oldContent.split('\n');
-  const newLines = newContent.split('\n');
+  const oldLines = oldContent.split(/\r?\n/);
+  const newLines = newContent.split(/\r?\n/);
   const maxLen = Math.max(oldLines.length, newLines.length);
   const diff: string[] = [];
   

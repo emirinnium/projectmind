@@ -1,8 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { SQLOutputValue } from 'node:sqlite';
-import { getDatabase, getStatement } from '../../../storage/database.js';
+import { getDatabase } from '../../../storage/database.js';
 
-export type DebtType = 'pattern_drift' | 'architectural_drift' | 'redundancy' | 'agent_conflict' | 'complexity' | 'code_age' | 'cognitive_load';
+export type DebtType = 'pattern_drift' | 'architectural_drift' | 'redundancy' | 'agent_conflict' | 'complexity' | 'code_age' | 'cognitive_load' | 'change_frequency';
 export type Severity = 'high' | 'medium' | 'low';
 
 export interface DebtItem {
@@ -163,7 +163,7 @@ export class DebtPersistence {
     ).all(...params) as Array<{ type: DebtType; count: number }>;
 
     const bySeverity: Record<Severity, number> = { high: 0, medium: 0, low: 0 };
-    const byType: Record<DebtType, number> = { pattern_drift: 0, architectural_drift: 0, redundancy: 0, agent_conflict: 0, complexity: 0, code_age: 0, cognitive_load: 0 };
+    const byType: Record<DebtType, number> = { pattern_drift: 0, architectural_drift: 0, redundancy: 0, agent_conflict: 0, complexity: 0, code_age: 0, cognitive_load: 0, change_frequency: 0 };
 
     for (const { severity: s, count } of severityCounts) {
       bySeverity[s] = count;

@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 export interface GitChurnEntry {
   count: number;
@@ -16,12 +16,13 @@ export interface GitChurnEntry {
 export function collectGitChurn(projectRoot: string, sinceDays: number): Map<string, GitChurnEntry> {
   const churn = new Map<string, GitChurnEntry>();
   try {
-    const out = execSync(
-      `git log --since="${sinceDays} days ago" --pretty=format:@@%an --name-only`,
+    const out = execFileSync(
+      'git',
+      ['log', `--since=${sinceDays} days ago`, '--pretty=format:@@%an', '--name-only'],
       { cwd: projectRoot, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 }
     );
     let currentAuthor = 'unknown';
-    for (const rawLine of out.split('\n')) {
+    for (const rawLine of out.split(/\r?\n/)) {
       const line = rawLine.trim();
       if (!line) continue;
       if (line.startsWith('@@')) {

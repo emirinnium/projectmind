@@ -3,7 +3,7 @@ import http from 'node:http';
 import { withService, output } from '@/cli/utils/shared.js';
 
 /**
- * pm serve — local web dashboard (skeleton).
+ * pm serve — local web dashboard (functional).
  *
  * Zero-dependency node:http server bound to 127.0.0.1 serving:
  *   GET /            single-page dashboard (inline HTML/CSS/JS, no CDN)

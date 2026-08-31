@@ -61,7 +61,7 @@ describe('MemoryRepository', () => {
 
       const memories = repo.getMemory('decisions', 'file-1');
       expect(memories).toHaveLength(1);
-      expect(memories[0].value).toEqual(JSON.stringify({ decision: 'refactor', reasoning: 'too complex' }));
+      expect(memories[0].value).toEqual({ decision: 'refactor', reasoning: 'too complex' });
     });
 
     it('retrieves all memories for a scope', () => {

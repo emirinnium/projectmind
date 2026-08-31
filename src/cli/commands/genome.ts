@@ -18,23 +18,27 @@ export function createGenomeCommand(): Command {
             patternCount?: number;
             violationCount?: number;
             agentSessions?: number;
+            markerCount?: number;
             breakdown?: {
               avgConfidence?: number;
               highConfidencePatterns?: number;
               importResolutionRate?: number;
               circularDepPenalty?: number;
               violationPenalty?: number;
+              markerCount?: number;
             };
           };
           output.kv('Patterns detected', String(data.patternCount ?? 0));
           output.kv('Violations', String(data.violationCount ?? 0));
           output.kv('Agent sessions', String(data.agentSessions ?? 0));
+          output.kv('Marker count', String(data.markerCount ?? 0));
           const b = data.breakdown ?? {};
           if (typeof b.avgConfidence === 'number') output.kv('Avg pattern confidence', `${Math.round(b.avgConfidence * 100)}%`);
           if (typeof b.highConfidencePatterns === 'number') output.kv('High-confidence patterns', String(b.highConfidencePatterns));
           if (typeof b.importResolutionRate === 'number') output.kv('Import resolution rate', `${Math.round(b.importResolutionRate * 100)}%`);
           if (b.circularDepPenalty) output.warn(`Circular dependency penalty applied: ${b.circularDepPenalty}`);
           if (b.violationPenalty) output.warn(`Violation penalty applied: ${b.violationPenalty}`);
+          if (b.markerCount !== undefined) output.kv('Breakdown marker count', String(b.markerCount));
         } catch {
           // Genome payload is informational — never block on parse issues.
         }

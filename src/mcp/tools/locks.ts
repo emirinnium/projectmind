@@ -1,11 +1,15 @@
 import { z } from 'zod';
+import type { DatabaseSync } from 'node:sqlite';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { predictMergeRisk } from '../../core/coordination/risk.js';
+import { getSharedBroadcastService } from './intelligence.js';
 import { logger } from '../../utils/logger.js';
 
 // Stale lock cleanup interval (5 minutes)
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+
+let cleanupTimer: NodeJS.Timeout | null = null;
 
 /**
  * Clean up stale locks (expired TTL).
@@ -24,12 +28,28 @@ async function cleanupStaleLocks(kg: McpDependencies['kg']): Promise<void> {
 /**
  * Start periodic stale lock cleanup.
  */
-function startStaleLockCleanup(kg: McpDependencies['kg']): void {
-  setInterval(() => {
+function startStaleLockCleanup(kg: McpDependencies['kg'], db?: DatabaseSync): void {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(() => {
     cleanupStaleLocks(kg).catch(error => {
       logger.error('Stale lock cleanup failed:', { error });
     });
+    try {
+      getSharedBroadcastService(db).expireIntents();
+    } catch (error) {
+      logger.warn('Intent expiry failed:', { error: error instanceof Error ? error.message : String(error) });
+    }
   }, CLEANUP_INTERVAL_MS);
+}
+
+/**
+ * Stop the periodic cleanup (server shutdown).
+ */
+export function stopPeriodicCleanup(): void {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
 }
 
 /**
@@ -59,7 +79,7 @@ function json(result: object): { content: Array<{ type: 'text'; text: string }> 
 
 export function registerAgentLocksTool(server: McpServer, deps: McpDependencies): void {
   // Start periodic stale lock cleanup
-  startStaleLockCleanup(deps.kg);
+  startStaleLockCleanup(deps.kg, deps.db);
 
   server.registerTool(
     'agent_locks',

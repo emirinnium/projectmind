@@ -341,7 +341,7 @@ export function threeWayMerge(
  * Convenience wrapper over line arrays.
  */
 export function mergeTexts(base: string, local: string, remote: string): MergeResult {
-  const toLines = (text: string): string[] => (text.length === 0 ? [] : text.split('\n'));
+  const toLines = (text: string): string[] => (text.length === 0 ? [] : text.split(/\r?\n/));
   return threeWayMerge(toLines(base), toLines(local), toLines(remote));
 }
 

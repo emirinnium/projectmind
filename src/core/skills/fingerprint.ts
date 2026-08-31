@@ -6,7 +6,7 @@
  */
 
 import ts from 'typescript';
-import type { AgentFingerprint } from '../../storage/kg/types.js';
+import type { AgentFingerprint, FingerprintMeasured, ErrorHandlingStyle, NamingConvention, TestPattern } from '../../storage/kg/types.js';
 
 export interface FileEdit {
   filePath: string;
@@ -39,6 +39,7 @@ export class AgentFingerprintExtractor {
     let camel = 0;
     let snake = 0;
     let pascal = 0;
+    let screamingSnake = 0;
 
     let describeHits = 0;
     let itHits = 0;
@@ -92,9 +93,10 @@ export class AgentFingerprintExtractor {
       if (ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) {
         const name = (node as any).name?.text as string | undefined;
         if (name) {
-          if (/^[a-z][\w$]*$/.test(name)) camel++;
+          if (/^[A-Z]+(?:_[A-Z0-9]+)+$/.test(name)) screamingSnake++;
           else if (/^[a-z]+(?:_[a-z0-9]+)+$/.test(name)) snake++;
-          else if (/^[A-Z][\w$]*$/.test(name)) pascal++;
+          else if (/^[a-z][a-zA-Z0-9]*$/.test(name)) camel++;
+          else if (/^[A-Z][a-zA-Z0-9]*$/.test(name)) pascal++;
         }
       }
 
@@ -122,7 +124,7 @@ export class AgentFingerprintExtractor {
 
     // Async preference: await vs then-chain
     const styleDenominator = awaitHits + thenHits;
-    const asyncPreference = styleDenominator > 0 ? Math.round((awaitHits / styleDenominator) * 100) / 100 : -1;
+    const asyncPreference = styleDenominator > 0 ? Math.round((awaitHits / styleDenominator) * 100) / 100 : 0.5;
 
     // Type strictness: assertions per 10 lines, capped at 1.0, plus interface/type density
     const assertionRate = assertionCount / (totalLines / 10 || 1);
@@ -133,13 +135,20 @@ export class AgentFingerprintExtractor {
     const errorHandlingStyle = this.classifyErrorHandling(tryBlocks, dotCatch, throws, resultObjects);
 
     // Naming convention
-    const namingConvention = this.dominantNaming(camel, snake, pascal);
+    const namingConvention = this.dominantNaming(camel, snake, pascal, screamingSnake);
 
     // Test pattern
     const testPattern = this.classifyTestPattern(describeHits, itHits, testHits);
 
     // Favorite abstractions
     const favoriteAbstractions = this.extractFavoriteAbstractions(interfaceCount, typeAliasCount, genericCount, classCount);
+
+    // Measured metadata: track which dimensions were actually measured
+    const measured: FingerprintMeasured = {
+      asyncPreference: styleDenominator > 0,
+      namingConvention: (camel + snake + pascal + screamingSnake) > 0,
+      errorHandlingStyle: (tryBlocks + dotCatch + throws + resultObjects) > 0,
+    };
 
     return {
       asyncPreference,
@@ -148,6 +157,7 @@ export class AgentFingerprintExtractor {
       namingConvention,
       testPattern,
       favoriteAbstractions,
+      measured,
     };
   }
 
@@ -162,32 +172,32 @@ export class AgentFingerprintExtractor {
     return full;
   }
 
-  private classifyErrorHandling(tryBlocks: number, dotCatch: number, throws: number, resultObjects: number): string {
-    const styles: Array<[string, number]> = [
-      ['try-catch', tryBlocks],
-      ['promise-catch', dotCatch],
-      ['throwing', throws],
-      ['result-object', resultObjects],
+  private classifyErrorHandling(tryBlocks: number, dotCatch: number, throws: number, resultObjects: number): ErrorHandlingStyle {
+    const styles: Array<[ErrorHandlingStyle, number]> = [
+      ["try-catch", tryBlocks],
+      ["result-type", dotCatch],
+      ["throw", throws],
+      ["result-type", resultObjects],
     ];
     const active = styles.filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-    if (active.length === 0) return 'unknown';
+    if (active.length === 0) return 'try-catch';
     if (active.length === 1) return active[0][0];
     return active[0][1] >= active[1][1] * 2 ? active[0][0] : 'mixed';
   }
-
-  private dominantNaming(camel: number, snake: number, pascal: number): string {
-    const total = camel + snake + pascal;
+  private dominantNaming(camel: number, snake: number, pascal: number, screamingSnake: number): NamingConvention {
+    const total = camel + snake + pascal + screamingSnake;
     if (total === 0) return 'unknown';
-    const entries: Array<[string, number]> = [
+    const entries: Array<[NamingConvention, number]> = [
       ['camelCase', camel],
       ['snake_case', snake],
       ['PascalCase', pascal],
+      ['SCREAMING_SNAKE', screamingSnake],
     ];
     entries.sort((a, b) => b[1] - a[1]);
     return entries[0][1] >= total * 0.6 ? entries[0][0] : 'mixed';
   }
 
-  private classifyTestPattern(describeHits: number, itHits: number, testHits: number): string {
+  private classifyTestPattern(describeHits: number, itHits: number, testHits: number): TestPattern {
     const total = describeHits + itHits + testHits;
     if (total === 0) return 'none';
     if (describeHits > 0 && itHits > 0) return 'bdd';
@@ -204,6 +214,13 @@ export class AgentFingerprintExtractor {
     if (classCount > 0) abstractions.push('class');
     if (abstractions.length === 0) abstractions.push('none');
     return abstractions;
+  }
+  private hashToken(token: string): number {
+    let hash = 0;
+    for (let i = 0; i < token.length; i++) {
+      hash = ((hash << 5) - hash + token.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash);
   }
 }
 

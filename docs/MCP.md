@@ -118,6 +118,12 @@ Without an LLM key the server runs fully functional **fast-tier** analysis.
 | Embeddings | `init_embedding_provider`, `generate_embedding`, `get_embedding_provider` |
 | Bridge | **`run_cli`** (below) |
 
+> **Naming across clients.** This document uses the server-declared tool names
+> (no prefix). opencode prefixes every MCP tool with the server name, so the
+> same tools are exposed there as `projectmind_*` — e.g. `run_cli` becomes
+> **`projectmind_run_cli`**, `get_context` becomes `projectmind_get_context`.
+> Claude Code, Cursor and Windsurf expose them without the prefix.
+
 ## `run_cli` Bridge — full CLI surface from MCP
 
 ```jsonc

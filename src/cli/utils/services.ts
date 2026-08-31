@@ -1,9 +1,7 @@
-import {
-  ScaleManager,
-  DebtTracker,
-  CoherenceEngine,
-  createLLMProvider,
-} from '@/index.js';
+import { ScaleManager } from '@/core/scale/manager.js';
+import { DebtTracker } from '@/core/debt/tracker.js';
+import { CoherenceEngine } from '@/core/coherence/engine.js';
+import { createLLMProvider } from '@/core/llm/factory.js';
 import { CLIContext, createContext, closeContext } from './context.js';
 
 export interface ServiceMap {

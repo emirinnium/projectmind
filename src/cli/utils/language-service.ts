@@ -1,6 +1,8 @@
-import ts from 'typescript';
+
 import { existsSync, readFileSync } from 'node:fs';
+
 import { join } from 'node:path';
+import ts from 'typescript';
 
 /**
  * Shared TypeScript language-service bootstrap for editor-grade commands

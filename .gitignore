@@ -15,6 +15,8 @@ dist-tests/
 .projectmind/
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 
 # Generated per-agent skill reports (regenerable via `pm skill-recommend --write`)
 /skills/

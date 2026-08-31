@@ -81,7 +81,7 @@ export class GeminiProvider implements LLMProvider {
 
       // Extract reasoning trace (numbered steps)
       const reasoningTrace = content
-        .split('\n')
+        .split(/\r?\n/)
         .filter((line: string) => line.trim().match(/^\d+\.\s/))
         .map((l: string) => l.trim());
 

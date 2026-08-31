@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '0 4 * * *'  # Daily at 4 AM UTC
 
 jobs:
   lint:
@@ -15,6 +17,10 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+      - uses: actions/cache@v3
+        with:
+          path: .projectmind
+          key: projectmind-cache-${{ hashFiles('.projectmindrc.json') }}-${{ hashFiles('src/**/*.ts') }}
       - run: npm ci --legacy-peer-deps
       - run: npm run lint
       - run: npm run format:check
@@ -27,8 +33,80 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+      - uses: actions/cache@v3
+        with:
+          path: .projectmind
+          key: projectmind-cache-${{ hashFiles('.projectmindrc.json') }}-${{ hashFiles('src/**/*.ts') }}
       - run: npm ci --legacy-peer-deps
       - run: npm run typecheck
+
+  circular-deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - uses: actions/cache@v3
+        with:
+          path: .projectmind
+          key: projectmind-cache-${{ hashFiles('.projectmindrc.json') }}-${{ hashFiles('src/**/*.ts') }}
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+      - run: node -e "
+const { initDatabase } = require('./dist/storage/database-core.js');
+const db = initDatabase('.projectmind/pm-knowledge.db');
+const { KnowledgeGraph } = require('./dist/storage/kg/graph.js');
+const kg = new KnowledgeGraph(db);
+const cycles = kg.findCircularDependencies();
+process.exit(cycles.length > 0 ? 1 : 0);
+"
+
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - uses: actions/cache@v3
+        with:
+          path: .projectmind
+          key: projectmind-cache-${{ hashFiles('.projectmindrc.json') }}-${{ hashFiles('src/**/*.ts') }}
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+      - run: node dist/cli.js health --json > /tmp/health.json
+      - name: Enforce genome score threshold
+        run: |
+          VALUE=$(sed -n 's/.*"genomeScore": \([0-9.]*\).*/\1/p' /tmp/health.json)
+          if [ -n "$VALUE" ] && (( $(echo "$VALUE < 70" | bc -l) )); then
+            echo "Genome score $VALUE% is below 70% threshold"
+            exit 1
+          fi
+          echo "Genome score $VALUE% meets threshold"
+
+  api-surface:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - uses: actions/cache@v3
+        with:
+          path: .projectmind
+          key: projectmind-cache-${{ hashFiles('.projectmindrc.json') }}-${{ hashFiles('src/**/*.ts') }}
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+      - run: node dist/cli.js api-surface --base HEAD~1 --head HEAD --format markdown > /tmp/api-surface-report.md
+      - name: Upload API surface report
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-surface-report
+          path: /tmp/api-surface-report.md
 
   test:
     runs-on: ubuntu-latest
@@ -41,6 +119,10 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
+      - uses: actions/cache@v3
+        with:
+          path: .projectmind
+          key: projectmind-cache-${{ hashFiles('.projectmindrc.json') }}-${{ hashFiles('src/**/*.ts') }}
       - run: npm ci --legacy-peer-deps
       - run: npm run build
       - run: npm run test
@@ -54,6 +136,10 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+      - uses: actions/cache@v3
+        with:
+          path: .projectmind
+          key: projectmind-cache-${{ hashFiles('.projectmindrc.json') }}-${{ hashFiles('src/**/*.ts') }}
       - run: npm ci --legacy-peer-deps
       - run: npm run test:coverage
       - name: Upload coverage report
@@ -61,3 +147,76 @@ jobs:
         with:
           name: coverage-report
           path: coverage/
+
+  genome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - uses: actions/cache@v3
+        with:
+          path: .projectmind
+          key: projectmind-cache-${{ hashFiles('.projectmindrc.json') }}-${{ hashFiles('src/**/*.ts') }}
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+      - run: node dist/cli.js genome --json > /tmp/genome.json
+      - name: Enforce genome score threshold
+        run: |
+          VALUE=$(sed -n 's/.*"coherenceScore": \([0-9.]*\).*/\1/p' /tmp/genome.json)
+          if [ -n "$VALUE" ] && (( $(echo "$VALUE < 70" | bc -l) )); then
+            echo "Genome score $VALUE% is below 70% threshold"
+            exit 1
+          fi
+          echo "Genome score $VALUE% meets threshold"
+
+  markers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - uses: actions/cache@v3
+        with:
+          path: .projectmind
+          key: projectmind-cache-${{ hashFiles('.projectmindrc.json') }}-${{ hashFiles('src/**/*.ts') }}
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+      - name: Check marker count
+        run: |
+          MARKER_COUNT=$(node dist/cli.js genome 2>&1 | grep 'Marker count' || echo 'Marker count: 0')
+          echo "$MARKER_COUNT"
+          MARKER_COUNT_NUM=$(echo "$MARKER_COUNT" | grep -o '[0-9]*' || echo '0')
+          if [ "$MARKER_COUNT_NUM" -gt 100 ]; then
+            echo "Marker count $MARKER_COUNT_NUM exceeds threshold of 100"
+            exit 1
+          fi
+          echo "Marker count $MARKER_COUNT_NUM within threshold"
+
+  doctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - uses: actions/cache@v3
+        with:
+          path: .projectmind
+          key: projectmind-cache-${{ hashFiles('.projectmindrc.json') }}-${{ hashFiles('src/**/*.ts') }}
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+      - run: node dist/cli.js doctor scan-health > /tmp/doctor-health.json
+      - name: Enforce genome score threshold
+        run: |
+          VALUE=$(sed -n 's/.*"coherenceScore": \([0-9.]*\).*/\1/p' /tmp/doctor-health.json)
+          if [ -n "$VALUE" ] && (( $(echo "$VALUE < 70" | bc -l) )); then
+            echo "Genome score $VALUE% is below 70% threshold"
+            exit 1
+          fi
+          echo "Genome score $VALUE% meets threshold"

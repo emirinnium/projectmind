@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, basename, sep, isAbsolute } from 'node:path';
 import { logger } from './logger.js';
 import 'dotenv/config';
 import { validateConfig, type ProjectMindRc } from './config-schema.js';
@@ -112,9 +112,47 @@ export function loadConfig(): ProjectMindConfig {
 }
 
 /**
+ * Normalize a state path (databasePath / embeddingsDir) so the resolved path is
+ * ALWAYS inside `join(projectRoot, '.projectmind')`.
+ *
+ * - Empty/undefined/whitespace → fallback.
+ * - Absolute path → relocated under `.projectmind/` (basename only).
+ * - Relative path that escapes `.projectmind/` (e.g. bare `pm-knowledge.db`
+ *   resolving to projectRoot, or `../x.db` resolving to a parent) → forced
+ *   under `.projectmind/`.
+ * - Relative path already under `.projectmind/` (possibly nested deeper) →
+ *   returned unchanged.
+ *
+ * Returns a path RELATIVE TO projectRoot.
+ */
+function normalizeStatePath(raw: string | undefined, fallback: string, projectRoot: string): string {
+  if (raw === undefined || raw.trim() === '') {
+    return fallback;
+  }
+
+  if (isAbsolute(raw)) {
+    logger.warn(
+      `Config path "${raw}" is absolute; relocating to .projectmind/${basename(raw)} to keep state inside the project.`,
+    );
+    return join('.projectmind', basename(raw));
+  }
+
+  const resolved = resolve(projectRoot, raw);
+  const targetDir = resolve(projectRoot, '.projectmind');
+  if (resolved !== targetDir && !resolved.startsWith(targetDir + sep)) {
+    logger.warn(
+      `Config path "${raw}" resolves outside .projectmind/; relocating to .projectmind/${basename(resolved) || basename(fallback)}.`,
+    );
+    return join('.projectmind', basename(resolved) || basename(fallback));
+  }
+
+  return raw;
+}
+
+/**
  * Merge validated ProjectMindRc with defaults to produce ProjectMindConfig
  */
-function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
+export function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
   const provider = validated.llm?.provider ?? DEFAULT_CONFIG.llm.provider;
   const llmConfig = {
     provider,
@@ -144,8 +182,8 @@ function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
 
   return {
     projectRoot: validated.projectRoot ?? DEFAULT_CONFIG.projectRoot,
-    databasePath: validated.databasePath ?? DEFAULT_CONFIG.databasePath,
-    embeddingsDir: validated.embeddingsDir ?? DEFAULT_CONFIG.embeddingsDir,
+    databasePath: normalizeStatePath(validated.databasePath, DEFAULT_CONFIG.databasePath, validated.projectRoot ?? DEFAULT_CONFIG.projectRoot),
+    embeddingsDir: normalizeStatePath(validated.embeddingsDir, DEFAULT_CONFIG.embeddingsDir, validated.projectRoot ?? DEFAULT_CONFIG.projectRoot),
     maxDepth: validated.maxDepth ?? DEFAULT_CONFIG.maxDepth,
     ignorePatterns: validated.ignorePatterns ?? DEFAULT_CONFIG.ignorePatterns,
     llm: llmConfig,

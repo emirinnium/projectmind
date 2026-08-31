@@ -181,7 +181,7 @@ export function createSecretsLifeCommand(): Command {
 
 function scanForSecrets(content: string, relativePath: string, filePath: string, entropyThreshold: number): SecretFinding[] {
   const findings: SecretFinding[] = [];
-  const lines = content.split('\n');
+  const lines = content.split(/\r?\n/);
   
   // Secret patterns with entropy calculation
   const patterns = [

@@ -2,7 +2,10 @@ import { Command } from 'commander';
 import { asyncHandler, output, loadConfig, withService } from '@/cli/utils/shared.js';
 import { writeFileSync, existsSync, readFileSync, chmodSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { execSync } from 'node:child_process';
 import { getStatement } from '../../storage/database.js';
+import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
+import type { PredictorConfig } from '../../core/predictive/types.js';
 
 /**
  * Agent Autopilot — turns AGENTS.md guidance into ENFORCEMENT.
@@ -72,6 +75,53 @@ function runGates(minGenome: number): GateResult[] {
       : `${Math.round(genomeScore * 100)}%`,
   });
 
+  // Gate 4: No critical predicted impact risk in staged files.
+  let impactRiskPassed = true;
+  let impactRiskDetail = 'no staged files';
+  try {
+    const staged = execSync('git diff --cached --name-only --diff-filter=ACM', { encoding: 'utf8' })
+      .trim()
+      .split('\n')
+      .filter(f => f.length > 0);
+    if (staged.length > 0) {
+      const predictorConfig: PredictorConfig = {
+        bayesianPrior: 0.5,
+        crossModuleWeight: 0.8,
+        confidenceThreshold: 0.7,
+        modelUpdateRate: 0.1,
+      };
+      const predictor = new ImpactPredictor(predictorConfig);
+      let criticalFound = false;
+      for (const file of staged) {
+        try {
+          const failures = predictor.predictTestBreaks({
+            filePath: file,
+            moduleName: file.split('/').slice(-2)[0] || file,
+            changeType: 'modify',
+            crossModule: false,
+          });
+          if (failures.some(f => f.riskLevel === 'critical')) {
+            criticalFound = true;
+            break;
+          }
+        } catch {
+          // ignore errors on individual files (e.g. binary, unreadable)
+        }
+      }
+      impactRiskPassed = !criticalFound;
+      impactRiskDetail = criticalFound
+        ? 'critical risk detected in staged files'
+        : `no critical risk in ${staged.length} staged file(s)`;
+    }
+  } catch {
+    impactRiskDetail = 'could not determine staged files';
+  }
+  gates.push({
+    name: 'Predicted impact risk (critical)',
+    passed: impactRiskPassed,
+    detail: impactRiskDetail,
+  });
+
   return gates;
 }
 
@@ -92,7 +142,7 @@ export function createAutopilotCommand(): Command {
         const allPassed = failed.length === 0;
 
         if (opts.format === 'json') {
-          console.log(JSON.stringify({ ok: allPassed, gates }, null, 2));
+          output.info(JSON.stringify({ ok: allPassed, gates }, null, 2));
         } else {
           output.section('🤖 ProjectMind Pre-Commit Gate');
           for (const g of gates) {

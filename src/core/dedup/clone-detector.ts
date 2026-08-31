@@ -138,12 +138,12 @@ export class CloneDetector {
       for (const unit of this.extractUnits(sf)) {
         scannedFunctions++;
         const bodyText = unit.source.text.slice(unit.bodyStart, unit.bodyEnd);
-        const lineCount = bodyText.split('\n').length;
+        const lineCount = bodyText.split(/\r?\n/).length;
         if (lineCount < minLines) continue;
 
         const declared = collectDeclaredNames(unit.node);
         const normalized = normalizeBody(bodyText, declared);
-        const fp = createHash('sha1').update(normalized).digest('hex').slice(0, 16);
+        const fp = createHash('sha256').update(normalized).digest('hex').slice(0, 16);
 
         let occs = buckets.get(fp);
         if (!occs) {

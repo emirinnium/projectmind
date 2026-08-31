@@ -57,14 +57,40 @@ export type {
 } from './cache/types.js';
 
 // Context Window Budget Optimizer
-export { ContextBudgetOptimizer } from './context/budget-optimizer.js';
-export type { ContextItem, ContextBudgetPlan, BudgetOptimizerConfig } from './context/types.js';
-export { greedySelector } from './context/knapsack.js';
+export {
+  ContextBudgetOptimizer,
+  applyTaskTypeBoosts,
+  taskTypeMultiplier,
+  deriveInclusionReason,
+} from './context/budget-optimizer.js';
+export type {
+  ContextItem,
+  ContextBudgetPlan,
+  BudgetOptimizerConfig,
+  PlannedFile,
+  ExcludedFileEntry,
+  ContextTaskType,
+} from './context/types.js';
+export {
+  greedySelector,
+  dpSelector,
+  dpApplicable,
+  DP_VALUE_SCALE,
+  DP_MAX_RELEVANCE,
+  DP_MAX_ITEMS,
+  DP_TOTAL_VALUE_CAP,
+} from './context/knapsack.js';
+export type { SelectionResult } from './context/knapsack.js';
+
+// Context Assemblers
+export { assembleUserContext, UserContextItem, UserContextResult } from './context/user-context-assembler.js';
+export { assembleSystemContext, SystemContextItem, SystemContextResult } from './context/system-context-assembler.js';
 
 // Skills
 export { SKILL_CATALOG } from './skills/engine.js';
 export type { SkillDefinition, SkillEvidence, SkillGap } from './skills/engine.js';
 export { AgentFingerprintExtractor, fingerprintExtractor } from './skills/fingerprint.js';
+export { pseudonymizeAgentId } from './skills/engine.js';
 export type { FileEdit } from './skills/fingerprint.js';
 export type { AgentFingerprint } from '../storage/kg/types.js';
 export { persistAgentProfile, loadAgentProfile, extractFingerprintFromContent } from './skills/engine.js';
@@ -94,24 +120,55 @@ export type { AutoFixResult, FixerMeta } from './refactor/auto-fix.js';
 
 // Predictive Impact Analysis
 export { ImpactPredictor } from './predictive/impact-predictor.js';
-export type { CodeChange, ImpactReport, ActualImpact, PredictorConfig } from './predictive/types.js';
+export type { CodeChange, ImpactReport, ActualImpact, PredictorConfig, PredictedFailure } from './predictive/types.js';
 
 // Watcher
 export { ProjectWatcher } from './watcher.js';
 export type { ProjectWatcherOptions, WatcherStats, WatcherBatchResult } from './watcher.js';
 
 // Knowledge Graph Integrity Guard
-export { IntegrityGuard } from './kg/integrity-guard.js';
-export type { IntegrityViolation, RepairAction, IntegrityReport } from './kg/types.js';
+export { IntegrityGuard, parseGitRenameLog, INTEGRITY_EXCLUDED_DIRS } from './kg/integrity-guard.js';
+export type { ParsedRenameLog } from './kg/integrity-guard.js';
+export type { IntegrityViolation, RepairAction, IntegrityReport, IntegritySuggestedAction } from './kg/types.js';
 
 // Intent-Driven Semantic Navigation (Hybrid RAG)
 export { IntentEngine } from './search/intent-engine.js';
-export type { IntentQuery, IntentType, HybridScore, SearchResult } from './search/types.js';
+export type { IntentQuery, IntentType, HybridScore, SearchResult, TaskType } from './search/types.js';
+export { classifyTask, TASK_KEYWORDS, createKgGraphAdapter } from './search/intent-engine.js';
+export type { KGGraphLike, KgAdapterSource } from './search/intent-engine.js';
 
 // Cross-Project Pattern Learning (F4)
-export { CrossProjectPatternEngine } from './patterns/cross-project.js';
-export type { LearnedPattern, PatternVariant, PatternGraph, AbstractionLevel } from './patterns/types.js';
+export {
+  CrossProjectPatternEngine,
+  normalizeAbstractionLevel,
+  buildPattern,
+  defaultSuccessMetrics,
+  extractionConfidence,
+  templateFromCodeHash,
+  computeBagOfWordsEmbedding,
+  LEGACY_ABSTRACTION_LEVEL_MAP,
+} from './patterns/cross-project.js';
+export type { CrossProjectPatternEngineOptions } from './patterns/cross-project.js';
+export type {
+  LearnedPattern,
+  PatternVariant,
+  PatternGraph,
+  AbstractionLevel,
+  LegacyAbstractionLevel,
+  AbstractionLevelInput,
+  PatternMatch,
+  PatternSuccessMetrics,
+  AbstractTemplate,
+} from './patterns/types.js';
 
 // Real-Time Collaborative Agent Context (Live Intent Broadcast + Conflict Prediction)
-export { IntentBroadcastService } from './collaboration/broadcast.js';
-export type { IntentBroadcast, ConflictPrediction } from './collaboration/types.js';
+export { IntentBroadcastService, DEFAULT_TTL_SECONDS, DEFAULT_PRIVATE_BRANCH_PATTERNS } from './collaboration/broadcast.js';
+export type { IntentBroadcastOptions } from './collaboration/broadcast.js';
+export type {
+  IntentBroadcast,
+  ConflictPrediction,
+  ExpectedChanges,
+  ExpectedSignatureChange,
+  ExpectedTypeChange,
+  IntentScope,
+} from './collaboration/types.js';

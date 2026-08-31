@@ -114,6 +114,7 @@ export class DatabaseManager {
     db.exec('PRAGMA synchronous = NORMAL');
     db.exec('PRAGMA temp_store = MEMORY');
     db.exec('PRAGMA cache_size = -64000');
+    db.exec('PRAGMA busy_timeout = 5000');
   }
 
   /**
@@ -183,6 +184,7 @@ export function initDatabase(dbPath: string): DatabaseSync {
   _instance.exec('PRAGMA synchronous = NORMAL');
   _instance.exec('PRAGMA temp_store = MEMORY');
   _instance.exec('PRAGMA cache_size = -64000');
+  _instance.exec('PRAGMA busy_timeout = 5000');
 
   _instance.exec(SCHEMA_SQL);
   runMigrations(_instance);

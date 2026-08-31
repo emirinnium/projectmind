@@ -1,5 +1,5 @@
 import type { DebtItemDTO } from '../../types/mcp-types.js';
-import { logger } from '@/index.js';
+import { logger } from '@/utils/logger.js';
 
 export function formatGenomeScore(score: number): string {
   const pct = (score * 100).toFixed(1);
@@ -40,14 +40,15 @@ export function formatDebtReport(report: {
   return lines.join('\n');
 }
 
-export function handleCliError(error: unknown, context?: string): never {
+export function handleCliError(error: unknown, context?: string): void {
   const message = error instanceof Error ? error.message : String(error);
   logger.error(`${context ? `${context}: ` : ''}${message}`);
   if (error instanceof Error && error.stack) {
     logger.debug(error.stack);
   }
-  process.exit(1);
+  return;
 }
+
 
 export function asyncHandler<TArgs extends unknown[]>(
   fn: (...args: TArgs) => Promise<void>
@@ -55,9 +56,9 @@ export function asyncHandler<TArgs extends unknown[]>(
   return async (...args: TArgs) => {
     try {
       await fn(...args);
-      process.exit(0);
     } catch (error) {
       handleCliError(error);
+      process.exit(1);
     }
   };
 }

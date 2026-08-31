@@ -14,7 +14,7 @@ class ContextCommand extends BaseCommand {
       .action(asyncHandler(async (filePath: string) => {
         await this.withService(['scale'], async (_ctx, services) => {
           const scale = services.scale!;
-          const kg = scale['kg'];
+          const kg = scale.getKnowledgeGraph();
           const file = kg.getFileByPath(filePath);
           if (!file) {
             output.warn(`File not found in knowledge graph: ${filePath}`);

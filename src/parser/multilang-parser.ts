@@ -74,7 +74,7 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
   const imports: { source: string; named: string[]; kind: string }[] = [];
   const exports: string[] = [];
 
-  const lines = sourceText.split('\n');
+  const lines = sourceText.split(/\r?\n/);
 
   const visit = (node: Parser.SyntaxNode): void => {
     const nodeType = node.type;

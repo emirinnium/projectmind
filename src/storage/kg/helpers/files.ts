@@ -1,13 +1,27 @@
-import { getStatement, runWithRetry } from '../../database.js';
-import { codeToEmbedding, cosineSimilarity } from '../../../parser/embeddings.js';
-import { FileStructure } from '../../../parser/ast-parser.js';
-import { dirname, join, resolve } from 'node:path';
+
 import { existsSync, readFileSync } from 'node:fs';
-import { loadConfig } from '../../../utils/config.js';
-import { globalCacheRegistry } from '../../../core/cache/index.js';
-import { getVecIndex } from '../../../core/embeddings/vector-index.js';
-import type { FileInfo } from '../types.js';
+
+import { dirname, join, resolve } from 'node:path';
+
 import type { SQLOutputValue } from 'node:sqlite';
+
+import { globalCacheRegistry } from '../../../core/cache/index.js';
+
+import { getDefaultImportResolutionCache } from '../../../core/cache/import-resolution-cache.js';
+
+import { getVecIndex } from '../../../core/embeddings/vector-index.js';
+
+import { FileStructure } from '../../../parser/ast-parser.js';
+
+import { AliasResolver, getDefaultAliasResolver } from '../../../parser/alias-resolver.js';
+
+import { codeToEmbedding, cosineSimilarity } from '../../../parser/embeddings.js';
+
+import { loadConfig } from '../../../utils/config.js';
+import { getStatement, runWithRetry } from '../../database.js';
+
+import type { FileInfo } from '../types.js';
+
 import type { KgContext } from './context.js';
 
 export function mapFileInfo(row: Record<string, SQLOutputValue>): FileInfo {
@@ -46,16 +60,23 @@ function calculateCognitiveLoad(fileStruct: FileStructure): number {
 export function getFileByPath(ctx: KgContext, path: string, projectId?: number): FileInfo | null {
   const normalized = path.replace(/\\/g, '/');
   const pid = projectId ?? ctx.currentProjectId;
-  const row = getStatement('SELECT * FROM files WHERE path = ? AND project_id = ?')
-    .get(path, pid) as Record<string, SQLOutputValue> | undefined;
-  if (!row) {
-    const row2 = getStatement('SELECT * FROM files WHERE relative_path = ? AND project_id = ?')
-      .get(normalized, pid) as Record<string, SQLOutputValue> | undefined;
-    if (row2) return mapFileInfo(row2);
-    return null;
+  // Exact matches first (raw, then normalized), case-insensitive last.
+  const lookups: Array<[string, string]> = [
+    ['SELECT * FROM files WHERE path = ? AND project_id = ?', path],
+    ['SELECT * FROM files WHERE path = ? AND project_id = ?', normalized],
+    ['SELECT * FROM files WHERE relative_path = ? AND project_id = ?', normalized],
+    ['SELECT * FROM files WHERE relative_path = ? COLLATE NOCASE AND project_id = ?', normalized],
+    ['SELECT * FROM files WHERE path = ? COLLATE NOCASE AND project_id = ?', normalized],
+  ];
+  for (const [sql, value] of lookups) {
+    const row = getStatement(sql).get(value, pid) as Record<string, SQLOutputValue> | undefined;
+    if (row) return mapFileInfo(row);
   }
-  return mapFileInfo(row);
+  return null;
 }
+
+let _allFilesCache: { projectId: number; files: FileInfo[]; computedAt: number } | null = null;
+const ALL_FILES_CACHE_TTL_MS = 5_000;
 
 export function resolveImportSource(ctx: KgContext, source: string, fromDir?: string): FileInfo | null {
   let searchPath = source;
@@ -94,8 +115,14 @@ export function resolveImportSource(ctx: KgContext, source: string, fromDir?: st
     }
   }
 
-  const allFiles = getAllFiles(ctx);
-  for (const f of allFiles) {
+  if (
+    !_allFilesCache ||
+    _allFilesCache.projectId !== ctx.currentProjectId ||
+    Date.now() - _allFilesCache.computedAt >= ALL_FILES_CACHE_TTL_MS
+  ) {
+    _allFilesCache = { projectId: ctx.currentProjectId, files: getAllFiles(ctx), computedAt: Date.now() };
+  }
+  for (const f of _allFilesCache.files) {
     if (f.relativePath === searchPath || f.relativePath === searchPath + '/index') {
       return f;
     }
@@ -173,8 +200,8 @@ export async function upsertFile(ctx: KgContext, fileStruct: FileStructure, rela
   });
 }
 
-export function storeFileDetails(ctx: KgContext, fileId: number, fileStruct: FileStructure): void {
-  runWithRetry(async () => {
+export async function storeFileDetails(ctx: KgContext, fileId: number, fileStruct: FileStructure): Promise<void> {
+  return runWithRetry(async () => {
     ctx.db.exec('SAVEPOINT storeFileDetails');
     try {
       const fnStmt = getStatement(
@@ -218,57 +245,45 @@ export function storeFileDetails(ctx: KgContext, fileId: number, fileStruct: Fil
       const config = loadConfig();
       const projectRoot = config.projectRoot;
 
-      const aliases: { prefix: string; paths: string[] }[] = [];
-      // Read tsconfig.json from the FILESYSTEM (it is not scanned into the
-      // knowledge graph, so looking it up via getFileByPath never succeeds).
-      // Mirrors the working approach used by the MCP resolve_path tool.
-      try {
-        const config = loadConfig();
-        const tsconfigCandidates = [
-          join(config.projectRoot, 'tsconfig.json'),
-          join(process.cwd(), 'tsconfig.json'),
-        ];
-        for (const candidate of tsconfigCandidates) {
-          if (existsSync(candidate)) {
-            const content = readFileSync(candidate, 'utf-8');
-            // tsconfig may contain comments; strip them before JSON.parse.
-            const jsonText = content.replace(/^\s*\/\/.*$/gm, '');
-            const tsconfig = JSON.parse(jsonText);
-            if (tsconfig.compilerOptions?.paths) {
-              for (const [prefix, paths] of Object.entries(tsconfig.compilerOptions.paths)) {
-                aliases.push({
-                  prefix: prefix.replace(/\*$/, ''),
-                  paths: (paths as string[]).map(p => p.replace(/\*$/, '')),
-                });
-              }
-            }
-            break;
-          }
-        }
-      } catch {
-        // No readable tsconfig or invalid JSON: alias resolution stays off.
-      }
+      // Use the AliasResolver for tsconfig path alias resolution
+      const aliasResolver = getDefaultAliasResolver();
+      aliasResolver.loadAliases();
+
+      // Use the import resolution cache for faster lookups
+      const importCache = getDefaultImportResolutionCache();
 
       for (const imp of fileStruct.imports) {
         let resolved = false;
         let resolvedPath: string | null = null;
 
-        for (const alias of aliases) {
-          if (imp.source.startsWith(alias.prefix)) {
-            const remainder = imp.source.slice(alias.prefix.length);
-            for (const targetPath of alias.paths) {
-              const candidate = resolve(projectRoot, targetPath + remainder).replace(/\\/g, '/');
-              const found = resolveImportSource(ctx, candidate);
-              if (found) {
-                resolved = true;
-                resolvedPath = found.relativePath;
-                break;
-              }
+        // Auto-resolve Node.js built-in modules (e.g. 'node:fs', 'node:path').
+        if (imp.source.startsWith('node:')) {
+          resolved = true;
+          resolvedPath = imp.source.slice('node:'.length);
+        }
+
+        // Try alias resolution first for bare imports
+        if (!resolved && aliasResolver.isResolvable(imp.source)) {
+          const aliasPath = aliasResolver.resolveAliasToPath(imp.source);
+          if (aliasPath) {
+            const found = resolveImportSource(ctx, aliasPath);
+            if (found) {
+              resolved = true;
+              resolvedPath = found.relativePath;
             }
-            if (resolved) break;
           }
         }
 
+        // Use import resolution cache for relative imports and fallback
+        if (!resolved) {
+          const cacheResult = importCache.resolve(imp.source, fromDir, ctx.db, ctx.currentProjectId);
+          if (cacheResult.resolved && cacheResult.resolvedPath) {
+            resolved = true;
+            resolvedPath = cacheResult.resolvedPath;
+          }
+        }
+
+        // Final fallback to direct resolution
         if (!resolved) {
           const found = resolveImportSource(ctx, imp.source, fromDir);
           if (found) {
@@ -293,8 +308,8 @@ export function storeFileDetails(ctx: KgContext, fileId: number, fileStruct: Fil
   });
 }
 
-export function markAgentTouched(ctx: KgContext, filePath: string, agentName: string): void {
-  runWithRetry(async () => {
+export function markAgentTouched(ctx: KgContext, filePath: string, agentName: string): Promise<void> {
+  return runWithRetry(async () => {
     const normalized = filePath.replace(/\\/g, '/');
     getStatement(
       `UPDATE files SET agent_touched = 1, agent_touched_by = ?, agent_touched_at = CURRENT_TIMESTAMP 

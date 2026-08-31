@@ -186,13 +186,10 @@ export function ingestDynamicCalls(ctx: KgContext, calls: { fromFunctionName: st
   let updated = 0;
   const errors: string[] = [];
 
-  const ensureFunction = (name: string): number => {
+  const ensureFunction = (name: string): number | null => {
     const existing = getStatement('SELECT id FROM functions WHERE name = ? LIMIT 1').get(name) as { id: number } | undefined;
     if (existing) return existing.id;
-    const fileRow = getStatement('SELECT id FROM files LIMIT 1').get() as { id: number } | undefined;
-    const fileId = fileRow?.id ?? 0;
-    const result = getStatement('INSERT INTO functions (file_id, name, signature, complexity) VALUES (?, ?, ?, ?)').run(fileId, name, '', 0);
-    return Number(result.lastInsertRowid);
+    return null;
   };
 
   for (const call of calls) {

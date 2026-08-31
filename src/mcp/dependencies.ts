@@ -9,7 +9,7 @@ import { CoherenceEngine } from '../core/coherence/engine.js';
 import { DebtTracker } from '../core/debt/tracker.js';
 import { ScaleManager } from '../core/scale/manager.js';
 import { createLLMProvider } from '../core/llm/index.js';
-import { logger } from '../cli/utils/logger.js';
+import { logger } from '../utils/logger.js';
 import type { McpDependencies } from './tools/types.js';
 
 let _db: DatabaseSync | null = null;
@@ -79,7 +79,7 @@ export async function initializeDependencies(): Promise<McpDependencies> {
     }
   }
 
-  _deps = { kg, coherence, debt, scale, projectRoot: config.projectRoot, llmProvider };
+  _deps = { kg, coherence, debt, scale, projectRoot: config.projectRoot, llmProvider, db: _db };
   return _deps;
 }
 

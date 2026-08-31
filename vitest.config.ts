@@ -1,13 +1,19 @@
 import { defineConfig } from 'vitest/config';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   test: {
-    include: ['tests/**/*.test.ts'],
+    include: ['src/mcp/tools/kg-stats.test.ts', 'tests/**/*.test.ts', 'src/**/__tests__/**/*.test.ts'],
     exclude: ['tests/integration.test.ts'],
     testTimeout: 60000,
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html', 'lcov'],
+      reporter: ['text', 'json', 'lcov'],
       include: ['src/**/*.ts'],
       exclude: [
         'src/types/**',

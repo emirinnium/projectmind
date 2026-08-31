@@ -1,8 +1,8 @@
-import { watch as fsWatch, type FSWatcher } from 'node:fs';
+import { readdirSync, statSync, watch as fsWatch, type Dirent, type FSWatcher } from 'node:fs';
 import { extname, relative, resolve } from 'node:path';
 import { loadConfig } from '../utils/config.js';
 import { parseFile, type FileStructure } from '../parser/ast-parser.js';
-import { logger } from '../cli/utils/logger.js';
+import { logger } from '../utils/logger.js';
 
 /**
  * Incremental project watcher.
@@ -52,7 +52,9 @@ export interface WatcherStats {
 }
 
 export class ProjectWatcher {
-  private watcher: FSWatcher | null = null;
+  private recursiveWatcher: FSWatcher | null = null;
+  private dirWatchers = new Map<string, FSWatcher>();
+  private running = false;
   private pending = new Map<string, number>(); // absolute path -> first queued ts
   private timer: NodeJS.Timeout | null = null;
   private root = '';
@@ -67,7 +69,10 @@ export class ProjectWatcher {
   };
 
   constructor(
-    private kg: { upsertFile(struct: FileStructure, relPath: string): Promise<number> },
+    private kg: {
+      upsertFile(struct: FileStructure, relPath: string): Promise<number>;
+      storeFileDetails(fileId: number, struct: FileStructure): Promise<void> | void;
+    },
     private options: ProjectWatcherOptions = {}
   ) {
     this.debounceMs = Math.max(50, options.debounceMs ?? 400);
@@ -82,23 +87,29 @@ export class ProjectWatcher {
   }
 
   isRunning(): boolean {
-    return this.watcher !== null;
+    return this.running;
   }
 
   start(): void {
-    if (this.watcher) return; // already running
+    if (this.running) return; // already running
     this.root = resolve(this.options.root ?? loadConfig().projectRoot);
     this.stats.startedAt = Date.now();
 
-    this.watcher = fsWatch(this.root, { recursive: true }, (_eventType, filename) => {
-      this.stats.eventsSeen++;
-      if (!filename) return;
-      const abs = resolve(this.root, filename.toString());
-      if (!this.isTrackable(abs)) return;
-      // Map stores latest occurrence; the timer handles coalescing.
-      if (!this.pending.has(abs)) this.pending.set(abs, Date.now());
-      this.scheduleFlush();
-    });
+    try {
+      this.recursiveWatcher = fsWatch(this.root, { recursive: true }, (_e, filename) => {
+        this.handleFsEvent(filename, this.root);
+      });
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ERR_FEATURE_UNAVAILABLE_ON_PLATFORM') {
+        // Linux: recursive fs.watch is unavailable — fall back to a
+        // dependency-free per-directory watcher walk.
+        this.recursiveWatcher = null;
+        this.watchTree(this.root);
+      } else {
+        throw e;
+      }
+    }
+    this.running = true;
 
     logger.info(`ProjectWatcher watching ${this.root} (debounce ${this.debounceMs}ms)`);
   }
@@ -108,12 +119,64 @@ export class ProjectWatcher {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    if (this.watcher) {
-      this.watcher.close();
-      this.watcher = null;
+    if (this.recursiveWatcher) {
+      this.recursiveWatcher.close();
+      this.recursiveWatcher = null;
+    }
+    for (const [, w] of this.dirWatchers) w.close();
+    this.dirWatchers.clear();
+    if (this.running) {
+      this.running = false;
       logger.info('ProjectWatcher stopped.');
     }
     this.pending.clear();
+  }
+
+  private handleFsEvent(filename: string | Buffer | null, baseDir: string): void {
+    this.stats.eventsSeen++;
+    if (!filename) return;
+    const abs = resolve(baseDir, filename.toString());
+    if (!this.isTrackable(abs)) return;
+    // Map stores latest occurrence; the timer handles coalescing.
+    if (!this.pending.has(abs)) this.pending.set(abs, Date.now());
+    this.scheduleFlush();
+  }
+
+  private watchTree(dir: string): void {
+    this.watchDirectory(dir);
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || IGNORED_DIR_PARTS.has(entry.name)) continue;
+      this.watchTree(resolve(dir, entry.name));
+    }
+  }
+
+  private watchDirectory(d: string): void {
+    if (this.dirWatchers.has(d)) return;
+    const w = fsWatch(d, (eventType, filename) => {
+      this.handleFsEvent(filename, d);
+      if (eventType === 'rename' && filename) {
+        this.reconcileRenamed(resolve(d, filename.toString()));
+      }
+    });
+    w.on('error', () => {
+      w.close();
+      this.dirWatchers.delete(d);
+    });
+    this.dirWatchers.set(d, w);
+  }
+
+  private reconcileRenamed(abs: string): void {
+    try {
+      if (statSync(abs).isDirectory()) this.watchTree(abs);
+    } catch {
+      // deleted path — its watcher (if any) cleans itself up on error
+    }
   }
 
   /** True when the path should trigger a single-file re-index. */
@@ -152,7 +215,8 @@ export class ProjectWatcher {
           failed.push(rel);
           continue;
         }
-        await this.kg.upsertFile(struct, rel);
+        const fileId = await this.kg.upsertFile(struct, rel);
+        await this.kg.storeFileDetails(fileId, struct);
         this.options.coherence?.invalidateFileCache(rel);
         updated.push(rel);
       } catch (e) {

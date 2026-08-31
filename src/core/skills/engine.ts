@@ -1,277 +1,16 @@
-/**
- * B5 — Agent skill recommendation engine.
- *
- * Turns REAL agent interaction history (sessions, agent-touched files,
- * session decisions, coding fingerprint) into per-skill proficiency
- * estimates, and generates a personalized SKILL.md that explains WHICH skill
- * helps with WHAT (roadmap: the command must tell the user what each skill
- * is useful for) plus the CLI commands to apply it.
- */
-
+import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import { fingerprintExtractor } from './fingerprint.js';
-import type { AgentFingerprint } from '../../storage/kg/types.js';
+import { ERROR_HANDLING_STYLES, NAMING_CONVENTIONS, TEST_PATTERNS } from '../../storage/kg/types.js';
+import type { AgentFingerprint, FingerprintMeasured } from '../../storage/kg/types.js';
+import type { SkillDefinition, SkillEvidence, SkillGap, ProficiencyEvidence } from './skill-catalog.js';
+import { SKILL_CATALOG } from './skill-catalog.js';
 
-export interface SkillDefinition {
-  id: string;
-  label: string;
-  description: string;
-  /** Roadmap requirement: plain-language explanation of what this skill helps with. */
-  whyItHelps: string;
-  /** Target proficiency (0-1) — also the "gap target". */
-  importance: number;
-  /** Path-signal regexes matched against repo files / touched files. */
-  indicators: RegExp[];
-  resources: string[];
-  /** CLI commands that exercise this skill in this project. */
-  suggestedCommands: string[];
-}
-
-export interface SkillEvidence {
-  id: string;
-  description: string;
-  files: string[];
-  importance: number;
-  whyItHelps: string;
-  suggestedCommands: string[];
-}
-
-export interface SkillGap {
-  skill: string;
-  label: string;
-  description: string;
-  whyItHelps: string;
-  currentLevel: number;
-  targetLevel: number;
-  gap: number;
-  priority: 'critical' | 'high' | 'medium' | 'low';
-  learningResources: string[];
-  estimatedHours: number;
-  relatedFiles: string[];
-  suggestedCommands: string[];
-}
-
-export interface ProficiencyEvidence {
-  sessionCount: number;
-  touchedPaths: string[];
-  /** Serialized session decisions (JSON) — keyword evidence for skill use. */
-  decisionsText: string;
-  /** Agent fingerprint asyncPreference: -1 = unmeasured, 0..1 otherwise. */
-  asyncPreference: number;
-}
-
-/** Evidence-derived per-skill catalog shared with the CLI and the generator. */
-export const SKILL_CATALOG: SkillDefinition[] = [
-  {
-    id: 'typescript',
-    label: 'TypeScript',
-    description: 'TypeScript type system and advanced types',
-    whyItHelps: 'Nearly every file here is TypeScript — precise types keep the public API surface and tool contracts honest.',
-    importance: 0.9,
-    indicators: [/\.tsx?$/i],
-    resources: ['TypeScript Handbook', 'Effective TypeScript', 'Type Challenges'],
-    suggestedCommands: ['pm scale'],
-  },
-  {
-    id: 'async-patterns',
-    label: 'Async patterns',
-    description: 'Async/await, promises, error handling',
-    whyItHelps: 'Long-running scans, LLM calls and DB access dominate the hot paths; unhandled rejections here crash whole sessions.',
-    importance: 0.85,
-    indicators: [/retry\.ts$/i, /await/i],
-    resources: ['Async/Await Best Practices', 'Error Handling in Node.js'],
-    suggestedCommands: ['pm doctor scan-health'],
-  },
-  {
-    id: 'dependency-injection',
-    label: 'Dependency injection',
-    description: 'DI patterns, service locators, factories',
-    whyItHelps: 'The CLI/MCP services layer is built on constructor injection — following it keeps tools testable and interchangeable.',
-    importance: 0.7,
-    indicators: [/(^|\/)services?(\.ts|\/)/i, /container/i],
-    resources: ['DI in TypeScript', 'InversifyJS', 'TSyringe'],
-    suggestedCommands: ['pm scale'],
-  },
-  {
-    id: 'architectural-contracts',
-    label: 'Architecture contracts',
-    description: 'Layer boundaries, forbidden imports, contracts',
-    whyItHelps: 'Layered modules (auth, storage, core, cli) rely on contract files to catch boundary violations at analyze time.',
-    importance: 0.8,
-    indicators: [/contracts?\//i, /(^|\/)layers?\.ts$/i],
-    resources: ['Architecture Decision Records', 'Clean Architecture'],
-    suggestedCommands: ['pm layers', 'pm check'],
-  },
-  {
-    id: 'coherence-checking',
-    label: 'Coherence checking',
-    description: 'Fast/deep coherence analysis, contract engine',
-    whyItHelps: 'coherence gates are the project quality gate — fast-tier verdicts drive every edit workflow.',
-    importance: 0.75,
-    indicators: [/(^|\/)coherence(\/|\.ts$)/i],
-    resources: ['Code Quality Metrics', 'Static Analysis Tools'],
-    suggestedCommands: ['pm check'],
-  },
-  {
-    id: 'debt-detection',
-    label: 'Debt detection',
-    description: 'Redundancy, pattern drift, architectural drift detection',
-    whyItHelps: 'Debt reports decide release gates (high severity = blocker); accurate detection keeps the Genome score honest.',
-    importance: 0.7,
-    indicators: [/(^|\/)debt(\/|\.ts$|-prioritize\.ts$)/i, /dedup/i],
-    resources: ['Technical Debt Management', 'Code Quality Gates'],
-    suggestedCommands: ['pm debt', 'pm debt-prioritize', 'pm genome'],
-  },
-  {
-    id: 'embedding-generation',
-    label: 'Embeddings',
-    description: 'Code embeddings, semantic similarity, vector search',
-    whyItHelps: 'Semantic memory search and similar-file suggestions depend on the embedding provider pipeline.',
-    importance: 0.65,
-    indicators: [/embedding/i],
-    resources: ['Vector Embeddings', 'Sentence Transformers', 'FAISS'],
-    suggestedCommands: ['pm embed'],
-  },
-  {
-    id: 'ast-parsing',
-    label: 'AST parsing',
-    description: 'TypeScript AST parsing, tree-sitter multi-language parsing, symbol extraction',
-    whyItHelps: 'taint, structural-search and multi-language analysis all parse code — bugs here silently drop findings.',
-    importance: 0.7,
-    indicators: [/(^|\/)parser\//i, /structural-search/i, /tree-sitter/i],
-    resources: ['TypeScript Compiler API', 'Babel Plugin Handbook'],
-    suggestedCommands: ['pm taint', 'pm structural-search'],
-  },
-  {
-    id: 'knowledge-graph',
-    label: 'Knowledge graph',
-    description: 'File indexing, import resolution, graph queries',
-    whyItHelps: 'impact, circular-deps and coherence queries all read the graph — keeping import resolution accurate prevents false negatives.',
-    importance: 0.75,
-    indicators: [/(^|\/)(kg|graph)(\/|\.ts$)/i, /imports/i],
-    resources: ['Graph Databases', 'Neo4j', 'Property Graphs'],
-    suggestedCommands: ['pm graph', 'pm impact', 'pm resolve'],
-  },
-  {
-    id: 'sqlite-persistence',
-    label: 'SQLite persistence',
-    description: 'SQLite schema, migrations, prepared statements',
-    whyItHelps: 'Schema migrations are the riskiest change class in this project; SQLite ALTER rules differ sharply from other engines.',
-    importance: 0.6,
-    indicators: [/(^|\/)(storage|database)(\/|\.ts$)/i, /schema\.ts$/i, /migrations\.ts$/i],
-    resources: ['SQLite Internals', 'Better-SQLite3', 'Knex.js'],
-    suggestedCommands: ['pm scan'],
-  },
-  {
-    id: 'mcp-protocol',
-    label: 'MCP protocol',
-    description: 'Model Context Protocol server/tools',
-    whyItHelps: 'Every tool and resource ships over MCP — envelope validation and transport quirks (headers, sessions) surface here.',
-    importance: 0.6,
-    indicators: [/(^|\/)mcp(\/|\.ts$|-server\.ts$)/i, /mcp-server/i],
-    resources: ['MCP Specification', 'MCP SDK Examples'],
-    suggestedCommands: ['pm mcp'],
-  },
-  {
-    id: 'llm-integration',
-    label: 'LLM integration',
-    description: 'LLM providers, prompts, deep analysis',
-    whyItHelps: 'deep coherence, team-memory conflict resolution and docgen call providers — prompt regressions change results silently.',
-    importance: 0.65,
-    indicators: [/(^|\/)llm(\/|\.ts$)/i, /providers?(\/|\.ts$)/i, /(^|\/)deep\.ts$/i],
-    resources: ['Prompt Engineering', 'LangChain', 'Function Calling'],
-    suggestedCommands: ['pm docgen'],
-  },
-  {
-    id: 'cli-design',
-    label: 'CLI design',
-    description: 'Commander.js patterns, async handlers, output formatting',
-    whyItHelps: 'Every feature is exposed as a commander command — consistent handlers and output keep pm usable in CI.',
-    importance: 0.7,
-    indicators: [/(^|\/)cli\//i, /commander/i],
-    resources: ['Commander.js Docs', 'CLI Best Practices'],
-    suggestedCommands: ['pm --help'],
-  },
-  {
-    id: 'testing-patterns',
-    label: 'Testing patterns',
-    description: 'Vitest, mocking, integration tests',
-    whyItHelps: 'The repo gates on vitest totals — new evidence paths (OAuth, skills) need unit tests before merging.',
-    importance: 0.6,
-    indicators: [/(^|\/)(tests?|__tests__)\//i, /\.(test|spec)\.tsx?$/i],
-    resources: ['Vitest Guide', 'Testing Library', 'Mutation Testing'],
-    suggestedCommands: ['pm testgen'],
-  },
-  {
-    id: 'security-auditing',
-    label: 'Security auditing',
-    description: 'Secret detection, crypto analysis, OWASP checks',
-    whyItHelps: 'Secrets and taint flows are audited by dedicated tools; token handling (HTTP/OAuth) is a real attack surface here.',
-    importance: 0.7,
-    indicators: [/(^|\/)(audit|secrets-life)\.ts$/i, /taint/i, /auth/i],
-    resources: ['OWASP Top 10', 'Secret Detection', 'SAST Tools'],
-    suggestedCommands: ['pm audit', 'pm secrets-life', 'pm taint'],
-  },
-  {
-    id: 'license-compliance',
-    label: 'License compliance',
-    description: 'SPDX, license scanning, policy enforcement',
-    whyItHelps: 'Dependency licensing is machine-checked before releases — the SBOM path is the compliance source of truth.',
-    importance: 0.5,
-    indicators: [/(^|\/)(license|sbom|deps-fresh)\.ts$/i],
-    resources: ['SPDX Specification', 'License Compliance Automation'],
-    suggestedCommands: ['pm sbom', 'pm deps-fresh'],
-  },
-  {
-    id: 'architecture-analysis',
-    label: 'Architecture analysis',
-    description: 'Coupling, cohesion, layer boundaries, impact analysis',
-    whyItHelps: 'Coupling and impact signals drive refactor ROI — accurate analysis prevents risky edits to shared files.',
-    importance: 0.7,
-    indicators: [/(^|\/)(coupling|impact|layers)\.ts$/i, /refactor-roi/i],
-    resources: ['Coupling Metrics', 'Structure101', 'ArchUnit'],
-    suggestedCommands: ['pm coupling', 'pm impact', 'pm refactor-roi'],
-  },
-  {
-    id: 'agent-session-management',
-    label: 'Agent session management',
-    description: 'Session tracking, memory, context sharing',
-    whyItHelps: 'Cross-session memory and 3-way team-memory merges are the project identity — session hygiene keeps them sound.',
-    importance: 0.6,
-    indicators: [/(^|\/)(session|agent|memory)(\/|\.ts$)/i],
-    resources: ['Agent Memory Patterns', 'Context Engineering'],
-    suggestedCommands: ['pm agent status'],
-  },
-  {
-    id: 'pattern-extraction',
-    label: 'Pattern extraction',
-    description: 'Code pattern mining, redundancy detection',
-    whyItHelps: 'Dedup and pattern-drift analyses mine repeated structures — extraction quality bounds redundancy results.',
-    importance: 0.65,
-    indicators: [/(^|\/)patterns?(\/|-extractor\.ts$)/i],
-    resources: ['Code Clone Detection', 'Mining Software Repositories'],
-    suggestedCommands: ['pm dedup'],
-  },
-  {
-    id: 'refactoring-automation',
-    label: 'Refactoring automation',
-    description: 'AST transforms, safe code modifications',
-    whyItHelps: 'Structural rewrites touch many files at once; automated transforms must stay lossless.',
-    importance: 0.6,
-    indicators: [/(^|\/)(refactor|organize-imports)/i],
-    resources: ['Codemods', 'jscodeshift', 'AST Transforms'],
-    suggestedCommands: ['pm refactor-roi'],
-  },
-  {
-    id: 'documentation-generation',
-    label: 'Documentation generation',
-    description: 'API docs, README, ADRs from code',
-    whyItHelps: 'ADRs and docs keep architecture decisions retrievable by future agents — generation keeps them current.',
-    importance: 0.5,
-    indicators: [/(^|\/)(docgen|adr|onboard)\.ts$/i],
-    resources: ['JSDoc', 'TypeDoc', 'API Documentation'],
-    suggestedCommands: ['pm docgen', 'pm adr'],
-  },
-];
+export type { SkillDefinition, SkillEvidence, SkillGap, ProficiencyEvidence } from './skill-catalog.js';
+export { SKILL_CATALOG } from './skill-catalog.js';
+import { Result } from '../../utils/errors.js';
+import type { DatabaseSync } from 'node:sqlite';
+import { getDatabase } from '../../storage/database.js';
 
 const MAX_EVIDENCE_FILES = 8;
 
@@ -410,11 +149,28 @@ export function analyzeSkillGaps(
   return gaps.sort((a, b) => b.gap - a.gap);
 }
 
+/**
+ * Fingerprint shape accepted by the SKILL.md generator. Both fingerprint
+ * lineages are valid inputs: the strict AgentFingerprint (skills extractor,
+ * 0.5 neutral defaults, enum labels) and the scale reporter's lineage
+ * fingerprint (-1 unmeasured sentinels, richer error-style labels). The
+ * generator is presentation-only and renders negative numerics as
+ * "unmeasured", so it accepts the common structural supertype.
+ */
+export interface SkillDocFingerprint {
+  asyncPreference: number;
+  typeStrictness: number;
+  errorHandlingStyle: string;
+  namingConvention: string;
+  testPattern: string;
+  favoriteAbstractions: string[];
+}
+
 export interface SkillDocParams {
   agentName: string;
   sessionCount: number;
   filesTouchedCount: number;
-  fingerprint: AgentFingerprint;
+  fingerprint: SkillDocFingerprint;
   touchedPaths: string[];
   gaps: SkillGap[];
   generatedAt: string;
@@ -495,18 +251,129 @@ export function generateSkillDoc(params: SkillDocParams): string {
   return lines.join('\n');
 }
 
+/**
+ * GDPR / Privacy Note (Question 7):
+ * AgentFingerprint contains coding-style metrics (asyncPreference, namingConvention,
+ * errorHandlingStyle, etc.). These describe code patterns, not natural persons, and
+ * are NOT personally identifiable information (PII) under GDPR Article 4(1).
+ * However, if agentName is linked to a real person's identity, the profile should be
+ * anonymized or consent-based. Recommend pseudonymous agent IDs (agent-001) rather
+ * than real names for GDPR compliance.
+ */
 /** Profile storage integration: persist / load adaptive fingerprint per agent. */
-export function persistAgentProfile(agentName: string, fingerprint: AgentFingerprint): void {
-  const serialized = JSON.stringify(fingerprint);
-  // Integration point for agent_profiles table (schema.ts)
-  // eslint-disable-next-line no-console
-  console.log(`[profile-persist] ${agentName}: ${serialized.slice(0, 120)}...`);
+/** Pseudonymize agent identifier for GDPR compliance — never persist raw id. */
+export function pseudonymizeAgentId(agentId: string): string {
+  return createHash('sha256').update(agentId + 'projectmind-fingerprint-v1').digest('hex').slice(0, 16);
 }
 
-export function loadAgentProfile(agentName: string): AgentFingerprint | null {
-  // Integration point for agent_profiles table read
-  // Returns null when no profile exists (unmeasured sentinel handled by caller)
-  return null;
+export function persistAgentProfile(agentName: string, fingerprint: AgentFingerprint, db?: DatabaseSync): boolean {
+  try {
+    const serialized = JSON.stringify(fingerprint);
+    const database = db ?? getDatabase();
+    const stmt = database.prepare(
+      "INSERT OR REPLACE INTO agent_profiles (agent_name, fingerprint, updated_at) VALUES (?, ?, datetime('now'))"
+    );
+    // Retention: pseudonymized agent profiles retained for adaptive coherence only
+    stmt.run(pseudonymizeAgentId(agentName), serialized);
+    return true;
+  } catch (e) {
+    console.warn('persistAgentProfile failed:', e);
+    return false;
+  }
+}
+
+// Load-time schema for persisted profiles. The style fields are typed as
+// strict literal unions in AgentFingerprint, but legacy rows were persisted
+// under a z.string() schema and may hold free-form values — so validation
+// stays lenient here (enum OR any string) rather than rejecting the whole
+// profile. New writes always emit classifier enum values.
+const AgentFingerprintSchema = z.object({
+  asyncPreference: z.number(),
+  typeStrictness: z.number(),
+  errorHandlingStyle: z.union([z.enum(ERROR_HANDLING_STYLES), z.string()]),
+  namingConvention: z.union([z.enum(NAMING_CONVENTIONS), z.string()]),
+  testPattern: z.union([z.enum(TEST_PATTERNS), z.string()]),
+  favoriteAbstractions: z.array(z.string()),
+  measured: z
+    .object({
+      asyncPreference: z.boolean(),
+      namingConvention: z.boolean(),
+      errorHandlingStyle: z.boolean(),
+    })
+    .optional(),
+});
+
+export function loadAgentProfile(agentName: string, db?: DatabaseSync): Result<AgentFingerprint> {
+  try {
+    const database = db ?? getDatabase();
+    const stmt = database.prepare("SELECT fingerprint FROM agent_profiles WHERE agent_name = ?");
+    const row = stmt.get(pseudonymizeAgentId(agentName)) as { fingerprint: string } | undefined;
+    if (!row) return { success: false, error: new Error("Agent profile not found") };
+    try {
+      const parsed = JSON.parse(row.fingerprint);
+      const result = AgentFingerprintSchema.safeParse(parsed);
+      if (!result.success) {
+        console.warn('loadAgentProfile zod validation failed:', result.error);
+        return { success: false, error: new Error("Agent profile validation failed") };
+      }
+      return { success: true, value: result.data as AgentFingerprint };
+    } catch {
+      console.warn('loadAgentProfile parse failed');
+      return { success: false, error: new Error("Agent profile parse failed") };
+    }
+  } catch {
+    return { success: false, error: new Error("Agent profile load failed") };
+  }
+}
+
+export function adaptiveCoherenceCheck(
+  filePath: string,
+  content: string,
+  agentName?: string,
+): { verdict: 'pass' | 'warn' | 'fail'; message: string; styleMismatch?: boolean } {
+  const result = agentName ? loadAgentProfile(agentName) : { success: true, value: null as unknown as AgentFingerprint };
+  if (!result.success) {
+    return { verdict: 'pass', message: 'No agent profile loaded; coherence unmeasured.', styleMismatch: false };
+  }
+  const profile = result.value;
+  // Compute fingerprint from current file content for comparison using the
+  // fingerprint extractor that returns AgentFingerprint with measured flags
+  const contentFp = fingerprintExtractor.extractFromAST(content);
+  // Backward compatibility: profiles persisted before measurement metadata
+  // existed carry no `measured` flags. Their dimensions hold neutral defaults
+  // (asyncPreference 0.5, namingConvention 'unknown', errorHandlingStyle
+  // 'try-catch') that cannot be distinguished from real signal, so skip the
+  // comparison entirely instead of emitting false style warnings.
+  const measured = profile.measured;
+  if (!measured) {
+    return {
+      verdict: 'pass',
+      message: `Coherence pass for ${filePath}; stored profile pre-dates measurement metadata, style comparison skipped.`,
+      styleMismatch: false,
+    };
+  }
+  // Per-dimension guard: a dimension with zero samples on EITHER side only
+  // holds a neutral default — comparing it would produce false warnings.
+  const bothMeasured = (dim: keyof FingerprintMeasured): boolean =>
+    measured[dim] === true && contentFp.measured?.[dim] === true;
+  const mismatches: string[] = [];
+  if (bothMeasured('asyncPreference') && Math.abs(contentFp.asyncPreference - profile.asyncPreference) > 0.3) {
+    mismatches.push(`asyncPreference differs (${contentFp.asyncPreference.toFixed(2)} vs ${profile.asyncPreference.toFixed(2)})`);
+  }
+  if (bothMeasured('namingConvention') && contentFp.namingConvention !== profile.namingConvention) {
+    mismatches.push(`namingConvention differs (${contentFp.namingConvention} vs ${profile.namingConvention})`);
+  }
+  if (bothMeasured('errorHandlingStyle') && contentFp.errorHandlingStyle !== profile.errorHandlingStyle) {
+    mismatches.push(`errorHandlingStyle differs (${contentFp.errorHandlingStyle} vs ${profile.errorHandlingStyle})`);
+  }
+  if (mismatches.length > 0) {
+    return {
+      verdict: 'warn',
+      message: `Style mismatch in ${filePath}: ${mismatches.join('; ')}`,
+      styleMismatch: true,
+    };
+  }
+  return { verdict: 'pass', message: `Coherence pass for ${filePath}; style aligned with ${agentName ?? 'agent'}.`, styleMismatch: false };
 }
 
 export function extractFingerprintFromContent(content: string): AgentFingerprint {
