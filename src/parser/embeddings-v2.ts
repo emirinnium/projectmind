@@ -10,6 +10,9 @@ export type { EmbeddingVector } from './legacy-embeddings.js';
 // Global vector index
 const vectorIndex = new VectorIndex();
 
+// Maximum token count for text splitting and array initialization
+const MAX_TOKENS_PER_CHUNK = 512;
+
 export type EmbeddingProvider = 'simple' | 'openai' | 'transformers' | 'unixcoder' | 'codebert';
 
 export interface EmbeddingOptions {
@@ -248,11 +251,11 @@ async function generateUniXcoderEmbedding(text: string, dim: number): Promise<nu
     throw new Error('UniXcoder session not initialized');
   }
 
-  const tokens = text.toLowerCase().split(/\s+/).slice(0, 512);
-  const inputIds = new Int32Array(512);
-  const attentionMask = new Int32Array(512);
+  const tokens = text.toLowerCase().split(/\s+/).slice(0, MAX_TOKENS_PER_CHUNK);
+  const inputIds = new Int32Array(MAX_TOKENS_PER_CHUNK);
+  const attentionMask = new Int32Array(MAX_TOKENS_PER_CHUNK);
 
-  for (let i = 0; i < 512; i++) {
+  for (let i = 0; i < MAX_TOKENS_PER_CHUNK; i++) {
     if (i < tokens.length) {
       inputIds[i] = hashToken(tokens[i]!) % 50000;
       attentionMask[i] = 1;
@@ -264,8 +267,8 @@ async function generateUniXcoderEmbedding(text: string, dim: number): Promise<nu
 
   const session = unixcoderSession as InferenceSession;
   const results = await session.run({
-    input_ids: { data: inputIds, dims: [1, 512] },
-    attention_mask: { data: attentionMask, dims: [1, 512] },
+    input_ids: { data: inputIds, dims: [1, MAX_TOKENS_PER_CHUNK] },
+    attention_mask: { data: attentionMask, dims: [1, MAX_TOKENS_PER_CHUNK] },
   });
 
   const output = results.last_hidden_state;
@@ -279,7 +282,7 @@ async function generateUniXcoderEmbedding(text: string, dim: number): Promise<nu
     embedding[i] = 0;
   }
 
-  for (let i = 0; i < 512; i++) {
+  for (let i = 0; i < MAX_TOKENS_PER_CHUNK; i++) {
     if (attentionMask[i] === 1) {
       for (let j = 0; j < dim; j++) {
         embedding[j] += hiddenStates[i * dim + j]!;
@@ -299,11 +302,11 @@ async function generateCodeBERTEmbedding(text: string, dim: number): Promise<num
     throw new Error('CodeBERT session not initialized');
   }
 
-  const tokens = text.toLowerCase().split(/\s+/).slice(0, 512);
-  const inputIds = new Int32Array(512);
-  const attentionMask = new Int32Array(512);
+  const tokens = text.toLowerCase().split(/\s+/).slice(0, MAX_TOKENS_PER_CHUNK);
+  const inputIds = new Int32Array(MAX_TOKENS_PER_CHUNK);
+  const attentionMask = new Int32Array(MAX_TOKENS_PER_CHUNK);
 
-  for (let i = 0; i < 512; i++) {
+  for (let i = 0; i < MAX_TOKENS_PER_CHUNK; i++) {
     if (i < tokens.length) {
       inputIds[i] = hashToken(tokens[i]!) % 30000;
       attentionMask[i] = 1;
@@ -315,8 +318,8 @@ async function generateCodeBERTEmbedding(text: string, dim: number): Promise<num
 
   const session = codebertSession as InferenceSession;
   const results = await session.run({
-    input_ids: { data: inputIds, dims: [1, 512] },
-    attention_mask: { data: attentionMask, dims: [1, 512] },
+    input_ids: { data: inputIds, dims: [1, MAX_TOKENS_PER_CHUNK] },
+    attention_mask: { data: attentionMask, dims: [1, MAX_TOKENS_PER_CHUNK] },
   });
 
   const output = results.pooler_output;
