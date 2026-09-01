@@ -53,7 +53,9 @@ export interface StoredClient extends ClientMetadata {
 }
 
 /** Registration response — stored metadata WITHOUT the secret hash, plus the one-time plaintext secret when issued. */
-export type ClientRegistrationResponse = Omit<StoredClient, 'client_secret_hash'> & { client_secret?: string };
+export type ClientRegistrationResponse = Omit<StoredClient, 'client_secret_hash'> & {
+  client_secret?: string;
+};
 
 /** Structural shape of a validated RFC 7591 registration payload. */
 export interface ClientRegistrationInput {

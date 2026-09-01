@@ -26,7 +26,10 @@ export function createLLMProvider(config: LLMConfig): LLMProvider | null {
       return provider.isAvailable() ? withProviderResilience(provider) : null;
     }
     if (config.provider === 'ollama') {
-      return withProviderResilience(new OllamaProvider(config), { maxRetries: 1, minIntervalMs: 500 });
+      return withProviderResilience(new OllamaProvider(config), {
+        maxRetries: 1,
+        minIntervalMs: 500,
+      });
     }
   } catch (e) {
     logger.warn(`Failed to create LLM provider: ${e}`);

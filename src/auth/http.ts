@@ -15,7 +15,12 @@ import { TokenService } from './tokens.js';
 
 export type OauthRouteResult =
   | { handled: false }
-  | { handled: true; status: number; headers: Record<string, string>; payload: Record<string, unknown> };
+  | {
+      handled: true;
+      status: number;
+      headers: Record<string, string>;
+      payload: Record<string, unknown>;
+    };
 
 export interface OauthRouteContext {
   registry: ClientRegistry;
@@ -41,7 +46,9 @@ function parseBody(bodyText: string, contentType: string): Record<string, unknow
 }
 
 /** Decode `Authorization: Basic base64(client_id:client_secret)`. */
-function extractBasicCredentials(authorization?: string): { clientId: string; clientSecret: string } | null {
+function extractBasicCredentials(
+  authorization?: string,
+): { clientId: string; clientSecret: string } | null {
   if (authorization === undefined) return null;
   const match = /^Basic ([A-Za-z0-9+/=]+)$/i.exec(authorization.trim());
   if (match === null) return null;
@@ -65,7 +72,11 @@ function handleRegister(params: Record<string, unknown>, ctx: OauthRouteContext)
 function handleToken(params: Record<string, unknown>, ctx: OauthRouteContext): OauthRouteResult {
   const grantType = params.grant_type;
   if (grantType !== 'client_credentials') {
-    throw new AuthError(`unsupported grant_type: ${String(grantType)}`, 400, 'unsupported_grant_type');
+    throw new AuthError(
+      `unsupported grant_type: ${String(grantType)}`,
+      400,
+      'unsupported_grant_type',
+    );
   }
 
   // Client authentication: client_secret_post (body) or client_secret_basic (header).
@@ -73,7 +84,8 @@ function handleToken(params: Record<string, unknown>, ctx: OauthRouteContext): O
   const bodySecret = params.client_secret;
   const basic = extractBasicCredentials(ctx.authorization);
   const clientId = basic !== null ? basic.clientId : typeof bodyId === 'string' ? bodyId : '';
-  const clientSecret = basic !== null ? basic.clientSecret : typeof bodySecret === 'string' ? bodySecret : '';
+  const clientSecret =
+    basic !== null ? basic.clientSecret : typeof bodySecret === 'string' ? bodySecret : '';
 
   const client = ctx.registry.authenticate(clientId, clientSecret);
   if (client === undefined) {
@@ -83,7 +95,9 @@ function handleToken(params: Record<string, unknown>, ctx: OauthRouteContext): O
   let scope: string | undefined;
   if (ctx.allowedScopes) {
     const requested =
-      typeof params.scope === 'string' && params.scope.length > 0 ? params.scope.split(/\s+/).filter(Boolean) : [];
+      typeof params.scope === 'string' && params.scope.length > 0
+        ? params.scope.split(/\s+/).filter(Boolean)
+        : [];
     const granted = requested.filter((s) => ctx.allowedScopes!.includes(s));
     if (requested.length > 0 && granted.length === 0) {
       throw new AuthError('The requested scope is not authorized', 400, 'invalid_scope');
@@ -105,16 +119,31 @@ function handleToken(params: Record<string, unknown>, ctx: OauthRouteContext): O
  * the caller is responsible for its own 404 in that case. All validation and
  * authentication errors are normalized to { error, error_description }.
  */
-export function handleOauthRoute(url: string, bodyText: string, contentType: string, ctx: OauthRouteContext): OauthRouteResult {
+export function handleOauthRoute(
+  url: string,
+  bodyText: string,
+  contentType: string,
+  ctx: OauthRouteContext,
+): OauthRouteResult {
   try {
     if (url !== '/oauth/register' && url !== '/oauth/token') return { handled: false };
     const params = parseBody(bodyText, contentType);
     return url === '/oauth/register' ? handleRegister(params, ctx) : handleToken(params, ctx);
   } catch (e) {
     if (e instanceof AuthError) {
-      return { handled: true, status: e.statusCode, headers: {}, payload: { error: e.code, error_description: e.message } };
+      return {
+        handled: true,
+        status: e.statusCode,
+        headers: {},
+        payload: { error: e.code, error_description: e.message },
+      };
     }
     const message = e instanceof Error ? e.message : String(e);
-    return { handled: true, status: 400, headers: {}, payload: { error: 'invalid_request', error_description: message } };
+    return {
+      handled: true,
+      status: 400,
+      headers: {},
+      payload: { error: 'invalid_request', error_description: message },
+    };
   }
 }

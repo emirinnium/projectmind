@@ -32,14 +32,32 @@ export function registerStoreMemoryTool(server: McpServer, deps: McpDependencies
         deps.kg.storeMemory(sid!, args.scope, args.key, args.value);
 
         return {
-          content: [{ type: 'text', text: JSON.stringify({ status: 'stored', sessionId: sid, scope: args.scope, key: args.key }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'stored',
+                sessionId: sid,
+                scope: args.scope,
+                key: args.key,
+              }),
+            },
+          ],
         };
       } catch (error) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Store memory failed' }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : 'Store memory failed',
+              }),
+            },
+          ],
         };
       }
-    }
+    },
   );
 }
 
@@ -62,9 +80,17 @@ export function registerGetMemoryTool(server: McpServer, deps: McpDependencies):
         };
       } catch (error) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Get memory failed' }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                error: error instanceof Error ? error.message : 'Get memory failed',
+              }),
+            },
+          ],
         };
       }
-    }
+    },
   );
 }

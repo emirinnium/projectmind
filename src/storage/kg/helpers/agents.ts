@@ -8,20 +8,28 @@ import {
 } from '../../../core/team-memory/merge.js';
 
 export function startAgentSession(ctx: KgContext, agentName: string): number {
-  const result = ctx.db.prepare('INSERT INTO agent_sessions (agent_name) VALUES (?)').run(agentName);
+  const result = ctx.db
+    .prepare('INSERT INTO agent_sessions (agent_name) VALUES (?)')
+    .run(agentName);
   return Number(result.lastInsertRowid);
 }
 
 export function endAgentSession(ctx: KgContext, sessionId: number): void {
-  ctx.db.prepare(
-    'UPDATE agent_sessions SET ended_at = CURRENT_TIMESTAMP WHERE id = ?'
-  ).run(sessionId);
+  ctx.db
+    .prepare('UPDATE agent_sessions SET ended_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(sessionId);
 }
 
-export function storeMemory(ctx: KgContext, sessionId: number, scope: string, key: string, value: string): void {
-  ctx.db.prepare(
-    `INSERT INTO agent_memory (session_id, scope, key, value) VALUES (?, ?, ?, ?)`
-  ).run(sessionId, scope, key, value);
+export function storeMemory(
+  ctx: KgContext,
+  sessionId: number,
+  scope: string,
+  key: string,
+  value: string,
+): void {
+  ctx.db
+    .prepare(`INSERT INTO agent_memory (session_id, scope, key, value) VALUES (?, ?, ?, ?)`)
+    .run(sessionId, scope, key, value);
 }
 
 export function getMemory(ctx: KgContext, scope: string, key?: string): MemoryEntry[] {
@@ -32,23 +40,33 @@ export function getMemory(ctx: KgContext, scope: string, key?: string): MemoryEn
   const sql = key
     ? 'SELECT * FROM agent_memory WHERE scope = ? AND key = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC'
     : 'SELECT * FROM agent_memory WHERE scope = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC';
-  const rows = (key
-    ? ctx.db.prepare(sql).all(scope, key, now)
-    : ctx.db.prepare(sql).all(scope, now)
+  const rows = (
+    key ? ctx.db.prepare(sql).all(scope, key, now) : ctx.db.prepare(sql).all(scope, now)
   ) as Record<string, SQLOutputValue>[];
   return rows.map((r) => ({
     id: r.id as number,
     sessionId: r.session_id as number,
     scope: r.scope as string,
     key: r.key as string,
-    value: (() => { try { return JSON.parse(r.value as string); } catch { return r.value as string; } })(),
+    value: (() => {
+      try {
+        return JSON.parse(r.value as string);
+      } catch {
+        return r.value as string;
+      }
+    })(),
     createdAt: r.created_at as string,
   }));
 }
 
-export function storeTeamMemory(ctx: KgContext, params: { agentName: string; scope: string; key: string; value: string; isPublic: boolean }): TeamMemoryStoreComputation {
-  const existingRow = ctx.db.prepare('SELECT value, base_value FROM team_memories WHERE scope = ? AND key = ?')
-    .get(params.scope, params.key) as { value: SQLOutputValue; base_value: SQLOutputValue | null } | undefined;
+export function storeTeamMemory(
+  ctx: KgContext,
+  params: { agentName: string; scope: string; key: string; value: string; isPublic: boolean },
+): TeamMemoryStoreComputation {
+  const existingRow = ctx.db
+    .prepare('SELECT value, base_value FROM team_memories WHERE scope = ? AND key = ?')
+    .get(params.scope, params.key) as
+    { value: SQLOutputValue; base_value: SQLOutputValue | null } | undefined;
 
   const existing = existingRow
     ? {
@@ -61,40 +79,55 @@ export function storeTeamMemory(ctx: KgContext, params: { agentName: string; sco
 
   if (decision.shouldWrite) {
     // Single atomic UPSERT: value + base_value (the ancestor for the next write).
-    ctx.db.prepare(`INSERT INTO team_memories (agent_name, scope, key, value, base_value, is_public)
+    ctx.db
+      .prepare(
+        `INSERT INTO team_memories (agent_name, scope, key, value, base_value, is_public)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(scope, key) DO UPDATE SET
          value = excluded.value,
          base_value = excluded.base_value,
          agent_name = excluded.agent_name,
          is_public = excluded.is_public,
-         updated_at = CURRENT_TIMESTAMP`).run(
-      params.agentName,
-      params.scope,
-      params.key,
-      decision.storedValue,
-      decision.nextBaseValue,
-      params.isPublic ? 1 : 0
-    );
+         updated_at = CURRENT_TIMESTAMP`,
+      )
+      .run(
+        params.agentName,
+        params.scope,
+        params.key,
+        decision.storedValue,
+        decision.nextBaseValue,
+        params.isPublic ? 1 : 0,
+      );
   }
 
   return decision;
 }
 
-export function getTeamMemories(ctx: KgContext, params: { scope: string; agentName: string }): TeamMemoryRowView[] {
-  const rows = ctx.db.prepare(`SELECT * FROM team_memories
+export function getTeamMemories(
+  ctx: KgContext,
+  params: { scope: string; agentName: string },
+): TeamMemoryRowView[] {
+  const rows = ctx.db
+    .prepare(
+      `SELECT * FROM team_memories
      WHERE scope = ? AND (is_public = 1 OR agent_name = ?)
-     ORDER BY updated_at DESC`).all(params.scope, params.agentName) as Record<string, SQLOutputValue>[];
+     ORDER BY updated_at DESC`,
+    )
+    .all(params.scope, params.agentName) as Record<string, SQLOutputValue>[];
 
   return rows.map(mapTeamMemoryRow);
 }
 
 /** Cross-scope retrieval for semantic search: everything the viewer may see. */
 export function getAllTeamMemories(ctx: KgContext, viewerAgentName: string): TeamMemoryRowView[] {
-  const rows = ctx.db.prepare(`SELECT * FROM team_memories
+  const rows = ctx.db
+    .prepare(
+      `SELECT * FROM team_memories
      WHERE is_public = 1 OR agent_name = ?
      ORDER BY updated_at DESC
-     LIMIT 2000`).all(viewerAgentName) as Record<string, SQLOutputValue>[];
+     LIMIT 2000`,
+    )
+    .all(viewerAgentName) as Record<string, SQLOutputValue>[];
   return rows.map(mapTeamMemoryRow);
 }
 
@@ -104,7 +137,13 @@ function mapTeamMemoryRow(r: Record<string, SQLOutputValue>): TeamMemoryRowView 
     agentName: r.agent_name as string,
     scope: r.scope as string,
     key: r.key as string,
-    value: (() => { try { return JSON.parse(r.value as string); } catch { return r.value as string; } })(),
+    value: (() => {
+      try {
+        return JSON.parse(r.value as string);
+      } catch {
+        return r.value as string;
+      }
+    })(),
     baseValue: r.base_value as string | null,
     isPublic: (r.is_public as number) === 1,
     createdAt: r.created_at as string,
@@ -112,13 +151,16 @@ function mapTeamMemoryRow(r: Record<string, SQLOutputValue>): TeamMemoryRowView 
   };
 }
 
-export function getAgentSessions(ctx: KgContext, agentName?: string, limit: number = 50): AgentSession[] {
+export function getAgentSessions(
+  ctx: KgContext,
+  agentName?: string,
+  limit: number = 50,
+): AgentSession[] {
   const sql = agentName
     ? 'SELECT * FROM agent_sessions WHERE agent_name = ? ORDER BY started_at DESC LIMIT ?'
     : 'SELECT * FROM agent_sessions ORDER BY started_at DESC LIMIT ?';
-  const rows = (agentName
-    ? ctx.db.prepare(sql).all(agentName, limit)
-    : ctx.db.prepare(sql).all(limit)
+  const rows = (
+    agentName ? ctx.db.prepare(sql).all(agentName, limit) : ctx.db.prepare(sql).all(limit)
   ) as Record<string, SQLOutputValue>[];
   // Corrupt JSON in a single row must not throw through every session reader
   // (e.g. the skill-recommend CLI) — fall back to the empty-column semantics.

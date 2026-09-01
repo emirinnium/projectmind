@@ -37,31 +37,36 @@ export function registerKgStatsTool(server: McpServer, deps: McpDependencies): v
         const pagerankResults = kg.getGraphTraversal(true).pageRank(20, 0.85);
 
         // Extract top file paths from PageRank, confined to project root
-        const topPagerank = pagerankResults
-          .slice(0, 10)
-          .map((r) => {
-            const fileInfo = kg.getFileByPath(r.path);
-            if (fileInfo) {
-              const absPath = confineToProject(fileInfo.relativePath || fileInfo.path, deps.projectRoot);
-              return { path: absPath, score: Number(r.score.toFixed(6)), rank: r.rank };
-            }
-            return { path: r.path, score: Number(r.score.toFixed(6)), rank: r.rank };
-          });
+        const topPagerank = pagerankResults.slice(0, 10).map((r) => {
+          const fileInfo = kg.getFileByPath(r.path);
+          if (fileInfo) {
+            const absPath = confineToProject(
+              fileInfo.relativePath || fileInfo.path,
+              deps.projectRoot,
+            );
+            return { path: absPath, score: Number(r.score.toFixed(6)), rank: r.rank };
+          }
+          return { path: r.path, score: Number(r.score.toFixed(6)), rank: r.rank };
+        });
 
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: true,
-                nodes: stats.totalNodes,
-                edges: stats.totalEdges,
-                topPagerank,
-                avgDegree: stats.avgDegree,
-                maxDegree: stats.maxDegree,
-                density: stats.density,
-                connectedComponents: stats.connectedComponents,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: true,
+                  nodes: stats.totalNodes,
+                  edges: stats.totalEdges,
+                  topPagerank,
+                  avgDegree: stats.avgDegree,
+                  maxDegree: stats.maxDegree,
+                  density: stats.density,
+                  connectedComponents: stats.connectedComponents,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -70,14 +75,18 @@ export function registerKgStatsTool(server: McpServer, deps: McpDependencies): v
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 }

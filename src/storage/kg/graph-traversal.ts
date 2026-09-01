@@ -15,7 +15,7 @@ export interface GraphNode {
 
 export interface GraphEdge {
   from: number; // file id
-  to: number;   // file id
+  to: number; // file id
   type: 'imports' | 'imported-by' | 'calls' | 'tested-by' | 'extends' | 'implements';
   weight: number;
 }
@@ -99,13 +99,20 @@ export class GraphTraversal {
     }
 
     // Build edges from imports table
-    const importRows = this.ctx.db.prepare(`
+    const importRows = this.ctx.db
+      .prepare(
+        `
       SELECT i.file_id, i.resolved_path, f2.id as target_id
       FROM imports i
       JOIN files f1 ON i.file_id = f1.id
       LEFT JOIN files f2 ON i.resolved_path = f2.relative_path AND f2.project_id = ?
       WHERE f1.project_id = ? AND f2.id IS NOT NULL
-    `).all(this.ctx.currentProjectId, this.ctx.currentProjectId) as Record<string, SQLOutputValue>[];
+    `,
+      )
+      .all(this.ctx.currentProjectId, this.ctx.currentProjectId) as Record<
+      string,
+      SQLOutputValue
+    >[];
 
     for (const row of importRows) {
       const fromId = row.file_id as number;
@@ -377,7 +384,20 @@ export class GraphTraversal {
     this.build();
     const center = this.nodeMap.get(centerFileId);
     if (!center) {
-      return { center: { id: 0, path: '', relativePath: '', language: '', cognitiveLoad: 0, agentTouched: false, agentTouchedBy: null }, nodes: [], edges: [], radius: 0 };
+      return {
+        center: {
+          id: 0,
+          path: '',
+          relativePath: '',
+          language: '',
+          cognitiveLoad: 0,
+          agentTouched: false,
+          agentTouchedBy: null,
+        },
+        nodes: [],
+        edges: [],
+        radius: 0,
+      };
     }
 
     const included = new Set<number>([centerFileId]);

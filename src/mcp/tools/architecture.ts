@@ -14,14 +14,25 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
       inputSchema: {
         filePath: z.string().describe('Path of the file to check'),
         strict: z.boolean().default(false).describe('Use strict mode for more thorough checks'),
-        maxMarkers: z.number().int().default(500).describe('Maximum number of TODO/FIXME markers to report'),
+        maxMarkers: z
+          .number()
+          .int()
+          .default(500)
+          .describe('Maximum number of TODO/FIXME markers to report'),
       },
     },
     async (args) => {
       const file = deps.kg.getFileByPath(args.filePath);
       if (!file) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ error: 'File not found in knowledge graph. Run scan_project first.' }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                error: 'File not found in knowledge graph. Run scan_project first.',
+              }),
+            },
+          ],
         };
       }
 
@@ -47,7 +58,9 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
         if (imp.resolvedFile) {
           // Check if the resolved file imports back to this file
           const resolvedImports = deps.kg.getImports(imp.resolvedFile.id);
-          const hasBackRef = resolvedImports.some((ri) => ri.source.includes(file.relativePath) || file.relativePath.includes(ri.source));
+          const hasBackRef = resolvedImports.some(
+            (ri) => ri.source.includes(file.relativePath) || file.relativePath.includes(ri.source),
+          );
           if (hasBackRef && !circularCandidates.includes(imp.source)) {
             circularCandidates.push(imp.source);
           }
@@ -59,13 +72,15 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
 
       // Check cognitive load
       if (file.cognitiveLoad > 0.7) {
-        issues.push(`High cognitive load (${file.cognitiveLoad.toFixed(2)}). Consider refactoring.`);
+        issues.push(
+          `High cognitive load (${file.cognitiveLoad.toFixed(2)}). Consider refactoring.`,
+        );
       } else if (file.cognitiveLoad > 0.4) {
         warnings.push(`Moderate cognitive load (${file.cognitiveLoad.toFixed(2)})`);
       }
 
       // Check function complexity
-      const complexFunctions = functions.filter(f => (f.complexity ?? 0) > 10);
+      const complexFunctions = functions.filter((f) => (f.complexity ?? 0) > 10);
       if (complexFunctions.length > 0) {
         warnings.push(`${complexFunctions.length} functions with high cyclomatic complexity (>10)`);
       }
@@ -77,7 +92,9 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
 
       // Check agent coverage
       if (!file.agentTouched) {
-        suggestions.push('File has not been touched by any agent. Consider reviewing for consistency.');
+        suggestions.push(
+          'File has not been touched by any agent. Consider reviewing for consistency.',
+        );
       }
 
       // Strict mode checks
@@ -96,11 +113,15 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
             if (match) {
               markerCount++;
               const note = (match[2] ?? '').trim();
-              warnings.push(`${match[1]} marker at line ${i + 1}${note ? `: ${note.slice(0, 120)}` : ''}`);
+              warnings.push(
+                `${match[1]} marker at line ${i + 1}${note ? `: ${note.slice(0, 120)}` : ''}`,
+              );
             }
           }
           if (markerCount >= markerLimit) {
-            warnings.push(`Marker count reached limit of ${markerLimit}; further markers were not reported.`);
+            warnings.push(
+              `Marker count reached limit of ${markerLimit}; further markers were not reported.`,
+            );
           }
         } catch {
           // File unreadable or outside the project root — skip the scan.
@@ -111,26 +132,30 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              file: file.relativePath,
-              compliant: issues.length === 0,
-              issues,
-              warnings,
-              suggestions,
-              metrics: {
-                cognitiveLoad: file.cognitiveLoad,
-                importCount: imports.length,
-                functionCount: functions.length,
-                classCount: classes.length,
-                externalImports: externalImports.length,
-                agentTouched: file.agentTouched,
-                markerCount: markerCount,
+            text: JSON.stringify(
+              {
+                file: file.relativePath,
+                compliant: issues.length === 0,
+                issues,
+                warnings,
+                suggestions,
+                metrics: {
+                  cognitiveLoad: file.cognitiveLoad,
+                  importCount: imports.length,
+                  functionCount: functions.length,
+                  classCount: classes.length,
+                  externalImports: externalImports.length,
+                  agentTouched: file.agentTouched,
+                  markerCount: markerCount,
+                },
               },
-            }, null, 2),
+              null,
+              2,
+            ),
           },
         ],
       };
-    }
+    },
   );
 }
 
@@ -142,15 +167,30 @@ export function registerAnalyzeImpactTool(server: McpServer, deps: McpDependenci
       description: 'Analyze the impact of changing a file - what other files might be affected.',
       inputSchema: {
         filePath: z.string().describe('Path of the file to analyze'),
-        changeType: z.enum(['modify', 'delete', 'rename', 'refactor']).default('modify').describe('Type of change planned'),
-        tests: z.boolean().default(false).describe('Also list tests/specs inside the reverse-dependency closure (test impact analysis)'),
+        changeType: z
+          .enum(['modify', 'delete', 'rename', 'refactor'])
+          .default('modify')
+          .describe('Type of change planned'),
+        tests: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Also list tests/specs inside the reverse-dependency closure (test impact analysis)',
+          ),
       },
     },
     async (args) => {
       const file = deps.kg.getFileByPath(args.filePath);
       if (!file) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ error: 'File not found in knowledge graph. Run scan_project first.' }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                error: 'File not found in knowledge graph. Run scan_project first.',
+              }),
+            },
+          ],
         };
       }
 
@@ -200,43 +240,55 @@ export function registerAnalyzeImpactTool(server: McpServer, deps: McpDependenci
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              file: file.relativePath,
-              changeType: args.changeType,
-              riskLevel,
-              impactedTests,
-              impactedTestCount: impactedTests.length,
-              summary: {
-                directDependents: highImpact.length,
-                transitiveDependents: allDependents.size,
-                unresolvedImports: unresolvedImports.length,
+            text: JSON.stringify(
+              {
+                file: file.relativePath,
+                changeType: args.changeType,
+                riskLevel,
+                impactedTests,
+                impactedTestCount: impactedTests.length,
+                summary: {
+                  directDependents: highImpact.length,
+                  transitiveDependents: allDependents.size,
+                  unresolvedImports: unresolvedImports.length,
+                },
+                impact: {
+                  high: highImpact.map((d) => ({
+                    file: d.file.relativePath,
+                    cognitiveLoad: d.file.cognitiveLoad,
+                    agentTouched: d.file.agentTouched,
+                  })),
+                  medium: mediumImpact.map((d) => ({
+                    file: d.file.relativePath,
+                    depth: d.depth,
+                  })),
+                  low: lowImpact.map((d) => ({
+                    file: d.file.relativePath,
+                    depth: d.depth,
+                  })),
+                },
+                recommendations: [
+                  ...(highImpact.length > 0
+                    ? ['Run tests for all high-impact dependents before merging']
+                    : []),
+                  ...(unresolvedImports.length > 0
+                    ? ['Verify external dependencies are compatible']
+                    : []),
+                  ...(args.changeType === 'delete'
+                    ? ['Consider deprecation period instead of immediate deletion']
+                    : []),
+                  ...(args.changeType === 'rename'
+                    ? ['Update all import statements in dependent files']
+                    : []),
+                ],
               },
-              impact: {
-                high: highImpact.map((d) => ({
-                  file: d.file.relativePath,
-                  cognitiveLoad: d.file.cognitiveLoad,
-                  agentTouched: d.file.agentTouched,
-                })),
-                medium: mediumImpact.map((d) => ({
-                  file: d.file.relativePath,
-                  depth: d.depth,
-                })),
-                low: lowImpact.map((d) => ({
-                  file: d.file.relativePath,
-                  depth: d.depth,
-                })),
-              },
-              recommendations: [
-                ...(highImpact.length > 0 ? ['Run tests for all high-impact dependents before merging'] : []),
-                ...(unresolvedImports.length > 0 ? ['Verify external dependencies are compatible'] : []),
-                ...(args.changeType === 'delete' ? ['Consider deprecation period instead of immediate deletion'] : []),
-                ...(args.changeType === 'rename' ? ['Update all import statements in dependent files'] : []),
-              ],
-            }, null, 2),
+              null,
+              2,
+            ),
           },
         ],
       };
-    }
+    },
   );
 }
 
@@ -245,17 +297,28 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
     'suggest_refactor',
     {
       title: 'Suggest Refactoring',
-      description: 'Get refactoring suggestions based on code patterns, complexity, and project conventions.',
+      description:
+        'Get refactoring suggestions based on code patterns, complexity, and project conventions.',
       inputSchema: {
         filePath: z.string().describe('Path of the file to analyze'),
-        focus: z.enum(['complexity', 'duplication', 'architecture', 'performance', 'all']).default('all').describe('Focus area for suggestions'),
+        focus: z
+          .enum(['complexity', 'duplication', 'architecture', 'performance', 'all'])
+          .default('all')
+          .describe('Focus area for suggestions'),
       },
     },
     async (args) => {
       const file = deps.kg.getFileByPath(args.filePath);
       if (!file) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ error: 'File not found in knowledge graph. Run scan_project first.' }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                error: 'File not found in knowledge graph. Run scan_project first.',
+              }),
+            },
+          ],
         };
       }
 
@@ -263,11 +326,16 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
       const functions = deps.kg.getFunctions(file.id);
       const classes = deps.kg.getClasses(file.id);
 
-      const suggestions: { type: string; priority: 'high' | 'medium' | 'low'; message: string; details?: string }[] = [];
+      const suggestions: {
+        type: string;
+        priority: 'high' | 'medium' | 'low';
+        message: string;
+        details?: string;
+      }[] = [];
 
       // Complexity-based suggestions
       if (args.focus === 'complexity' || args.focus === 'all') {
-        const complexFuncs = functions.filter(f => (f.complexity ?? 0) > 10);
+        const complexFuncs = functions.filter((f) => (f.complexity ?? 0) > 10);
         for (const fn of complexFuncs) {
           suggestions.push({
             type: 'complexity',
@@ -290,7 +358,7 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
       // Duplication-based suggestions (check for similar functions)
       if (args.focus === 'duplication' || args.focus === 'all') {
         // Check within file
-        const funcSignatures = functions.map(f => f.signature);
+        const funcSignatures = functions.map((f) => f.signature);
         const seen = new Set<string>();
         for (const sig of funcSignatures) {
           const simplified = sig?.replace(/\s+/g, ' ').trim() ?? '';
@@ -308,7 +376,7 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
         // Check across project for similar function signatures
         if (args.focus === 'all' || args.focus === 'duplication') {
           const allFiles = deps.kg.getAllFiles();
-          const currentFileFuncs = functions.map(f => ({
+          const currentFileFuncs = functions.map((f) => ({
             name: f.name,
             signature: f.signature?.replace(/\s+/g, ' ').trim() ?? '',
             file: file.relativePath,
@@ -336,13 +404,23 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
           // (debt_items type='redundancy'), which compares real code bodies via
           // embeddings — far beyond same-file signature matching above.
           try {
-            const cols = (getStatement('PRAGMA table_info(debt_items)').all() as Array<{ name: string }>).map((c) => c.name);
+            const cols = (
+              getStatement('PRAGMA table_info(debt_items)').all() as Array<{ name: string }>
+            ).map((c) => c.name);
             if (cols.includes('type') && cols.includes('description')) {
-              const fileCol = cols.includes('file_path') ? 'file_path' : cols.includes('filePath') ? 'filePath' : null;
+              const fileCol = cols.includes('file_path')
+                ? 'file_path'
+                : cols.includes('filePath')
+                  ? 'filePath'
+                  : null;
               const rows = (
                 fileCol
-                  ? getStatement(`SELECT description, ${fileCol} AS loc FROM debt_items WHERE type='redundancy' AND (${fileCol} = ? OR description LIKE ?) ORDER BY rowid DESC LIMIT 5`).all(file.relativePath, `%${file.relativePath}%`)
-                  : getStatement(`SELECT description, '' AS loc FROM debt_items WHERE type='redundancy' AND description LIKE ? ORDER BY rowid DESC LIMIT 5`).all(`%${file.relativePath}%`)
+                  ? getStatement(
+                      `SELECT description, ${fileCol} AS loc FROM debt_items WHERE type='redundancy' AND (${fileCol} = ? OR description LIKE ?) ORDER BY rowid DESC LIMIT 5`,
+                    ).all(file.relativePath, `%${file.relativePath}%`)
+                  : getStatement(
+                      `SELECT description, '' AS loc FROM debt_items WHERE type='redundancy' AND description LIKE ? ORDER BY rowid DESC LIMIT 5`,
+                    ).all(`%${file.relativePath}%`)
               ) as Array<{ description: string; loc: string }>;
               for (const row of rows) {
                 suggestions.push({
@@ -371,7 +449,9 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
           });
         }
 
-        const deepImports = imports.filter((i) => i.source.includes('../../') || i.source.includes('../'));
+        const deepImports = imports.filter(
+          (i) => i.source.includes('../../') || i.source.includes('../'),
+        );
         if (deepImports.length > 3) {
           suggestions.push({
             type: 'architecture',
@@ -384,7 +464,7 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
 
       // Performance suggestions
       if (args.focus === 'performance' || args.focus === 'all') {
-        const largeClasses = classes.filter(c => (c.methodsCount ?? 0) > 15);
+        const largeClasses = classes.filter((c) => (c.methodsCount ?? 0) > 15);
         for (const cls of largeClasses) {
           suggestions.push({
             type: 'performance',
@@ -409,18 +489,22 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              file: file.relativePath,
-              focus: args.focus,
-              suggestions: suggestions.sort((a, b) => {
-                const priorityOrder = { high: 0, medium: 1, low: 2 };
-                return priorityOrder[a.priority] - priorityOrder[b.priority];
-              }),
-              totalSuggestions: suggestions.length,
-            }, null, 2),
+            text: JSON.stringify(
+              {
+                file: file.relativePath,
+                focus: args.focus,
+                suggestions: suggestions.sort((a, b) => {
+                  const priorityOrder = { high: 0, medium: 1, low: 2 };
+                  return priorityOrder[a.priority] - priorityOrder[b.priority];
+                }),
+                totalSuggestions: suggestions.length,
+              },
+              null,
+              2,
+            ),
           },
         ],
       };
-    }
+    },
   );
 }

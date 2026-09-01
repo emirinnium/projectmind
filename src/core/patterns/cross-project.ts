@@ -57,7 +57,9 @@ export const LEGACY_ABSTRACTION_LEVEL_MAP: Record<LegacyAbstractionLevel, Abstra
 
 /** Accepts spec levels and deprecated legacy aliases (F34). */
 export function normalizeAbstractionLevel(level: AbstractionLevelInput): AbstractionLevel {
-  return LEGACY_ABSTRACTION_LEVEL_MAP[level as LegacyAbstractionLevel] ?? (level as AbstractionLevel);
+  return (
+    LEGACY_ABSTRACTION_LEVEL_MAP[level as LegacyAbstractionLevel] ?? (level as AbstractionLevel)
+  );
 }
 
 /** F34: default success metrics for freshly extracted/synced patterns. */
@@ -131,7 +133,11 @@ function scanTsFiles(dir: string): string[] {
     const entries = readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const full = join(dir, entry.name);
-      if (entry.isDirectory() && !SCAN_EXCLUDED_DIRS.has(entry.name) && !entry.name.startsWith('.')) {
+      if (
+        entry.isDirectory() &&
+        !SCAN_EXCLUDED_DIRS.has(entry.name) &&
+        !entry.name.startsWith('.')
+      ) {
         results.push(...scanTsFiles(full));
       } else if (entry.isFile() && extname(entry.name) === '.ts' && !entry.name.endsWith('.d.ts')) {
         results.push(full);
@@ -149,7 +155,10 @@ function scanTsFiles(dir: string): string[] {
  */
 export function computeBagOfWordsEmbedding(template: AbstractTemplate): number[] {
   const text = JSON.stringify(template);
-  const words = text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const words = text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
   const vec = new Array<number>(16).fill(0);
   for (const w of words) {
     let h = 0;
@@ -182,7 +191,8 @@ function cosineSimilarity(a: number[], b: number[]): number {
  * (signature count + embedding coverage) — never a hardcoded constant.
  */
 export function extractionConfidence(signatureCount: number, embedding: number[]): number {
-  const coverage = embedding.length > 0 ? embedding.filter((v) => v > 0).length / embedding.length : 0;
+  const coverage =
+    embedding.length > 0 ? embedding.filter((v) => v > 0).length / embedding.length : 0;
   return Math.min(0.95, 0.5 + 0.05 * Math.min(signatureCount, 6) + 0.2 * coverage);
 }
 
@@ -217,14 +227,19 @@ export function templateFromCodeHash(codeHash: string, name: string): AbstractTe
 
 function extractMethodSignatures(
   sourceFile: ts.SourceFile,
-  members: ts.NodeArray<ts.ClassElement | ts.TypeElement>
+  members: ts.NodeArray<ts.ClassElement | ts.TypeElement>,
 ): { signatures: string[]; params: string[]; returnType: string } {
   const signatures: string[] = [];
   const params: string[] = [];
   let returnType = 'void';
   for (const member of members) {
-    if (ts.isMethodDeclaration(member) || ts.isMethodSignature(member) || ts.isPropertySignature(member)) {
-      const name = (member.name as ts.Identifier)?.text ?? member.name?.getText(sourceFile) ?? 'unknown';
+    if (
+      ts.isMethodDeclaration(member) ||
+      ts.isMethodSignature(member) ||
+      ts.isPropertySignature(member)
+    ) {
+      const name =
+        (member.name as ts.Identifier)?.text ?? member.name?.getText(sourceFile) ?? 'unknown';
       let sig = name;
       if (ts.isMethodDeclaration(member) || ts.isMethodSignature(member)) {
         const paramStrs = member.parameters.map((p) => {
@@ -266,7 +281,7 @@ export class CrossProjectPatternEngine {
     if (db === undefined || db === null) {
       throw new Error(
         'CrossProjectPatternEngine requires an explicit database (DatabaseSync instance or file path). ' +
-          'The implicit projectmind.db fallback was removed (F36).'
+          'The implicit projectmind.db fallback was removed (F36).',
       );
     }
     if (typeof db === 'string') {
@@ -279,7 +294,8 @@ export class CrossProjectPatternEngine {
     }
     this.useRealEmbeddings = options?.useRealEmbeddings ?? false;
     // F37: default threshold depends on the embedding source.
-    this.similarityThreshold = options?.similarityThreshold ?? (this.useRealEmbeddings ? 0.85 : 0.6);
+    this.similarityThreshold =
+      options?.similarityThreshold ?? (this.useRealEmbeddings ? 0.85 : 0.6);
     this.maxVariants = options?.maxVariants ?? 10;
   }
 
@@ -319,7 +335,7 @@ export class CrossProjectPatternEngine {
               : (node.members ?? ([] as unknown as ts.NodeArray<ts.ClassElement>));
             const extracted = extractMethodSignatures(
               sourceFile,
-              members as ts.NodeArray<ts.ClassElement | ts.TypeElement>
+              members as ts.NodeArray<ts.ClassElement | ts.TypeElement>,
             );
             const abstractTemplate: AbstractTemplate = {
               interfaceName: name,
@@ -364,7 +380,7 @@ export class CrossProjectPatternEngine {
                 abstractionLevel: 'template',
                 abstractTemplate,
                 variants: [variant].slice(0, this.maxVariants),
-              })
+              }),
             );
           }
         });
@@ -385,7 +401,7 @@ export class CrossProjectPatternEngine {
   syncPatternToProject(
     patternOrId: LearnedPattern | string,
     targetProjectId: string,
-    db?: DatabaseSync
+    db?: DatabaseSync,
   ): boolean {
     const dbInstance = db ?? this.db;
     const table = dbInstance
@@ -393,7 +409,7 @@ export class CrossProjectPatternEngine {
       .get();
     if (!table) {
       throw new Error(
-        'patterns table does not exist — initialize the schema first (initDatabase/DatabaseManager or pass a path to the engine constructor).'
+        'patterns table does not exist — initialize the schema first (initDatabase/DatabaseManager or pass a path to the engine constructor).',
       );
     }
 
@@ -412,7 +428,7 @@ export class CrossProjectPatternEngine {
       .prepare(
         `INSERT OR IGNORE INTO patterns
            (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count, embedding, project_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         name,
@@ -424,7 +440,7 @@ export class CrossProjectPatternEngine {
         lastSeen,
         usageCount,
         embedding,
-        targetProjectId // string as-is (F37)
+        targetProjectId, // string as-is (F37)
       );
     return Number(result.changes) > 0;
   }
@@ -463,14 +479,15 @@ export class CrossProjectPatternEngine {
   findSimilarPatternsInProject(
     queryPattern: LearnedPattern,
     targetProjectId: string,
-    db?: DatabaseSync
+    db?: DatabaseSync,
   ): PatternMatch[] {
     const dbInstance = db ?? this.db;
     const rows = dbInstance
       .prepare('SELECT * FROM patterns WHERE project_id = ?')
       .all(targetProjectId) as Array<Record<string, unknown>>;
 
-    const queryEmb = queryPattern.embedding ?? computeBagOfWordsEmbedding(queryPattern.abstractTemplate);
+    const queryEmb =
+      queryPattern.embedding ?? computeBagOfWordsEmbedding(queryPattern.abstractTemplate);
     const results: PatternMatch[] = [];
 
     for (const row of rows) {
@@ -507,7 +524,8 @@ export class CrossProjectPatternEngine {
           lastSeen: (row.last_seen as string) ?? new Date().toISOString(),
           usageCount: (row.usage_count as number) ?? 0,
           embedding: rowEmb.length > 0 ? rowEmb : null,
-          projectId: rowProjectId === null || rowProjectId === undefined ? null : String(rowProjectId),
+          projectId:
+            rowProjectId === null || rowProjectId === undefined ? null : String(rowProjectId),
           abstractionLevel: 'template',
           abstractTemplate: template, // F37: real template, not empty
           variants: [],

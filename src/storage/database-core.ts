@@ -136,7 +136,7 @@ export class DatabaseManager {
       tempDb.close();
     } catch (e) {
       logger.warn(
-        `WAL files present for ${dbPath} but checkpoint failed — left untouched; SQLite will recover on next open: ${e instanceof Error ? e.message : String(e)}`
+        `WAL files present for ${dbPath} but checkpoint failed — left untouched; SQLite will recover on next open: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
   }
@@ -178,7 +178,9 @@ export function initDatabase(dbPath: string): DatabaseSync {
   } catch (e) {
     // K7: never unlink -wal/-shm here — they may hold committed transactions.
     // SQLite replays them on the next open; a checkpoint failure is benign.
-    logger.warn(`WAL checkpoint failed for ${dbPath} — files left untouched: ${e instanceof Error ? e.message : String(e)}`);
+    logger.warn(
+      `WAL checkpoint failed for ${dbPath} — files left untouched: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 
   _instance = new DatabaseSync(dbPath, { allowExtension: true });
@@ -211,8 +213,8 @@ export function getDatabase(): DatabaseSync {
 export function setDatabase(db: DatabaseSync): void {
   logger.warn(
     'setDatabase() is deprecated. ' +
-    'Use dependency injection with DatabaseManager or createIsolatedDatabase() from tests/test-helpers/database.ts instead. ' +
-    'This function mutates the global singleton and can cause test pollution.'
+      'Use dependency injection with DatabaseManager or createIsolatedDatabase() from tests/test-helpers/database.ts instead. ' +
+      'This function mutates the global singleton and can cause test pollution.',
   );
   _instance = db;
   clearStatementCache();
@@ -223,7 +225,9 @@ export function closeDatabase(): void {
     try {
       _instance.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     } catch (e) {
-      logger.warn(`WAL checkpoint failed during close: ${e instanceof Error ? e.message : String(e)}`);
+      logger.warn(
+        `WAL checkpoint failed during close: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
     _instance.close();
     _instance = null;

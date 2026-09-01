@@ -4,16 +4,40 @@ import { registerCheckCoherenceTool } from '../coherence.js';
 import { registerKgStatsTool } from '../kg-stats.js';
 import { registerGetContextTool } from '../context.js';
 import { registerStoreMemoryTool, registerGetMemoryTool } from '../memory.js';
-import { registerDebtReportTool, registerScaleReportTool, registerGenomeScoreTool } from '../reports.js';
-import { registerScanProjectTool, registerStartSessionTool, registerEndSessionTool, registerGetAgentSessionsTool } from '../project.js';
-import { registerTraceImportsTool, registerFindCircularDepsTool, registerResolveImportTool, registerGetDependentsTool, registerGetDependencyGraphTool } from '../imports.js';
+import {
+  registerDebtReportTool,
+  registerScaleReportTool,
+  registerGenomeScoreTool,
+} from '../reports.js';
+import {
+  registerScanProjectTool,
+  registerStartSessionTool,
+  registerEndSessionTool,
+  registerGetAgentSessionsTool,
+} from '../project.js';
+import {
+  registerTraceImportsTool,
+  registerFindCircularDepsTool,
+  registerResolveImportTool,
+  registerGetDependentsTool,
+  registerGetDependencyGraphTool,
+} from '../imports.js';
 import { registerGraphQueryTool } from '../graph.js';
 import { registerExportArchitectureDiagramTool } from '../architecture-diagram.js';
 import { registerResolvePathTool, registerFindFileByImportTool } from '../paths.js';
-import { registerCheckArchitectureTool, registerAnalyzeImpactTool, registerSuggestRefactorTool } from '../architecture.js';
+import {
+  registerCheckArchitectureTool,
+  registerAnalyzeImpactTool,
+  registerSuggestRefactorTool,
+} from '../architecture.js';
 import { registerCheckContractsTool } from '../contracts.js';
 import { registerAutoFixTool } from '../auto-fix.js';
-import { registerFileWatchTool, registerGetFileStatusTool, registerSyncContextTool, registerUnregisterFileWatchTool } from '../sync.js';
+import {
+  registerFileWatchTool,
+  registerGetFileStatusTool,
+  registerSyncContextTool,
+  registerUnregisterFileWatchTool,
+} from '../sync.js';
 import { registerAgentLocksTool } from '../locks.js';
 import { registerPredictMergeRiskTool } from '../merge-risk.js';
 import { registerPredictImpactRiskTool } from '../impact.js';
@@ -160,9 +184,13 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   // for clients with a small active-tool budget (e.g. Cursor).
   if (shouldRegisterParityTools()) {
     const parityCount = await registerCliParityTools(server, deps);
-    logger.info(`[mcp] dedicated tools + ${parityCount} CLI-parity tools registered (PROJECTMIND_TOOLS=all)`);
+    logger.info(
+      `[mcp] dedicated tools + ${parityCount} CLI-parity tools registered (PROJECTMIND_TOOLS=all)`,
+    );
   } else {
-    logger.info('[mcp] PROJECTMIND_TOOLS=core (default) — CLI-parity tools skipped. Set PROJECTMIND_TOOLS=all for full surface. run_cli bridge still available.');
+    logger.info(
+      '[mcp] PROJECTMIND_TOOLS=core (default) — CLI-parity tools skipped. Set PROJECTMIND_TOOLS=all for full surface. run_cli bridge still available.',
+    );
   }
 
   // Security analysis tools

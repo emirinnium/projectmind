@@ -18,7 +18,6 @@ try {
   // Logo file not found, skip banner
 }
 
-
 const program = new Command();
 
 program

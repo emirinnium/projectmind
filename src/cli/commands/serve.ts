@@ -26,12 +26,24 @@ export function createServeCommand(): Command {
 
         const getSummary = () => {
           const report = services.debt!.getReport();
-          const high = Array.isArray(report.items) ? report.items.filter((i: { severity?: string }) => i.severity === 'high').length : 0;
-          const medium = Array.isArray(report.items) ? report.items.filter((i: { severity?: string }) => i.severity === 'medium').length : 0;
-          const low = Array.isArray(report.items) ? report.items.filter((i: { severity?: string }) => i.severity === 'low').length : 0;
+          const high = Array.isArray(report.items)
+            ? report.items.filter((i: { severity?: string }) => i.severity === 'high').length
+            : 0;
+          const medium = Array.isArray(report.items)
+            ? report.items.filter((i: { severity?: string }) => i.severity === 'medium').length
+            : 0;
+          const low = Array.isArray(report.items)
+            ? report.items.filter((i: { severity?: string }) => i.severity === 'low').length
+            : 0;
           return {
             generatedAt: new Date().toISOString(),
-            debt: { totalItems: report.totalItems ?? (Array.isArray(report.items) ? report.items.length : 0), high, medium, low },
+            debt: {
+              totalItems:
+                report.totalItems ?? (Array.isArray(report.items) ? report.items.length : 0),
+              high,
+              medium,
+              low,
+            },
           };
         };
 
@@ -51,11 +63,19 @@ export function createServeCommand(): Command {
               for (const n of sg.nodes) pathById.set(n.id, n.relativePath || n.path);
               const topPaths = new Set(ranked.map((r) => r.path));
               edges = sg.edges
-                .map((e) => ({ from: pathById.get(e.from) ?? '', to: pathById.get(e.to) ?? '', type: e.type }))
+                .map((e) => ({
+                  from: pathById.get(e.from) ?? '',
+                  to: pathById.get(e.to) ?? '',
+                  type: e.type,
+                }))
                 .filter((e) => e.from && e.to && (topPaths.has(e.from) || topPaths.has(e.to)));
             }
           }
-          return { stats, pageRank: ranked.map((r) => ({ path: r.path, score: Number(r.score.toFixed(5)) })), edges };
+          return {
+            stats,
+            pageRank: ranked.map((r) => ({ path: r.path, score: Number(r.score.toFixed(5)) })),
+            edges,
+          };
         };
 
         const server = http.createServer((req, res) => {
@@ -90,7 +110,9 @@ export function createServeCommand(): Command {
         try {
           await new Promise<void>((resolve) => server.listen(port, host, resolve));
         } catch (e) {
-          output.error(`Failed to bind ${host}:${port}: ${e instanceof Error ? e.message : String(e)}`);
+          output.error(
+            `Failed to bind ${host}:${port}: ${e instanceof Error ? e.message : String(e)}`,
+          );
           process.exit(1);
         }
         output.section('ProjectMind Dashboard');

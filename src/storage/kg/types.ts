@@ -58,7 +58,14 @@ export type ErrorHandlingStyle = (typeof ERROR_HANDLING_STYLES)[number];
  * (dominantNaming). 'unknown' marks an unmeasured dimension (no classified
  * declarations); 'mixed' means no convention reached the 60% dominance bar.
  */
-export const NAMING_CONVENTIONS = ['camelCase', 'snake_case', 'PascalCase', 'SCREAMING_SNAKE', 'mixed', 'unknown'] as const;
+export const NAMING_CONVENTIONS = [
+  'camelCase',
+  'snake_case',
+  'PascalCase',
+  'SCREAMING_SNAKE',
+  'mixed',
+  'unknown',
+] as const;
 export type NamingConvention = (typeof NAMING_CONVENTIONS)[number];
 
 /** Test-pattern labels exactly as emitted by classifyTestPattern. */

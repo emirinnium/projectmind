@@ -2,7 +2,11 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { trackAgentAccess } from './types.js';
-import { assembleUserContext, UserContextItem, UserContextResult } from '../../core/context/smart-assembler.js';
+import {
+  assembleUserContext,
+  UserContextItem,
+  UserContextResult,
+} from '../../core/context/smart-assembler.js';
 import { getSharedBroadcastService } from './intelligence.js';
 import type { ExpectedChanges } from '../../core/collaboration/types.js';
 
@@ -20,10 +24,14 @@ function summarizeExpectedChanges(changes: ExpectedChanges | undefined): string 
   if (!changes) return undefined;
   const parts: string[] = [];
   if (changes.signatureChanges?.length) {
-    parts.push(`${changes.signatureChanges.length} signature change(s): ${changes.signatureChanges.map((s) => s.function).join(', ')}`);
+    parts.push(
+      `${changes.signatureChanges.length} signature change(s): ${changes.signatureChanges.map((s) => s.function).join(', ')}`,
+    );
   }
   if (changes.typeChanges?.length) {
-    parts.push(`${changes.typeChanges.length} type change(s): ${changes.typeChanges.map((t) => t.type).join(', ')}`);
+    parts.push(
+      `${changes.typeChanges.length} type change(s): ${changes.typeChanges.map((t) => t.type).join(', ')}`,
+    );
   }
   if (changes.notes?.length) {
     parts.push(changes.notes.join('; '));
@@ -37,10 +45,7 @@ function summarizeExpectedChanges(changes: ExpectedChanges | undefined): string 
  * any error — missing DB, missing table, malformed row — returns [] so
  * get_context itself never breaks.
  */
-function collectConflictWarnings(
-  deps: McpDependencies,
-  watchPaths: string[]
-): ConflictWarning[] {
+function collectConflictWarnings(deps: McpDependencies, watchPaths: string[]): ConflictWarning[] {
   try {
     if (!deps.db || watchPaths.length === 0) return [];
     const me = deps.agentName ?? 'mcp-client';
@@ -81,10 +86,24 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
         filePath: z.string().describe('Path of the file to get context for'),
         limit: z.number().default(5).describe('Maximum number of context items to return'),
         includeImports: z.boolean().default(true).describe('Include import/dependency information'),
-        includeDependents: z.boolean().default(true).describe('Include reverse dependencies (files that import this file)'),
-        includeSimilar: z.boolean().default(true).describe('Include similar files based on embeddings'),
-        maxTokens: z.number().optional().describe('Soft token budget (~chars/4). When set, list sections are trimmed to fit.'),
-        task: z.string().optional().describe('What you are about to do (e.g. "add rate limiting to login endpoint"). When set, a ranked smartContext section is added — files to look at next, with per-item reasons.'),
+        includeDependents: z
+          .boolean()
+          .default(true)
+          .describe('Include reverse dependencies (files that import this file)'),
+        includeSimilar: z
+          .boolean()
+          .default(true)
+          .describe('Include similar files based on embeddings'),
+        maxTokens: z
+          .number()
+          .optional()
+          .describe('Soft token budget (~chars/4). When set, list sections are trimmed to fit.'),
+        task: z
+          .string()
+          .optional()
+          .describe(
+            'What you are about to do (e.g. "add rate limiting to login endpoint"). When set, a ranked smartContext section is added — files to look at next, with per-item reasons.',
+          ),
       },
     },
     async (args) => {
@@ -92,7 +111,15 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
         const file = deps.kg.getFileByPath(args.filePath);
         if (!file) {
           return {
-            content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'File not found in knowledge graph. Run scan_project first.' }) }],
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: false,
+                  error: 'File not found in knowledge graph. Run scan_project first.',
+                }),
+              },
+            ],
           };
         }
 
@@ -120,7 +147,7 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
         const dependents = allDependents.slice(0, itemCap);
 
         // Get similar files
-        let similarFiles: typeof file[] = [];
+        let similarFiles: (typeof file)[] = [];
         if (args.includeSimilar) {
           const fileEmbedding = deps.kg.getFileEmbedding ? deps.kg.getFileEmbedding(file.id) : null;
           if (fileEmbedding) {
@@ -151,76 +178,80 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: true,
-                file: {
-                  path: file.relativePath,
-                  language: file.language,
-                  sizeBytes: file.sizeBytes,
-                  cognitiveLoad: file.cognitiveLoad,
-                  agentTouched: file.agentTouched,
-                  agentTouchedBy: file.agentTouchedBy,
-                  agentTouchedAt: file.agentTouchedAt,
-                  lastScanned: file.lastScanned,
-                  hash: file.hash,
-                },
-                imports: {
-                  total: imports.length,
-                  resolved: resolvedImports.length,
-                  unresolved: unresolvedImports.length,
-                  details: imports.map((i) => ({
-                    source: i.source,
-                    kind: i.kind,
-                    resolved: !!i.resolvedFile,
-                    resolvedPath: i.resolvedFile?.relativePath,
+              text: JSON.stringify(
+                {
+                  success: true,
+                  file: {
+                    path: file.relativePath,
+                    language: file.language,
+                    sizeBytes: file.sizeBytes,
+                    cognitiveLoad: file.cognitiveLoad,
+                    agentTouched: file.agentTouched,
+                    agentTouchedBy: file.agentTouchedBy,
+                    agentTouchedAt: file.agentTouchedAt,
+                    lastScanned: file.lastScanned,
+                    hash: file.hash,
+                  },
+                  imports: {
+                    total: imports.length,
+                    resolved: resolvedImports.length,
+                    unresolved: unresolvedImports.length,
+                    details: imports.map((i) => ({
+                      source: i.source,
+                      kind: i.kind,
+                      resolved: !!i.resolvedFile,
+                      resolvedPath: i.resolvedFile?.relativePath,
+                    })),
+                  },
+                  dependents: dependents.map((d) => ({
+                    path: d.relativePath,
+                    cognitiveLoad: d.cognitiveLoad,
+                    agentTouched: d.agentTouched,
+                    agentTouchedBy: d.agentTouchedBy,
                   })),
-                },
-                dependents: dependents.map((d) => ({
-                  path: d.relativePath,
-                  cognitiveLoad: d.cognitiveLoad,
-                  agentTouched: d.agentTouched,
-                  agentTouchedBy: d.agentTouchedBy,
-                })),
-                similarFiles: similarFiles.map((f) => ({
-                  path: f.relativePath,
-                  language: f.language,
-                  cognitiveLoad: f.cognitiveLoad,
-                  agentTouched: f.agentTouched,
-                })),
-                structure: {
-                  functions: functions.map((fn) => ({
-                    name: fn.name,
-                    signature: fn.signature,
-                    complexity: fn.complexity,
-                    startLine: fn.startLine,
-                    endLine: fn.endLine,
+                  similarFiles: similarFiles.map((f) => ({
+                    path: f.relativePath,
+                    language: f.language,
+                    cognitiveLoad: f.cognitiveLoad,
+                    agentTouched: f.agentTouched,
                   })),
-                  classes: classes.map((cls) => ({
-                    name: cls.name,
-                    methodsCount: cls.methodsCount,
-                    propertiesCount: cls.propertiesCount,
-                  })),
+                  structure: {
+                    functions: functions.map((fn) => ({
+                      name: fn.name,
+                      signature: fn.signature,
+                      complexity: fn.complexity,
+                      startLine: fn.startLine,
+                      endLine: fn.endLine,
+                    })),
+                    classes: classes.map((cls) => ({
+                      name: cls.name,
+                      methodsCount: cls.methodsCount,
+                      propertiesCount: cls.propertiesCount,
+                    })),
+                  },
+                  circularDependencies: fileCycles,
+                  patterns: file.patterns || [],
+                  // F38b: other agents' live intents overlapping this context.
+                  // Only present when at least one potential conflict exists.
+                  ...(conflictWarnings.length > 0 ? { conflictWarnings } : {}),
+                  // Task-aware ranked "what to look at next" section. Only
+                  // present when the caller passed a task string.
+                  ...(args.task
+                    ? {
+                        smartContext: assembleUserContext(deps.kg, {
+                          fileId: file.id,
+                          relativePath: file.relativePath,
+                          cognitiveLoad: file.cognitiveLoad,
+                          task: args.task,
+                          maxTokens: args.maxTokens,
+                          limit: Math.max(itemCap, 8),
+                        }),
+                      }
+                    : {}),
                 },
-                circularDependencies: fileCycles,
-                patterns: file.patterns || [],
-                // F38b: other agents' live intents overlapping this context.
-                // Only present when at least one potential conflict exists.
-                ...(conflictWarnings.length > 0 ? { conflictWarnings } : {}),
-                // Task-aware ranked "what to look at next" section. Only
-                // present when the caller passed a task string.
-                ...(args.task
-                  ? {
-                      smartContext: assembleUserContext(deps.kg, {
-                        fileId: file.id,
-                        relativePath: file.relativePath,
-                        cognitiveLoad: file.cognitiveLoad,
-                        task: args.task,
-                        maxTokens: args.maxTokens,
-                        limit: Math.max(itemCap, 8),
-                      }),
-                    }
-                  : {}),
-              }, null, 2),
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -229,15 +260,19 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-                filePath: args.filePath,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                  filePath: args.filePath,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 }

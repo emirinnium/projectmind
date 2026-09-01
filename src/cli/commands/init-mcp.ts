@@ -11,7 +11,7 @@ import {
 
 interface AgentProfile {
   name: string;
-  configPath: string;       // relative to project root (or absolute when absolute=true)
+  configPath: string; // relative to project root (or absolute when absolute=true)
   format: 'mcpServers' | 'opencode-mcp' | 'vscode-mcp';
   note: string;
   /** Config lives outside the project — PROJECTMIND_ROOT gets an absolute path. */
@@ -20,8 +20,20 @@ interface AgentProfile {
 
 /** Claude Desktop config location per OS (GUI app — never reads .mcp.json). */
 function claudeDesktopConfigPath(): string {
-  if (platform() === 'win32') return join(process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'Claude', 'claude_desktop_config.json');
-  if (platform() === 'darwin') return join(homedir(), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
+  if (platform() === 'win32')
+    return join(
+      process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'),
+      'Claude',
+      'claude_desktop_config.json',
+    );
+  if (platform() === 'darwin')
+    return join(
+      homedir(),
+      'Library',
+      'Application Support',
+      'Claude',
+      'claude_desktop_config.json',
+    );
   return join(homedir(), '.config', 'Claude', 'claude_desktop_config.json');
 }
 
@@ -83,15 +95,18 @@ export function createInitMcpCommand(): Command {
     .option('--force', 'Overwrite existing config file')
     .option(
       '--claude-skills',
-      'Also generate .claude/skills/<name>/SKILL.md introducing ProjectMind tools (Claude Code skills format)'
+      'Also generate .claude/skills/<name>/SKILL.md introducing ProjectMind tools (Claude Code skills format)',
     )
     .option(
       '--opencode-config',
-      'Also generate a spec-compliant opencode.json (OpenCode local MCP entry + toolset scoping)'
+      'Also generate a spec-compliant opencode.json (OpenCode local MCP entry + toolset scoping)',
     )
     .action(
       asyncHandler(
-        async (agent: string, opts: { force?: boolean; claudeSkills?: boolean; opencodeConfig?: boolean }) => {
+        async (
+          agent: string,
+          opts: { force?: boolean; claudeSkills?: boolean; opencodeConfig?: boolean },
+        ) => {
           const profile = AGENTS[agent];
           if (!profile) {
             output.error(`Unknown agent "${agent}". Supported: ${Object.keys(AGENTS).join(', ')}`);
@@ -102,10 +117,14 @@ export function createInitMcpCommand(): Command {
             ? profile.configPath // already absolute (expanded)
             : join(process.cwd(), profile.configPath);
           if (!profile.absolute) {
-            const configDir = profile.configPath.substring(0, profile.configPath.lastIndexOf('/')) || '.';
+            const configDir =
+              profile.configPath.substring(0, profile.configPath.lastIndexOf('/')) || '.';
             if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true });
           } else {
-            const absDir = filePath.substring(0, Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\')));
+            const absDir = filePath.substring(
+              0,
+              Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\')),
+            );
             if (!existsSync(absDir)) mkdirSync(absDir, { recursive: true });
           }
 
@@ -157,7 +176,9 @@ export function createInitMcpCommand(): Command {
               output.warn(`Skill already exists at ${skill.path}. Use --force to overwrite.`);
             } else {
               output.success(`✓ Claude Code skill written to ${skill.path}`);
-              output.info('Claude Code discovers .claude/skills on session start (restart the session to load it).');
+              output.info(
+                'Claude Code discovers .claude/skills on session start (restart the session to load it).',
+              );
             }
           }
 
@@ -167,7 +188,9 @@ export function createInitMcpCommand(): Command {
             if (profile.format !== 'opencode-mcp') {
               const oc = writeOpencodeConfig(process.cwd(), !!opts.force);
               if (!oc.written) {
-                output.warn(`opencode.json already exists at ${oc.path}. Use --force to overwrite.`);
+                output.warn(
+                  `opencode.json already exists at ${oc.path}. Use --force to overwrite.`,
+                );
               } else {
                 output.success(`✓ OpenCode config written to ${oc.path}`);
               }
@@ -175,7 +198,7 @@ export function createInitMcpCommand(): Command {
               output.info(`opencode.json was already generated for the opencode agent above.`);
             }
           }
-        }
-      )
+        },
+      ),
     );
 }

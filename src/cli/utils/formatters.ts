@@ -24,7 +24,7 @@ export function formatDebtReport(report: {
     `Low: ${report.bySeverity.low}`,
     `Genome score: ${formatGenomeScore(report.coherenceGenomeScore)}`,
   ];
-  
+
   if (report.items.length > 0) {
     lines.push('\nDebt items:');
     for (const item of report.items) {
@@ -36,7 +36,7 @@ export function formatDebtReport(report: {
   } else {
     lines.push('\nNo cognitive debt found.');
   }
-  
+
   return lines.join('\n');
 }
 
@@ -49,9 +49,8 @@ export function handleCliError(error: unknown, context?: string): void {
   return;
 }
 
-
 export function asyncHandler<TArgs extends unknown[]>(
-  fn: (...args: TArgs) => Promise<void>
+  fn: (...args: TArgs) => Promise<void>,
 ): (...args: TArgs) => Promise<void> {
   return async (...args: TArgs) => {
     try {

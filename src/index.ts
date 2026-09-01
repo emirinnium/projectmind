@@ -13,32 +13,28 @@ export * from './storage/index.js';
 export * from './utils/index.js';
 
 // Parser
-export { 
-  parseFile, 
-  detectLanguage, 
-  type Language, 
-  type FileStructure, 
-  type FunctionInfo, 
-  type ClassInfo, 
-  type ParameterInfo 
+export {
+  parseFile,
+  detectLanguage,
+  type Language,
+  type FileStructure,
+  type FunctionInfo,
+  type ClassInfo,
+  type ParameterInfo,
 } from './parser/ast-parser.js';
 
 // Embeddings
-export { 
-  cosineSimilarity, 
-  codeToEmbedding, 
-  textToEmbedding, 
-  findSimilar, 
-  type EmbeddingVector, 
-  clearEmbeddingCache 
+export {
+  cosineSimilarity,
+  codeToEmbedding,
+  textToEmbedding,
+  findSimilar,
+  type EmbeddingVector,
+  clearEmbeddingCache,
 } from './parser/embeddings.js';
 
 // Pattern Extractor
-export { 
-  PatternLibrary, 
-  type Pattern, 
-  type PatternViolation 
-} from './parser/pattern-extractor.js';
+export { PatternLibrary, type Pattern, type PatternViolation } from './parser/pattern-extractor.js';
 
 // Structural Search
 export {

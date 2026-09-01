@@ -29,20 +29,28 @@ export interface ScaleReport {
   modules: ModuleInfo[];
 }
 
-export function generateOnboardingPath(role: string, depth: number, report: ScaleReport, allFiles: Array<{ relativePath: string }>): OnboardingPath {
+export function generateOnboardingPath(
+  role: string,
+  depth: number,
+  report: ScaleReport,
+  allFiles: Array<{ relativePath: string }>,
+): OnboardingPath {
   const steps: OnboardingStep[] = [];
   let stepOrder = 1;
-  
+
   steps.push({
     order: stepOrder++,
     title: 'Project Overview & Architecture',
-    description: 'Understand the high-level architecture, module structure, and key design decisions',
-    files: ['README.md', 'ARCHITECTURE.md', 'src/index.ts'].filter(f => allFiles.some(af => af.relativePath === f)),
+    description:
+      'Understand the high-level architecture, module structure, and key design decisions',
+    files: ['README.md', 'ARCHITECTURE.md', 'src/index.ts'].filter((f) =>
+      allFiles.some((af) => af.relativePath === f),
+    ),
     estimatedTime: '30 min',
     prerequisites: [],
     type: 'read',
   });
-  
+
   steps.push({
     order: stepOrder++,
     title: 'Development Environment Setup',
@@ -52,7 +60,7 @@ export function generateOnboardingPath(role: string, depth: number, report: Scal
     prerequisites: ['Node.js >=22', 'npm'],
     type: 'run',
   });
-  
+
   steps.push({
     order: stepOrder++,
     title: 'Knowledge Graph & Coherence Engine',
@@ -62,24 +70,24 @@ export function generateOnboardingPath(role: string, depth: number, report: Scal
     prerequisites: ['ProjectMind CLI installed'],
     type: 'explore',
   });
-  
+
   if (role === 'backend' || role === 'fullstack') {
     steps.push(...generateBackendSteps(depth, stepOrder, report, allFiles));
-    stepOrder += steps.filter(s => s.type === 'explore' || s.type === 'read').length;
+    stepOrder += steps.filter((s) => s.type === 'explore' || s.type === 'read').length;
   }
-  
+
   if (role === 'frontend' || role === 'fullstack') {
     steps.push(...generateFrontendSteps(depth, stepOrder, report, allFiles));
   }
-  
+
   if (role === 'devops') {
     steps.push(...generateDevOpsSteps(depth, stepOrder, report, allFiles));
   }
-  
+
   if (role === 'ml') {
     steps.push(...generateMLSteps(depth, stepOrder, report, allFiles));
   }
-  
+
   if (depth >= 3) {
     steps.push({
       order: stepOrder++,
@@ -90,7 +98,7 @@ export function generateOnboardingPath(role: string, depth: number, report: Scal
       prerequisites: ['Understanding of layer boundaries'],
       type: 'explore',
     });
-    
+
     steps.push({
       order: stepOrder++,
       title: 'Cognitive Debt & Genome Analysis',
@@ -100,7 +108,7 @@ export function generateOnboardingPath(role: string, depth: number, report: Scal
       prerequisites: ['Basic coherence understanding'],
       type: 'explore',
     });
-    
+
     steps.push({
       order: stepOrder++,
       title: 'Agent Session & Memory Management',
@@ -111,7 +119,7 @@ export function generateOnboardingPath(role: string, depth: number, report: Scal
       type: 'run',
     });
   }
-  
+
   if (depth >= 4) {
     steps.push({
       order: stepOrder++,
@@ -123,24 +131,29 @@ export function generateOnboardingPath(role: string, depth: number, report: Scal
       type: 'exercise',
     });
   }
-  
+
   const totalTime = steps.reduce((sum, s) => {
     const match = s.estimatedTime.match(/(\d+)/);
     return sum + (match ? parseInt(match[1]) : 0);
   }, 0);
-  
+
   return {
     role,
     totalSteps: steps.length,
-    totalTime: `${totalTime} min (${Math.round(totalTime / 60 * 10) / 10} hrs)`,
+    totalTime: `${totalTime} min (${Math.round((totalTime / 60) * 10) / 10} hrs)`,
     steps,
   };
 }
 
-export function generateBackendSteps(depth: number, startOrder: number, report: ScaleReport, allFiles: Array<{ relativePath: string }>): OnboardingStep[] {
+export function generateBackendSteps(
+  depth: number,
+  startOrder: number,
+  report: ScaleReport,
+  allFiles: Array<{ relativePath: string }>,
+): OnboardingStep[] {
   const steps: OnboardingStep[] = [];
   let order = startOrder;
-  
+
   steps.push({
     order: order++,
     title: 'Core Domain & Business Logic',
@@ -150,7 +163,7 @@ export function generateBackendSteps(depth: number, startOrder: number, report: 
     prerequisites: ['Architecture overview'],
     type: 'explore',
   });
-  
+
   steps.push({
     order: order++,
     title: 'Application Services & Use Cases',
@@ -160,7 +173,7 @@ export function generateBackendSteps(depth: number, startOrder: number, report: 
     prerequisites: ['Domain layer understanding'],
     type: 'explore',
   });
-  
+
   steps.push({
     order: order++,
     title: 'Infrastructure & Data Access',
@@ -170,7 +183,7 @@ export function generateBackendSteps(depth: number, startOrder: number, report: 
     prerequisites: ['Application layer'],
     type: 'explore',
   });
-  
+
   if (depth >= 3) {
     steps.push({
       order: order++,
@@ -182,7 +195,7 @@ export function generateBackendSteps(depth: number, startOrder: number, report: 
       type: 'read',
     });
   }
-  
+
   if (depth >= 4) {
     steps.push({
       order: order++,
@@ -194,24 +207,31 @@ export function generateBackendSteps(depth: number, startOrder: number, report: 
       type: 'exercise',
     });
   }
-  
+
   return steps;
 }
 
-export function generateFrontendSteps(depth: number, startOrder: number, report: ScaleReport, allFiles: Array<{ relativePath: string }>): OnboardingStep[] {
+export function generateFrontendSteps(
+  depth: number,
+  startOrder: number,
+  report: ScaleReport,
+  allFiles: Array<{ relativePath: string }>,
+): OnboardingStep[] {
   const steps: OnboardingStep[] = [];
   let order = startOrder;
-  
+
   steps.push({
     order: order++,
     title: 'Component Architecture & State Management',
     description: 'Component hierarchy, state patterns, and UI architecture',
-    files: findModuleFiles(report, 'ui', allFiles).concat(findModuleFiles(report, 'components', allFiles)).slice(0, 10),
+    files: findModuleFiles(report, 'ui', allFiles)
+      .concat(findModuleFiles(report, 'components', allFiles))
+      .slice(0, 10),
     estimatedTime: '45 min',
     prerequisites: ['Architecture overview'],
     type: 'explore',
   });
-  
+
   steps.push({
     order: order++,
     title: 'API Integration & Data Fetching',
@@ -221,7 +241,7 @@ export function generateFrontendSteps(depth: number, startOrder: number, report:
     prerequisites: ['Component architecture'],
     type: 'explore',
   });
-  
+
   if (depth >= 3) {
     steps.push({
       order: order++,
@@ -233,24 +253,31 @@ export function generateFrontendSteps(depth: number, startOrder: number, report:
       type: 'read',
     });
   }
-  
+
   return steps;
 }
 
-export function generateDevOpsSteps(depth: number, startOrder: number, report: ScaleReport, allFiles: Array<{ relativePath: string }>): OnboardingStep[] {
+export function generateDevOpsSteps(
+  depth: number,
+  startOrder: number,
+  report: ScaleReport,
+  allFiles: Array<{ relativePath: string }>,
+): OnboardingStep[] {
   const steps: OnboardingStep[] = [];
   let order = startOrder;
-  
+
   steps.push({
     order: order++,
     title: 'Build & CI/CD Pipeline',
     description: 'Build process, CI/CD configuration, deployment strategies',
-    files: ['.github/workflows/', '.gitlab-ci.yml', 'Dockerfile', 'package.json scripts'].filter(f => allFiles.some(af => af.relativePath.includes(f.replace('.yml', '')))),
+    files: ['.github/workflows/', '.gitlab-ci.yml', 'Dockerfile', 'package.json scripts'].filter(
+      (f) => allFiles.some((af) => af.relativePath.includes(f.replace('.yml', ''))),
+    ),
     estimatedTime: '40 min',
     prerequisites: [],
     type: 'read',
   });
-  
+
   steps.push({
     order: order++,
     title: 'Monitoring, Logging & Observability',
@@ -260,7 +287,7 @@ export function generateDevOpsSteps(depth: number, startOrder: number, report: S
     prerequisites: ['CI/CD understanding'],
     type: 'explore',
   });
-  
+
   if (depth >= 3) {
     steps.push({
       order: order++,
@@ -272,24 +299,31 @@ export function generateDevOpsSteps(depth: number, startOrder: number, report: S
       type: 'run',
     });
   }
-  
+
   return steps;
 }
 
-export function generateMLSteps(depth: number, startOrder: number, report: ScaleReport, allFiles: Array<{ relativePath: string }>): OnboardingStep[] {
+export function generateMLSteps(
+  depth: number,
+  startOrder: number,
+  report: ScaleReport,
+  allFiles: Array<{ relativePath: string }>,
+): OnboardingStep[] {
   const steps: OnboardingStep[] = [];
   let order = startOrder;
-  
+
   steps.push({
     order: order++,
     title: 'ML Pipeline & Feature Engineering',
     description: 'Data pipelines, feature stores, model training workflows',
-    files: findModuleFiles(report, 'ml', allFiles).concat(findModuleFiles(report, 'data', allFiles)).slice(0, 10),
+    files: findModuleFiles(report, 'ml', allFiles)
+      .concat(findModuleFiles(report, 'data', allFiles))
+      .slice(0, 10),
     estimatedTime: '60 min',
     prerequisites: ['Python/ML basics'],
     type: 'explore',
   });
-  
+
   steps.push({
     order: order++,
     title: 'Model Serving & A/B Testing',
@@ -299,18 +333,24 @@ export function generateMLSteps(depth: number, startOrder: number, report: Scale
     prerequisites: ['Pipeline understanding'],
     type: 'read',
   });
-  
+
   return steps;
 }
 
-function findModuleFiles(report: ScaleReport, moduleName: string, allFiles: Array<{ relativePath: string }>): string[] {
-  const module = report.modules.find(m => m.path.toLowerCase().includes(moduleName.toLowerCase()));
+function findModuleFiles(
+  report: ScaleReport,
+  moduleName: string,
+  allFiles: Array<{ relativePath: string }>,
+): string[] {
+  const module = report.modules.find((m) =>
+    m.path.toLowerCase().includes(moduleName.toLowerCase()),
+  );
   if (module) {
-    return module.files?.map(f => f.relativePath) || [];
+    return module.files?.map((f) => f.relativePath) || [];
   }
   return allFiles
-    .filter(f => f.relativePath.toLowerCase().includes(moduleName.toLowerCase()))
-    .map(f => f.relativePath);
+    .filter((f) => f.relativePath.toLowerCase().includes(moduleName.toLowerCase()))
+    .map((f) => f.relativePath);
 }
 
 export function generateMarkdownOnboarding(path: OnboardingPath): string {
@@ -323,17 +363,24 @@ export function generateMarkdownOnboarding(path: OnboardingPath): string {
     '---',
     '',
   ];
-  
+
   for (const step of path.steps) {
-    const typeIcon = step.type === 'read' ? '📖' : step.type === 'explore' ? '🔍' : step.type === 'run' ? '▶️' : '💪';
+    const typeIcon =
+      step.type === 'read'
+        ? '📖'
+        : step.type === 'explore'
+          ? '🔍'
+          : step.type === 'run'
+            ? '▶️'
+            : '💪';
     lines.push(`## Step ${step.order}: ${step.title} ${typeIcon}`, '');
     lines.push(`**Description:** ${step.description}`, '');
     lines.push(`**Time:** ${step.estimatedTime} | **Type:** ${step.type}`, '');
-    
+
     if (step.prerequisites.length > 0) {
       lines.push(`**Prerequisites:** ${step.prerequisites.join(', ')}`, '');
     }
-    
+
     if (step.files.length > 0) {
       lines.push(`**Key Files:**`, '');
       for (const file of step.files) {
@@ -342,10 +389,10 @@ export function generateMarkdownOnboarding(path: OnboardingPath): string {
       lines.push('');
     }
   }
-  
+
   lines.push('---', '');
   lines.push(`**Total:** ${path.totalSteps} steps, ~${path.totalTime}`);
-  
+
   return lines.join('\n');
 }
 

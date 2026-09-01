@@ -32,7 +32,10 @@ export const HTTP_MAX_BODY = 10 * 1024 * 1024;
 // ---------------------------------------------------------------------------
 
 export const HTTP_AUTH_TOKEN = process.env.PROJECTMIND_HTTP_TOKEN?.trim() || '';
-export const HTTP_RATE_LIMIT_PER_MIN = Math.max(1, parseInt(process.env.PROJECTMIND_HTTP_RATE_LIMIT ?? '120', 10) || 120);
+export const HTTP_RATE_LIMIT_PER_MIN = Math.max(
+  1,
+  parseInt(process.env.PROJECTMIND_HTTP_RATE_LIMIT ?? '120', 10) || 120,
+);
 
 // ---------------------------------------------------------------------------
 // OAuth 2.0 Dynamic Client Registration (RFC 7591) + client-credentials flow.
@@ -51,7 +54,10 @@ export const HTTP_RATE_LIMIT_PER_MIN = Math.max(1, parseInt(process.env.PROJECTM
 
 export const OAUTH_ENABLED =
   process.env.PROJECTMIND_OAUTH_ENABLED === '1' || process.env.PROJECTMIND_OAUTH_ENABLED === 'true';
-export const OAUTH_TOKEN_TTL = Math.max(1, parseInt(process.env.PROJECTMIND_OAUTH_TOKEN_TTL ?? '3600', 10) || 3600);
+export const OAUTH_TOKEN_TTL = Math.max(
+  1,
+  parseInt(process.env.PROJECTMIND_OAUTH_TOKEN_TTL ?? '3600', 10) || 3600,
+);
 
 // S1: the ONLY scope whose bearer token may reach /mcp. Tokens issued for
 // other scopes (e.g. "registry:read") verify fine but are rejected here —
@@ -88,7 +94,10 @@ export function extractBearerOrHeaderToken(req: http.IncomingMessage): string | 
 export function isStaticTokenValid(req: http.IncomingMessage): boolean {
   const presented = extractBearerOrHeaderToken(req);
   if (presented === undefined) return false;
-  return timingSafeEqual(Buffer.from(presented, 'utf8'), Buffer.from(HTTP_AUTH_TOKEN ?? '', 'utf8'));
+  return timingSafeEqual(
+    Buffer.from(presented, 'utf8'),
+    Buffer.from(HTTP_AUTH_TOKEN ?? '', 'utf8'),
+  );
 }
 
 /** HTTP authorization check (static token and/or OAuth). */
@@ -103,12 +112,13 @@ export function isHttpAuthorized(req: http.IncomingMessage): true | { error: str
     const presented = extractBearerOrHeaderToken(req);
     if (presented !== undefined && presented.length > 0) {
       const entry = getOauthTokens().verify(presented);
-      if (entry !== null && (entry.scope ?? '').split(/\s+/).includes(MCP_ACCESS_SCOPE)) return true;
+      if (entry !== null && (entry.scope ?? '').split(/\s+/).includes(MCP_ACCESS_SCOPE))
+        return true;
     }
   }
   // Open loopback mode ONLY when no authentication is configured at all.
   if (!HTTP_AUTH_TOKEN && !OAUTH_ENABLED) return true;
-  return { error: "Unauthorized: no token provided." };
+  return { error: 'Unauthorized: no token provided.' };
 }
 
 /** Timing-safe token comparison. */
@@ -143,7 +153,12 @@ export class HttpRateLimiter {
 
 export const httpRateLimiter = new HttpRateLimiter();
 
-export function jsonError(res: http.ServerResponse, status: number, payload: Record<string, string | number | boolean | null>, extraHeaders?: Record<string, string>): void {
+export function jsonError(
+  res: http.ServerResponse,
+  status: number,
+  payload: Record<string, string | number | boolean | null>,
+  extraHeaders?: Record<string, string>,
+): void {
   res.writeHead(status, { 'Content-Type': 'application/json', ...extraHeaders });
   res.end(JSON.stringify(payload));
 }

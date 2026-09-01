@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
-import { SKILL_CATALOG, extractCodebaseSkills, type SkillDefinition, type SkillEvidence } from '@/core/skills/engine.js';
+import {
+  SKILL_CATALOG,
+  extractCodebaseSkills,
+  type SkillDefinition,
+  type SkillEvidence,
+} from '@/core/skills/engine.js';
 
 /**
  * recommend_skills — recommend the most relevant skills from the skills
@@ -82,7 +87,14 @@ const TASK_KEYWORD_HINTS: Record<string, string[]> = {
   'testing-patterns': ['test', 'vitest', 'mock', 'spec', 'coverage', 'unit test'],
   'security-auditing': ['security', 'audit', 'secret', 'taint', 'owasp', 'auth', 'token', 'crypto'],
   'license-compliance': ['license', 'spdx', 'sbom', 'compliance', 'dependency'],
-  'architecture-analysis': ['architecture', 'coupling', 'cohesion', 'impact', 'refactor roi', 'design'],
+  'architecture-analysis': [
+    'architecture',
+    'coupling',
+    'cohesion',
+    'impact',
+    'refactor roi',
+    'design',
+  ],
   'agent-session-management': ['session', 'memory', 'agent', 'context sharing'],
   'pattern-extraction': ['pattern', 'dedup', 'clone', 'mining'],
   'refactoring-automation': ['refactor', 'rewrite', 'transform', 'codemod', 'organize imports'],
@@ -94,11 +106,52 @@ const MIN_SCORE = 0.15;
 
 /** Generic prose words that must never count as task→skill matches. */
 const STOPWORDS = new Set([
-  'the', 'and', 'for', 'are', 'with', 'this', 'that', 'from', 'into', 'here',
-  'was', 'were', 'has', 'have', 'had', 'will', 'would', 'should', 'could',
-  'what', 'when', 'where', 'which', 'why', 'how', 'than', 'very', 'just',
-  'not', 'but', 'can', 'need', 'needs', 'new', 'use', 'using', 'before',
-  'after', 'some', 'any', 'all', 'other', 'more', 'most', 'you', 'your',
+  'the',
+  'and',
+  'for',
+  'are',
+  'with',
+  'this',
+  'that',
+  'from',
+  'into',
+  'here',
+  'was',
+  'were',
+  'has',
+  'have',
+  'had',
+  'will',
+  'would',
+  'should',
+  'could',
+  'what',
+  'when',
+  'where',
+  'which',
+  'why',
+  'how',
+  'than',
+  'very',
+  'just',
+  'not',
+  'but',
+  'can',
+  'need',
+  'needs',
+  'new',
+  'use',
+  'using',
+  'before',
+  'after',
+  'some',
+  'any',
+  'all',
+  'other',
+  'more',
+  'most',
+  'you',
+  'your',
 ]);
 
 /**
@@ -111,7 +164,7 @@ function tokenize(text: string): Set<string> {
     text
       .toLowerCase()
       .split(/[^a-z0-9_-]+/)
-      .filter((t) => t.length >= 3 && !STOPWORDS.has(t))
+      .filter((t) => t.length >= 3 && !STOPWORDS.has(t)),
   );
 }
 
@@ -120,7 +173,10 @@ function hintTokens(id: string): Set<string> {
   const hints = TASK_KEYWORD_HINTS[id] ?? [];
   const tokens = new Set<string>();
   for (const h of hints) {
-    for (const t of h.toLowerCase().split(/[^a-z0-9_-]+/).filter((x) => x.length >= 2)) {
+    for (const t of h
+      .toLowerCase()
+      .split(/[^a-z0-9_-]+/)
+      .filter((x) => x.length >= 2)) {
       tokens.add(t);
     }
   }
@@ -191,7 +247,10 @@ function scoreSkill(
  *
  * @throws {Error} When the task description is empty.
  */
-export function recommendSkillsForTool(deps: McpDependencies, args: RecommendSkillsArgs): RecommendSkillsResult {
+export function recommendSkillsForTool(
+  deps: McpDependencies,
+  args: RecommendSkillsArgs,
+): RecommendSkillsResult {
   const task = args.task.trim();
   if (task.length === 0) {
     throw new Error('recommend_skills: a non-empty task description is required.');
@@ -210,7 +269,12 @@ export function recommendSkillsForTool(deps: McpDependencies, args: RecommendSki
   }
 
   const taskTokens = tokenize(task);
-  const scored: Array<{ skill: SkillDefinition; score: number; matchedTerms: string[]; hasEvidence: boolean }> = SKILL_CATALOG.map((skill) => {
+  const scored: Array<{
+    skill: SkillDefinition;
+    score: number;
+    matchedTerms: string[];
+    hasEvidence: boolean;
+  }> = SKILL_CATALOG.map((skill) => {
     const hasEvidence = Object.prototype.hasOwnProperty.call(evidence, skill.id);
     const { score, matchedTerms } = scoreSkill(skill, taskTokens, hasEvidence);
     return { skill, score, matchedTerms, hasEvidence };
@@ -224,39 +288,38 @@ export function recommendSkillsForTool(deps: McpDependencies, args: RecommendSki
   // task text), fall back to importance-ranked catalog skills — an empty
   // recommendation list would be useless to the caller.
   const anyTokenMatch = scored.some((s) => s.matchedTerms.length > 0);
-  const pool = anyTokenMatch ? scored.filter((s) => s.matchedTerms.length > 0 && s.score >= MIN_SCORE) : scored;
+  const pool = anyTokenMatch
+    ? scored.filter((s) => s.matchedTerms.length > 0 && s.score >= MIN_SCORE)
+    : scored;
 
   const limit = Math.max(1, args.limit ?? 5);
-  const recommendations: SkillRecommendation[] = pool
-    .slice(0, limit)
-    .map((s) => {
-      const reasons: string[] = [];
-      if (s.matchedTerms.length > 0) {
-        reasons.push(`task mentions ${s.matchedTerms.slice(0, 4).join(', ')}`);
-      } else {
-        reasons.push('broadly useful for this project (high importance)');
-      }
-      if (s.hasEvidence) {
-        reasons.push('evidenced in this repo');
-      }
-      reasons.push(s.skill.whyItHelps);
-      return {
-        name: s.skill.label,
-        description: s.skill.description,
-        score: Math.round(s.score * 100) / 100,
-        reason: reasons.join(' — '),
-        id: s.skill.id,
-        suggestedCommands: s.skill.suggestedCommands,
-        resources: s.skill.resources,
-      };
-    });
+  const recommendations: SkillRecommendation[] = pool.slice(0, limit).map((s) => {
+    const reasons: string[] = [];
+    if (s.matchedTerms.length > 0) {
+      reasons.push(`task mentions ${s.matchedTerms.slice(0, 4).join(', ')}`);
+    } else {
+      reasons.push('broadly useful for this project (high importance)');
+    }
+    if (s.hasEvidence) {
+      reasons.push('evidenced in this repo');
+    }
+    reasons.push(s.skill.whyItHelps);
+    return {
+      name: s.skill.label,
+      description: s.skill.description,
+      score: Math.round(s.score * 100) / 100,
+      reason: reasons.join(' — '),
+      id: s.skill.id,
+      suggestedCommands: s.skill.suggestedCommands,
+      resources: s.skill.resources,
+    };
+  });
 
   return {
     task,
     recommendations,
     totalSkillsConsidered: SKILL_CATALOG.length,
-    note:
-      'Deterministic lexical ranking (no LLM): score combines task-token overlap with each skill\'s registry text, task keyword hints, repo evidence and skill importance.',
+    note: "Deterministic lexical ranking (no LLM): score combines task-token overlap with each skill's registry text, task keyword hints, repo evidence and skill importance.",
   };
 }
 
@@ -270,8 +333,19 @@ export function registerRecommendSkillsTool(server: McpServer, deps: McpDependen
         'WHEN to call: at the start of a task — "I need to add OAuth token refresh, which skills matter?" — or when deciding what to learn/review before editing.\n' +
         'Ranks the skill catalog by task-token overlap, repo evidence and importance; returns ranked skills with a relevance score, a reason, and the CLI commands to apply each.',
       inputSchema: {
-        task: z.string().min(1).describe('Free-text description of the task (e.g. "add rate limiting to the login endpoint")'),
-        limit: z.number().int().min(1).max(20).optional().describe('Maximum number of recommendations to return (default 5)'),
+        task: z
+          .string()
+          .min(1)
+          .describe(
+            'Free-text description of the task (e.g. "add rate limiting to the login endpoint")',
+          ),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(20)
+          .optional()
+          .describe('Maximum number of recommendations to return (default 5)'),
       },
     },
     async (args) => {
@@ -289,6 +363,6 @@ export function registerRecommendSkillsTool(server: McpServer, deps: McpDependen
           content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
         };
       }
-    }
+    },
   );
 }

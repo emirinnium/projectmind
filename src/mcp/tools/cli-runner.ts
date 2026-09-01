@@ -28,7 +28,7 @@ function tail(s: string, n: number): string {
  */
 export function runCliCapture(
   argv: string[],
-  opts: { timeoutMs?: number; projectRoot?: string } = {}
+  opts: { timeoutMs?: number; projectRoot?: string } = {},
 ): Promise<CliCaptureResult> {
   const started = Date.now();
   const projectRoot = opts.projectRoot || process.env.PROJECTMIND_ROOT || process.cwd();
@@ -55,7 +55,7 @@ export function runCliCapture(
         env: { ...process.env },
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: false,
-      })
+      }),
     );
 
     child.then((child_) => {
@@ -80,7 +80,13 @@ export function runCliCapture(
       });
       child_.on('error', () => {
         clearTimeout(t);
-        resolve({ ok: false, exitCode: -2, durationMs: Date.now() - started, stdout: tail(stdout, 8000), stderr: tail(stderr, 2000) });
+        resolve({
+          ok: false,
+          exitCode: -2,
+          durationMs: Date.now() - started,
+          stdout: tail(stdout, 8000),
+          stderr: tail(stderr, 2000),
+        });
       });
       child_.on('exit', (c) => {
         clearTimeout(t);

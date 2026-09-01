@@ -37,7 +37,10 @@ const MIN_INTERVAL_MS = 250;
  *   call (progress >= total) which is always delivered so clients can
  *   close out their progress indicator deterministically.
  */
-export function createProgressReporter(extra: HandlerExtraLike | undefined, _toolName: string): ProgressReporter {
+export function createProgressReporter(
+  extra: HandlerExtraLike | undefined,
+  _toolName: string,
+): ProgressReporter {
   const token = extra?._meta?.progressToken;
   const send = extra?.sendNotification;
 
@@ -72,7 +75,10 @@ export function createProgressReporter(extra: HandlerExtraLike | undefined, _too
 }
 
 /** Convenience wrapper that always emits (bypasses throttle) — used for stage boundaries. */
-export function createStageProgressReporter(extra: HandlerExtraLike | undefined, _toolName: string): ProgressReporter {
+export function createStageProgressReporter(
+  extra: HandlerExtraLike | undefined,
+  _toolName: string,
+): ProgressReporter {
   const token = extra?._meta?.progressToken;
   const send = extra?.sendNotification;
 

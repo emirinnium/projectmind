@@ -9,14 +9,18 @@ export function getDependents(ctx: KgContext, fileId: number): FileInfo[] {
   // Dependents are files whose imports RESOLVED to this file.
   // Match on resolved_path (populated at scan time by resolveImportSource),
   // falling back to raw source equality for unresolvable-but-exact matches.
-  const rows = ctx.db.prepare(`
+  const rows = ctx.db
+    .prepare(
+      `
     SELECT DISTINCT f.* FROM files f
     JOIN imports i ON f.id = i.file_id
     WHERE f.project_id = ? AND (
       i.resolved_path = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
       OR i.source = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
     )
-  `).all(ctx.currentProjectId, fileId, fileId) as Record<string, SQLOutputValue>[];
+  `,
+    )
+    .all(ctx.currentProjectId, fileId, fileId) as Record<string, SQLOutputValue>[];
   return rows.map((r) => ({
     id: r.id as number,
     path: r.path as string,
@@ -36,11 +40,18 @@ export function getDependents(ctx: KgContext, fileId: number): FileInfo[] {
 
 export function getDirectDependents(ctx: KgContext, sourcePath: string): FileInfo[] {
   const normalizedSource = sourcePath.replace(/\\/g, '/');
-  const rows = ctx.db.prepare(`
+  const rows = ctx.db
+    .prepare(
+      `
     SELECT DISTINCT f.* FROM files f
     JOIN imports i ON f.id = i.file_id
     WHERE f.project_id = ? AND (i.resolved_path = ? OR i.source = ?)
-  `).all(ctx.currentProjectId, normalizedSource, normalizedSource) as Record<string, SQLOutputValue>[];
+  `,
+    )
+    .all(ctx.currentProjectId, normalizedSource, normalizedSource) as Record<
+    string,
+    SQLOutputValue
+  >[];
   return rows.map((r) => ({
     id: r.id as number,
     path: r.path as string,
@@ -58,7 +69,10 @@ export function getDirectDependents(ctx: KgContext, sourcePath: string): FileInf
   }));
 }
 
-export function getImportsWithDetails(ctx: KgContext, fileId: number): { source: string; kind: string; resolvedFile: FileInfo | null }[] {
+export function getImportsWithDetails(
+  ctx: KgContext,
+  fileId: number,
+): { source: string; kind: string; resolvedFile: FileInfo | null }[] {
   const imports = getImports(ctx, fileId);
   return imports.map((imp) => ({
     ...imp,
@@ -66,7 +80,11 @@ export function getImportsWithDetails(ctx: KgContext, fileId: number): { source:
   }));
 }
 
-export function traceImports(ctx: KgContext, fileId: number, maxDepth: number = 10): { file: FileInfo; depth: number; path: string[] }[] {
+export function traceImports(
+  ctx: KgContext,
+  fileId: number,
+  maxDepth: number = 10,
+): { file: FileInfo; depth: number; path: string[] }[] {
   const results: { file: FileInfo; depth: number; path: string[] }[] = [];
   const visited = new Set<number>();
 
@@ -124,7 +142,10 @@ export function findCircularDependencies(ctx: KgContext): string[][] {
   const dfs = (fileId: number, path: number[]) => {
     if (recStack.has(fileId)) {
       const cycleStart = recStack.get(fileId)!;
-      const cycle = path.slice(cycleStart).map((id) => fileMap.get(id)?.relativePath || '').filter(Boolean);
+      const cycle = path
+        .slice(cycleStart)
+        .map((id) => fileMap.get(id)?.relativePath || '')
+        .filter(Boolean);
       if (cycle.length > 0) {
         cycles.push(cycle);
       }
@@ -164,30 +185,45 @@ export function findCircularDependencies(ctx: KgContext): string[][] {
     }
   }
 
-  runWithRetry(async () => {
-    for (const cycle of uniqueCycles) {
-      ctx.db.prepare(
-        `INSERT OR IGNORE INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)`
-      ).run(cycle.join(' -> '), cycle.length);
-    }
-  }, {
-    maxAttempts: 3,
-    baseDelayMs: 50,
-    maxDelayMs: 1000,
-    retryableErrors: ['SQLITE_BUSY', 'SQLITE_LOCKED', 'database is locked'],
-  });
+  runWithRetry(
+    async () => {
+      for (const cycle of uniqueCycles) {
+        ctx.db
+          .prepare(
+            `INSERT OR IGNORE INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)`,
+          )
+          .run(cycle.join(' -> '), cycle.length);
+      }
+    },
+    {
+      maxAttempts: 3,
+      baseDelayMs: 50,
+      maxDelayMs: 1000,
+      retryableErrors: ['SQLITE_BUSY', 'SQLITE_LOCKED', 'database is locked'],
+    },
+  );
 
   _cycleCache = { cycles: uniqueCycles, computedAt: Date.now() };
   return uniqueCycles;
 }
 
-export function ingestDynamicCalls(ctx: KgContext, calls: { fromFunctionName: string; toFunctionName: string; workloadId: string; callCount?: number; staticMissed?: boolean }[]): { inserted: number; updated: number; errors: string[] } {
+export function ingestDynamicCalls(
+  ctx: KgContext,
+  calls: {
+    fromFunctionName: string;
+    toFunctionName: string;
+    workloadId: string;
+    callCount?: number;
+    staticMissed?: boolean;
+  }[],
+): { inserted: number; updated: number; errors: string[] } {
   let inserted = 0;
   let updated = 0;
   const errors: string[] = [];
 
   const ensureFunction = (name: string): number | null => {
-    const existing = ctx.db.prepare('SELECT id FROM functions WHERE name = ? LIMIT 1').get(name) as { id: number } | undefined;
+    const existing = ctx.db.prepare('SELECT id FROM functions WHERE name = ? LIMIT 1').get(name) as
+      { id: number } | undefined;
     if (existing) return existing.id;
     return null;
   };
@@ -200,13 +236,25 @@ export function ingestDynamicCalls(ctx: KgContext, calls: { fromFunctionName: st
         errors.push(`Function not found: ${call.fromFunctionName} -> ${call.toFunctionName}`);
         continue;
       }
-      const existing = ctx.db.prepare(`SELECT id, call_count FROM calls WHERE from_function_id = ? AND to_function_id = ? AND workload_id = ?`).get(fromFnId, toFnId, call.workloadId) as { id: number; call_count: number } | undefined;
+      const existing = ctx.db
+        .prepare(
+          `SELECT id, call_count FROM calls WHERE from_function_id = ? AND to_function_id = ? AND workload_id = ?`,
+        )
+        .get(fromFnId, toFnId, call.workloadId) as { id: number; call_count: number } | undefined;
       if (existing) {
-        ctx.db.prepare(`UPDATE calls SET call_count = call_count + ?, dynamic = 1, static_missed = ? WHERE id = ?`).run(call.callCount ?? 1, call.staticMissed ? 1 : 0, existing.id);
+        ctx.db
+          .prepare(
+            `UPDATE calls SET call_count = call_count + ?, dynamic = 1, static_missed = ? WHERE id = ?`,
+          )
+          .run(call.callCount ?? 1, call.staticMissed ? 1 : 0, existing.id);
         updated++;
       } else {
-        ctx.db.prepare(`INSERT INTO calls (from_function_id, to_function_id, dynamic, static_missed, call_count, workload_id)
-           VALUES (?, ?, 1, ?, ?, ?)`).run(fromFnId, toFnId, call.staticMissed ? 1 : 0, call.callCount ?? 1, call.workloadId);
+        ctx.db
+          .prepare(
+            `INSERT INTO calls (from_function_id, to_function_id, dynamic, static_missed, call_count, workload_id)
+           VALUES (?, ?, 1, ?, ?, ?)`,
+          )
+          .run(fromFnId, toFnId, call.staticMissed ? 1 : 0, call.callCount ?? 1, call.workloadId);
         inserted++;
       }
     } catch (e) {
@@ -217,12 +265,27 @@ export function ingestDynamicCalls(ctx: KgContext, calls: { fromFunctionName: st
   return { inserted, updated, errors };
 }
 
-export function getDynamicCalls(ctx: KgContext, workloadId: string): { fromFunctionId: number; toFunctionId: number; callCount: number; staticMissed: boolean; workloadId: string; fromFunctionName: string; toFunctionName: string }[] {
-  const rows = ctx.db.prepare(`SELECT c.*, f1.name as from_name, f2.name as to_name
+export function getDynamicCalls(
+  ctx: KgContext,
+  workloadId: string,
+): {
+  fromFunctionId: number;
+  toFunctionId: number;
+  callCount: number;
+  staticMissed: boolean;
+  workloadId: string;
+  fromFunctionName: string;
+  toFunctionName: string;
+}[] {
+  const rows = ctx.db
+    .prepare(
+      `SELECT c.*, f1.name as from_name, f2.name as to_name
      FROM calls c
      JOIN functions f1 ON c.from_function_id = f1.id
      JOIN functions f2 ON c.to_function_id = f2.id
-     WHERE c.workload_id = ? AND c.dynamic = 1`).all(workloadId) as Record<string, SQLOutputValue>[];
+     WHERE c.workload_id = ? AND c.dynamic = 1`,
+    )
+    .all(workloadId) as Record<string, SQLOutputValue>[];
 
   return rows.map((r) => ({
     fromFunctionId: r.from_function_id as number,
@@ -235,12 +298,24 @@ export function getDynamicCalls(ctx: KgContext, workloadId: string): { fromFunct
   }));
 }
 
-export function getAllDynamicCalls(ctx: KgContext): { fromFunctionId: number; toFunctionId: number; callCount: number; staticMissed: boolean; workloadId: string; fromFunctionName: string; toFunctionName: string }[] {
-  const rows = ctx.db.prepare(`SELECT c.*, f1.name as from_name, f2.name as to_name
+export function getAllDynamicCalls(ctx: KgContext): {
+  fromFunctionId: number;
+  toFunctionId: number;
+  callCount: number;
+  staticMissed: boolean;
+  workloadId: string;
+  fromFunctionName: string;
+  toFunctionName: string;
+}[] {
+  const rows = ctx.db
+    .prepare(
+      `SELECT c.*, f1.name as from_name, f2.name as to_name
      FROM calls c
      JOIN functions f1 ON c.from_function_id = f1.id
      JOIN functions f2 ON c.to_function_id = f2.id
-     WHERE c.dynamic = 1`).all() as Record<string, SQLOutputValue>[];
+     WHERE c.dynamic = 1`,
+    )
+    .all() as Record<string, SQLOutputValue>[];
 
   return rows.map((r) => ({
     fromFunctionId: r.from_function_id as number,
@@ -253,12 +328,22 @@ export function getAllDynamicCalls(ctx: KgContext): { fromFunctionId: number; to
   }));
 }
 
-export function getStaticMissedCalls(ctx: KgContext): { fromFunctionName: string; toFunctionName: string; workloadId: string; callCount: number; staticMissed: boolean }[] {
-  const rows = ctx.db.prepare(`SELECT c.*, f1.name as from_name, f2.name as to_name
+export function getStaticMissedCalls(ctx: KgContext): {
+  fromFunctionName: string;
+  toFunctionName: string;
+  workloadId: string;
+  callCount: number;
+  staticMissed: boolean;
+}[] {
+  const rows = ctx.db
+    .prepare(
+      `SELECT c.*, f1.name as from_name, f2.name as to_name
      FROM calls c
      JOIN functions f1 ON c.from_function_id = f1.id
      JOIN functions f2 ON c.to_function_id = f2.id
-     WHERE c.dynamic = 1 AND c.static_missed = 1`).all() as Record<string, SQLOutputValue>[];
+     WHERE c.dynamic = 1 AND c.static_missed = 1`,
+    )
+    .all() as Record<string, SQLOutputValue>[];
 
   return rows.map((r) => ({
     fromFunctionName: (r.from_name as string) || '',
@@ -279,13 +364,26 @@ export function clearAllDynamicCalls(ctx: KgContext): number {
   return Number(result.changes);
 }
 
-export function getCoherenceDecisions(ctx: KgContext, fileId: number): { id: number; verdict: string; confidence: number; analyzedAt: string; llmProvider: string | null }[] {
-  const rows = ctx.db.prepare(`
+export function getCoherenceDecisions(
+  ctx: KgContext,
+  fileId: number,
+): {
+  id: number;
+  verdict: string;
+  confidence: number;
+  analyzedAt: string;
+  llmProvider: string | null;
+}[] {
+  const rows = ctx.db
+    .prepare(
+      `
     SELECT id, verdict, confidence, analyzed_at, llm_provider 
     FROM coherence_decisions 
     WHERE file_id = ? 
     ORDER BY analyzed_at DESC
-  `).all(fileId) as Record<string, SQLOutputValue>[];
+  `,
+    )
+    .all(fileId) as Record<string, SQLOutputValue>[];
 
   return rows.map((r) => ({
     id: r.id as number,
@@ -296,7 +394,10 @@ export function getCoherenceDecisions(ctx: KgContext, fileId: number): { id: num
   }));
 }
 
-export function getDependencyGraph(ctx: KgContext, modulePath: string): { nodes: FileInfo[]; edges: { from: string; to: string; kind: string }[] } {
+export function getDependencyGraph(
+  ctx: KgContext,
+  modulePath: string,
+): { nodes: FileInfo[]; edges: { from: string; to: string; kind: string }[] } {
   const allFiles = getAllFiles(ctx);
   const moduleFiles = allFiles.filter((f) => f.relativePath.startsWith(modulePath));
   const moduleFileIds = new Set(moduleFiles.map((f) => f.id));
@@ -327,7 +428,7 @@ export function findFilesByImportPattern(ctx: KgContext, pattern: string): FileI
     const pathSegments = rel.split('/');
 
     if (rel === normalizedPattern) return true;
-    if (pathSegments.some(seg => seg === normalizedPattern)) return true;
+    if (pathSegments.some((seg) => seg === normalizedPattern)) return true;
     if (fileName === normalizedPattern) return true;
     if (fileName.startsWith(normalizedPattern + '.')) return true;
     if (fileName.endsWith('.' + normalizedPattern)) return true;
@@ -340,7 +441,11 @@ export function findFilesByImportPattern(ctx: KgContext, pattern: string): FileI
   });
 }
 
-export function getFileByImport(ctx: KgContext, importPath: string, fromFilePath?: string): FileInfo | null {
+export function getFileByImport(
+  ctx: KgContext,
+  importPath: string,
+  fromFilePath?: string,
+): FileInfo | null {
   let file = resolveImportSource(ctx, importPath);
   if (file) return file;
 

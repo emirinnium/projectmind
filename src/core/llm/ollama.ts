@@ -23,7 +23,7 @@ export class OllamaProvider implements LLMProvider {
   async analyze(
     prompt: string,
     systemPrompt?: string,
-    temperature: number = 0.3
+    temperature: number = 0.3,
   ): Promise<LLMResponse> {
     const startTime = Date.now();
     const controller = new AbortController();
@@ -52,12 +52,14 @@ export class OllamaProvider implements LLMProvider {
         throw new Error(`Ollama API error: ${response.status}`);
       }
 
-      interface OllamaResponse { message?: { content?: string } }
-      const data = await response.json() as OllamaResponse;
+      interface OllamaResponse {
+        message?: { content?: string };
+      }
+      const data = (await response.json()) as OllamaResponse;
       const content = data.message?.content || '';
 
       const reasoningTrace = content.includes('<thinking>')
-        ? content.split('<thinking>')[1]?.split('</thinking>')[0]?.split(/\r?\n/) ?? [content]
+        ? (content.split('<thinking>')[1]?.split('</thinking>')[0]?.split(/\r?\n/) ?? [content])
         : [content];
 
       return {

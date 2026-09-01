@@ -1,4 +1,3 @@
-
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import { watch, type FSWatcher } from 'node:fs';
@@ -15,7 +14,10 @@ import type { McpDependencies } from './types.js';
 // Session-scoped registry of live watchers + intent records.
 // Watchers perform REAL change detection: on any file event the file is
 // flagged as agent-touched so subsequent scans/status reflect the activity.
-const fileWatches = new Map<string, { agentId: string; callback?: string; registeredAt: string }[]>();
+const fileWatches = new Map<
+  string,
+  { agentId: string; callback?: string; registeredAt: string }[]
+>();
 const liveWatchers = new Map<string, FSWatcher>();
 // Intentional stops must NOT reschedule: without this set the 'close'/'error'
 // handlers resurrect every watcher ~5s after unregister_file_watch.
@@ -30,7 +32,7 @@ function scheduleRestart(key: string, startWatcher: () => void): void {
     setTimeout(() => {
       pendingRestarts.delete(key);
       startWatcher();
-    }, 5000)
+    }, 5000),
   );
 }
 
@@ -61,7 +63,9 @@ export function startLiveWatch(deps: McpDependencies, filePath: string, agentId:
             void Promise.resolve(deps.kg.upsertFile(struct, rel))
               .then((fileId) => deps.kg.storeFileDetails(fileId, struct))
               .catch((error) => {
-                logger.warn(`Watcher KG upsert failed for ${rel}:`, { error: error instanceof Error ? error.message : String(error) });
+                logger.warn(`Watcher KG upsert failed for ${rel}:`, {
+                  error: error instanceof Error ? error.message : String(error),
+                });
               });
           }
         } catch {
@@ -70,7 +74,9 @@ export function startLiveWatch(deps: McpDependencies, filePath: string, agentId:
       });
 
       w.on('error', (error) => {
-        logger.warn(`Watcher error for ${filePath}:`, { error: error instanceof Error ? error.message : String(error) });
+        logger.warn(`Watcher error for ${filePath}:`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
         liveWatchers.delete(key);
         scheduleRestart(key, startWatcher);
       });
@@ -87,7 +93,9 @@ export function startLiveWatch(deps: McpDependencies, filePath: string, agentId:
       liveWatchers.set(key, w);
       logger.info(`Started watching ${filePath} for agent ${agentId}`);
     } catch (error) {
-      logger.warn(`Failed to start watcher for ${filePath}:`, { error: error instanceof Error ? error.message : String(error) });
+      logger.warn(`Failed to start watcher for ${filePath}:`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
       scheduleRestart(key, startWatcher);
     }
   };
@@ -130,35 +138,50 @@ export function registerFileWatchTool(server: McpServer, deps: McpDependencies):
     'register_file_watch',
     {
       title: 'Register File Watch',
-      description: 'Watch a file for changes during this server session: change events flag the file as agent-touched. Registry is session-scoped (not persisted across restarts).',
+      description:
+        'Watch a file for changes during this server session: change events flag the file as agent-touched. Registry is session-scoped (not persisted across restarts).',
       inputSchema: {
         filePath: z.string().describe('Path of the file to watch'),
         agentId: z.string().describe('Unique identifier for the coding agent'),
-        events: z.array(z.enum(['change', 'analyze', 'coherence', 'imports'])).default(['change']).describe('Events to watch for'),
+        events: z
+          .array(z.enum(['change', 'analyze', 'coherence', 'imports']))
+          .default(['change'])
+          .describe('Events to watch for'),
       },
     },
     async (args) => {
       const file = deps.kg.getFileByPath(args.filePath);
       if (!file) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ error: 'File not found in knowledge graph. Run scan_project first.' }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                error: 'File not found in knowledge graph. Run scan_project first.',
+              }),
+            },
+          ],
         };
       }
 
       const watches = fileWatches.get(args.filePath) || [];
       const existing = watches.find((w) => w.agentId === args.agentId);
-      
+
       if (existing) {
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                status: 'already_watching',
-                file: file.relativePath,
-                agentId: args.agentId,
-                events: args.events,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  status: 'already_watching',
+                  file: file.relativePath,
+                  agentId: args.agentId,
+                  events: args.events,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -180,27 +203,35 @@ export function registerFileWatchTool(server: McpServer, deps: McpDependencies):
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              status: 'watching',
-              file: {
-                path: file.relativePath,
-                hash: file.hash,
-                cognitiveLoad: file.cognitiveLoad,
-                agentTouched: file.agentTouched,
-                agentTouchedBy: file.agentTouchedBy,
-                lastScanned: file.lastScanned,
+            text: JSON.stringify(
+              {
+                status: 'watching',
+                file: {
+                  path: file.relativePath,
+                  hash: file.hash,
+                  cognitiveLoad: file.cognitiveLoad,
+                  agentTouched: file.agentTouched,
+                  agentTouchedBy: file.agentTouchedBy,
+                  lastScanned: file.lastScanned,
+                },
+                context: {
+                  imports: imports.map((i) => ({
+                    source: i.source,
+                    kind: i.kind,
+                    resolved: !!i.resolvedFile,
+                  })),
+                  functions: functions.map((f) => ({ name: f.name, complexity: f.complexity })),
+                  classes: classes.map((c) => ({ name: c.name, methods: c.methodsCount })),
+                },
+                events: args.events,
               },
-              context: {
-                imports: imports.map((i) => ({ source: i.source, kind: i.kind, resolved: !!i.resolvedFile })),
-                functions: functions.map(f => ({ name: f.name, complexity: f.complexity })),
-                classes: classes.map(c => ({ name: c.name, methods: c.methodsCount })),
-              },
-              events: args.events,
-            }, null, 2),
+              null,
+              2,
+            ),
           },
         ],
       };
-    }
+    },
   );
 }
 
@@ -209,7 +240,8 @@ export function registerGetFileStatusTool(server: McpServer, deps: McpDependenci
     'get_file_status',
     {
       title: 'Get File Status',
-      description: 'Get real-time status of a file including coherence, dependencies, and agent activity.',
+      description:
+        'Get real-time status of a file including coherence, dependencies, and agent activity.',
       inputSchema: {
         filePath: z.string().describe('Path of the file'),
       },
@@ -218,7 +250,14 @@ export function registerGetFileStatusTool(server: McpServer, deps: McpDependenci
       const file = deps.kg.getFileByPath(args.filePath);
       if (!file) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ error: 'File not found in knowledge graph. Run scan_project first.' }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                error: 'File not found in knowledge graph. Run scan_project first.',
+              }),
+            },
+          ],
         };
       }
 
@@ -228,65 +267,71 @@ export function registerGetFileStatusTool(server: McpServer, deps: McpDependenci
       const classes = deps.kg.getClasses(file.id);
 
       // Check for recent coherence decisions
-      const coherenceDecisions = deps.kg.getCoherenceDecisions ? deps.kg.getCoherenceDecisions(file.id) : [];
+      const coherenceDecisions = deps.kg.getCoherenceDecisions
+        ? deps.kg.getCoherenceDecisions(file.id)
+        : [];
 
       return {
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              file: {
-                path: file.relativePath,
-                hash: file.hash,
-                language: file.language,
-                sizeBytes: file.sizeBytes,
-                cognitiveLoad: file.cognitiveLoad,
-                agentTouched: file.agentTouched,
-                agentTouchedBy: file.agentTouchedBy,
-                agentTouchedAt: file.agentTouchedAt,
-                lastScanned: file.lastScanned,
+            text: JSON.stringify(
+              {
+                file: {
+                  path: file.relativePath,
+                  hash: file.hash,
+                  language: file.language,
+                  sizeBytes: file.sizeBytes,
+                  cognitiveLoad: file.cognitiveLoad,
+                  agentTouched: file.agentTouched,
+                  agentTouchedBy: file.agentTouchedBy,
+                  agentTouchedAt: file.agentTouchedAt,
+                  lastScanned: file.lastScanned,
+                },
+                imports: {
+                  total: imports.length,
+                  resolved: imports.filter((i) => i.resolvedFile).length,
+                  unresolved: imports.filter((i) => !i.resolvedFile).map((i) => i.source),
+                  details: imports.map((i) => ({
+                    source: i.source,
+                    kind: i.kind,
+                    resolved: !!i.resolvedFile,
+                    resolvedPath: i.resolvedFile?.relativePath,
+                  })),
+                },
+                dependents: {
+                  count: dependents.length,
+                  files: dependents.map((d) => ({
+                    path: d.relativePath,
+                    cognitiveLoad: d.cognitiveLoad,
+                    agentTouched: d.agentTouched,
+                  })),
+                },
+                structure: {
+                  functions: functions.map((f) => ({
+                    name: f.name,
+                    complexity: f.complexity,
+                    lines: (f.endLine ?? 0) - (f.startLine ?? 0),
+                  })),
+                  classes: classes.map((c) => ({
+                    name: c.name,
+                    methods: c.methodsCount,
+                    properties: c.propertiesCount,
+                  })),
+                },
+                coherence: {
+                  decisions: coherenceDecisions.length,
+                  lastDecision: coherenceDecisions[0] || null,
+                },
+                watches: fileWatches.get(file.relativePath)?.length || 0,
               },
-              imports: {
-                total: imports.length,
-                resolved: imports.filter((i) => i.resolvedFile).length,
-                unresolved: imports.filter((i) => !i.resolvedFile).map((i) => i.source),
-                details: imports.map((i) => ({
-                  source: i.source,
-                  kind: i.kind,
-                  resolved: !!i.resolvedFile,
-                  resolvedPath: i.resolvedFile?.relativePath,
-                })),
-              },
-              dependents: {
-                count: dependents.length,
-                files: dependents.map((d) => ({
-                  path: d.relativePath,
-                  cognitiveLoad: d.cognitiveLoad,
-                  agentTouched: d.agentTouched,
-                })),
-              },
-              structure: {
-                functions: functions.map(f => ({
-                  name: f.name,
-                  complexity: f.complexity,
-                  lines: (f.endLine ?? 0) - (f.startLine ?? 0),
-                })),
-                classes: classes.map(c => ({
-                  name: c.name,
-                  methods: c.methodsCount,
-                  properties: c.propertiesCount,
-                })),
-              },
-              coherence: {
-                decisions: coherenceDecisions.length,
-                lastDecision: coherenceDecisions[0] || null,
-              },
-              watches: fileWatches.get(file.relativePath)?.length || 0,
-            }, null, 2),
+              null,
+              2,
+            ),
           },
         ],
       };
-    }
+    },
   );
 }
 
@@ -295,28 +340,45 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
     'sync_context',
     {
       title: 'Sync Context',
-      description: 'Synchronize context between coding agent and ProjectMind - share current working state, decisions, and patterns. Supports diff merge and conflict resolution.',
+      description:
+        'Synchronize context between coding agent and ProjectMind - share current working state, decisions, and patterns. Supports diff merge and conflict resolution.',
       inputSchema: {
         agentId: z.string().describe('Unique identifier for the coding agent'),
         action: z.enum(['push', 'pull', 'both']).default('both').describe('Direction of sync'),
-        context: z.object({
-          currentFile: z.string().optional().describe('Currently editing file'),
-          recentDecisions: z.array(z.object({
-            file: z.string(),
-            decision: z.string(),
-            reasoning: z.string(),
-            timestamp: z.string(),
-            version: z.number().optional().describe('Version for conflict resolution'),
-          })).optional().describe('Recent architectural decisions'),
-          patternsUsed: z.array(z.string()).optional().describe('Patterns being applied'),
-          issuesFound: z.array(z.object({
-            file: z.string(),
-            issue: z.string(),
-            severity: z.enum(['high', 'medium', 'low']),
-            version: z.number().optional().describe('Version for conflict resolution'),
-          })).optional().describe('Issues discovered during coding'),
-          workingState: z.record(z.string(), z.unknown()).optional().describe('Agent working state (key-value pairs)'),
-        }).optional().describe('Context to push from coding agent'),
+        context: z
+          .object({
+            currentFile: z.string().optional().describe('Currently editing file'),
+            recentDecisions: z
+              .array(
+                z.object({
+                  file: z.string(),
+                  decision: z.string(),
+                  reasoning: z.string(),
+                  timestamp: z.string(),
+                  version: z.number().optional().describe('Version for conflict resolution'),
+                }),
+              )
+              .optional()
+              .describe('Recent architectural decisions'),
+            patternsUsed: z.array(z.string()).optional().describe('Patterns being applied'),
+            issuesFound: z
+              .array(
+                z.object({
+                  file: z.string(),
+                  issue: z.string(),
+                  severity: z.enum(['high', 'medium', 'low']),
+                  version: z.number().optional().describe('Version for conflict resolution'),
+                }),
+              )
+              .optional()
+              .describe('Issues discovered during coding'),
+            workingState: z
+              .record(z.string(), z.unknown())
+              .optional()
+              .describe('Agent working state (key-value pairs)'),
+          })
+          .optional()
+          .describe('Context to push from coding agent'),
       },
     },
     async (args) => {
@@ -325,7 +387,7 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
         const sessions = deps.kg.getAgentSessions(args.agentId);
         const session = sessions[0];
         const sessionId = session ? session.id : deps.kg.startAgentSession(args.agentId);
-        
+
         let pushed = false;
         let pulled: {
           decisions: Array<{ key: string; value: unknown; version: number }>;
@@ -352,23 +414,47 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
                 const key = `decision:${decision.file}`;
                 const existingEntries = deps.kg.getMemory('decisions', key);
                 const existing = existingEntries[0]?.value;
-                const version = existing && typeof existing === 'object' && 'version' in existing ? ((existing as { version: number }).version || 0) + 1 : 1;
-                deps.kg.storeMemory(sessionId, 'decisions', key, JSON.stringify({ ...decision, version }));
+                const version =
+                  existing && typeof existing === 'object' && 'version' in existing
+                    ? ((existing as { version: number }).version || 0) + 1
+                    : 1;
+                deps.kg.storeMemory(
+                  sessionId,
+                  'decisions',
+                  key,
+                  JSON.stringify({ ...decision, version }),
+                );
               }
             }
             if (args.context.patternsUsed) {
               const existingEntries = deps.kg.getMemory('patterns', 'used');
               const existing = existingEntries[0]?.value;
-              const version = existing && typeof existing === 'object' && 'version' in existing ? ((existing as { version: number }).version || 0) + 1 : 1;
-              deps.kg.storeMemory(sessionId, 'patterns', 'used', JSON.stringify({ patterns: args.context.patternsUsed, version }));
+              const version =
+                existing && typeof existing === 'object' && 'version' in existing
+                  ? ((existing as { version: number }).version || 0) + 1
+                  : 1;
+              deps.kg.storeMemory(
+                sessionId,
+                'patterns',
+                'used',
+                JSON.stringify({ patterns: args.context.patternsUsed, version }),
+              );
             }
             if (args.context.issuesFound) {
               for (const issue of args.context.issuesFound) {
                 const key = `issue:${issue.file}`;
                 const existingEntries = deps.kg.getMemory('issues', key);
                 const existing = existingEntries[0]?.value;
-                const version = existing && typeof existing === 'object' && 'version' in existing ? ((existing as { version: number }).version || 0) + 1 : 1;
-                deps.kg.storeMemory(sessionId, 'issues', key, JSON.stringify({ ...issue, version }));
+                const version =
+                  existing && typeof existing === 'object' && 'version' in existing
+                    ? ((existing as { version: number }).version || 0) + 1
+                    : 1;
+                deps.kg.storeMemory(
+                  sessionId,
+                  'issues',
+                  key,
+                  JSON.stringify({ ...issue, version }),
+                );
               }
             }
             if (args.context.workingState) {
@@ -395,16 +481,21 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
         if (args.action === 'pull' || args.action === 'both') {
           // Pull relevant context from ProjectMind with versioning
           const currentFile = args.context?.currentFile ?? '';
-          const fileTerms = currentFile.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 3);
+          const fileTerms = currentFile
+            .toLowerCase()
+            .split(/[^a-z0-9]+/)
+            .filter((t) => t.length > 3);
 
-          const rank = (entries: Array<{ key: string; value: unknown; createdAt?: string; version?: number }>): Array<{ key: string; value: unknown; version: number }> =>
+          const rank = (
+            entries: Array<{ key: string; value: unknown; createdAt?: string; version?: number }>,
+          ): Array<{ key: string; value: unknown; version: number }> =>
             entries
               .map((e) => {
                 const hay = `${e.key}`.toLowerCase();
                 const relevance = fileTerms.reduce((acc, t) => acc + (hay.includes(t) ? 1 : 0), 0);
                 return { e, relevance, ts: e.createdAt ? Date.parse(e.createdAt) || 0 : 0 };
               })
-              .sort((a, b) => (b.relevance - a.relevance) || (b.ts - a.ts))
+              .sort((a, b) => b.relevance - a.relevance || b.ts - a.ts)
               .slice(0, 10)
               .map(({ e }) => ({
                 key: e.key,
@@ -420,7 +511,7 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
           if (args.context?.recentDecisions) {
             for (const localDecision of args.context.recentDecisions) {
               const key = `decision:${localDecision.file}`;
-              const remoteDecision = decisions.find(d => d.key === key);
+              const remoteDecision = decisions.find((d) => d.key === key);
               if (remoteDecision && remoteDecision.version > (localDecision.version || 0)) {
                 conflicts.push({
                   key,
@@ -434,7 +525,7 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
           if (args.context?.issuesFound) {
             for (const localIssue of args.context.issuesFound) {
               const key = `issue:${localIssue.file}`;
-              const remoteIssue = issues.find(i => i.key === key);
+              const remoteIssue = issues.find((i) => i.key === key);
               if (remoteIssue && remoteIssue.version > (localIssue.version || 0)) {
                 conflicts.push({
                   key,
@@ -459,7 +550,10 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
             try {
               const f = deps.kg.getFileByPath(ctxFile);
               if (f) {
-                const dependents = deps.kg.getDependents(f.id).map((d) => d.relativePath).slice(0, 10);
+                const dependents = deps.kg
+                  .getDependents(f.id)
+                  .map((d) => d.relativePath)
+                  .slice(0, 10);
                 let similar: string[] = [];
                 const emb = deps.kg.getFileEmbedding ? deps.kg.getFileEmbedding(f.id) : null;
                 if (emb) {
@@ -477,24 +571,37 @@ export function registerSyncContextTool(server: McpServer, deps: McpDependencies
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                sessionId,
-                agentId: args.agentId,
-                action: args.action,
-                pushed,
-                pulled,
-                enrichment,
-                message: conflicts?.length ? `Context synchronized with ${conflicts.length} conflicts detected.` : 'Context synchronized successfully',
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  sessionId,
+                  agentId: args.agentId,
+                  action: args.action,
+                  pushed,
+                  pulled,
+                  enrichment,
+                  message: conflicts?.length
+                    ? `Context synchronized with ${conflicts.length} conflicts detected.`
+                    : 'Context synchronized successfully',
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       } catch (error) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ error: error instanceof Error ? error.message : 'Sync failed' }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                error: error instanceof Error ? error.message : 'Sync failed',
+              }),
+            },
+          ],
         };
       }
-    }
+    },
   );
 }
 
@@ -524,15 +631,19 @@ export function registerUnregisterFileWatchTool(server: McpServer, _deps: McpDep
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              status: 'unregistered',
-              filePath: args.filePath,
-              agentId: args.agentId,
-              remainingWatches: filtered.length,
-            }, null, 2),
+            text: JSON.stringify(
+              {
+                status: 'unregistered',
+                filePath: args.filePath,
+                agentId: args.agentId,
+                remainingWatches: filtered.length,
+              },
+              null,
+              2,
+            ),
           },
         ],
       };
-    }
+    },
   );
 }

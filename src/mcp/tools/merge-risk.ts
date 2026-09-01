@@ -22,7 +22,10 @@ export interface PredictMergeRiskArgs {
  * The engine is synchronous and read-only: it only queries the knowledge
  * graph (no git, no filesystem writes), so this wrapper is sync too.
  */
-export function predictMergeRiskForTool(deps: McpDependencies, args: PredictMergeRiskArgs): ConflictRisk {
+export function predictMergeRiskForTool(
+  deps: McpDependencies,
+  args: PredictMergeRiskArgs,
+): ConflictRisk {
   const input: ConflictRiskInput = {
     myFiles: args.myFiles,
     otherHeldFiles: args.otherHeldFiles,
@@ -47,7 +50,9 @@ export function registerPredictMergeRiskTool(server: McpServer, deps: McpDepende
           .describe('Files you plan to edit (relative paths, e.g. ["src/a.ts"])'),
         otherHeldFiles: z
           .array(z.string())
-          .describe('Files currently locked by OTHER agents (relative paths, e.g. ["src/shared.ts"])'),
+          .describe(
+            'Files currently locked by OTHER agents (relative paths, e.g. ["src/shared.ts"])',
+          ),
       },
     },
     async (args) => {
@@ -65,6 +70,6 @@ export function registerPredictMergeRiskTool(server: McpServer, deps: McpDepende
           content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
         };
       }
-    }
+    },
   );
 }

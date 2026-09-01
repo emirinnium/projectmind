@@ -12,7 +12,7 @@ export interface ServiceMap {
 
 export async function withContext<T>(
   fn: (ctx: CLIContext) => Promise<T>,
-  overrideRoot?: string
+  overrideRoot?: string,
 ): Promise<T> {
   const ctx = await createContext(overrideRoot);
   try {
@@ -25,19 +25,19 @@ export async function withContext<T>(
 export async function withService<T>(
   services: ('scale' | 'debt' | 'coherence')[],
   fn: (ctx: CLIContext, services: ServiceMap) => Promise<T>,
-  overrideRoot?: string
+  overrideRoot?: string,
 ): Promise<T> {
   return withContext(async (ctx) => {
     const serviceMap: ServiceMap = {};
-    
+
     if (services.includes('scale')) {
       serviceMap.scale = new ScaleManager(ctx.db, ctx.kg);
     }
-    
+
     if (services.includes('debt')) {
       serviceMap.debt = new DebtTracker(ctx.db, ctx.kg);
     }
-    
+
     if (services.includes('coherence')) {
       const coherence = new CoherenceEngine(ctx.db);
       const llmConfig = {
@@ -52,13 +52,13 @@ export async function withService<T>(
       }
       serviceMap.coherence = coherence;
     }
-    
+
     return await fn(ctx, serviceMap);
   }, overrideRoot);
 }
 
 export async function withScale<T>(
-  fn: (ctx: CLIContext, scale: ScaleManager) => Promise<T>
+  fn: (ctx: CLIContext, scale: ScaleManager) => Promise<T>,
 ): Promise<T> {
   return withService(['scale'], async (ctx, services) => {
     if (!services.scale) throw new Error('ScaleManager not available');
@@ -67,7 +67,7 @@ export async function withScale<T>(
 }
 
 export async function withDebt<T>(
-  fn: (ctx: CLIContext, debt: DebtTracker) => Promise<T>
+  fn: (ctx: CLIContext, debt: DebtTracker) => Promise<T>,
 ): Promise<T> {
   return withService(['debt'], async (ctx, services) => {
     if (!services.debt) throw new Error('DebtTracker not available');
@@ -76,7 +76,7 @@ export async function withDebt<T>(
 }
 
 export async function withCoherence<T>(
-  fn: (ctx: CLIContext, coherence: CoherenceEngine) => Promise<T>
+  fn: (ctx: CLIContext, coherence: CoherenceEngine) => Promise<T>,
 ): Promise<T> {
   return withService(['coherence'], async (ctx, services) => {
     if (!services.coherence) throw new Error('CoherenceEngine not available');
@@ -86,7 +86,7 @@ export async function withCoherence<T>(
 
 export async function withServices<T>(
   services: ('scale' | 'debt' | 'coherence')[],
-  fn: (ctx: CLIContext, services: ServiceMap) => Promise<T>
+  fn: (ctx: CLIContext, services: ServiceMap) => Promise<T>,
 ): Promise<T> {
   return withService(services, fn);
 }

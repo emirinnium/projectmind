@@ -82,7 +82,7 @@ export function findSimilar(
   embedding: number[],
   candidates: { id: number; embedding: number[] }[],
   threshold: number = 0.7,
-  topK: number = 10
+  topK: number = 10,
 ): { id: number; score: number }[] {
   return candidates
     .map((c) => ({ id: c.id, score: cosineSimilarity(embedding, c.embedding) }))

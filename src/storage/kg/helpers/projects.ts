@@ -3,15 +3,20 @@ import type { KgContext } from './context.js';
 import { getVecIndex } from '../../../core/embeddings/vector-index.js';
 
 export function ensureDefaultProject(ctx: KgContext): void {
-  const existing = ctx.db.prepare('SELECT id FROM projects WHERE id = 1').get() as { id: number } | undefined;
+  const existing = ctx.db.prepare('SELECT id FROM projects WHERE id = 1').get() as
+    { id: number } | undefined;
   if (!existing) {
-    ctx.db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(1, 'default', process.cwd());
+    ctx.db
+      .prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)')
+      .run(1, 'default', process.cwd());
   }
 }
 
 export function loadCurrentProjectId(ctx: KgContext): number {
   try {
-    const row = ctx.db.prepare("SELECT value FROM settings WHERE key = 'current_project_id'").get() as { value: string } | undefined;
+    const row = ctx.db
+      .prepare("SELECT value FROM settings WHERE key = 'current_project_id'")
+      .get() as { value: string } | undefined;
     if (row) {
       const parsed = parseInt(row.value, 10);
       // Guard: a persisted id whose project row is gone (e.g. deleted via
@@ -30,20 +35,42 @@ export function loadCurrentProjectId(ctx: KgContext): number {
 
 export function persistCurrentProjectId(ctx: KgContext): void {
   try {
-    ctx.db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('current_project_id', ?, CURRENT_TIMESTAMP)").run(String(ctx.currentProjectId));
+    ctx.db
+      .prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('current_project_id', ?, CURRENT_TIMESTAMP)",
+      )
+      .run(String(ctx.currentProjectId));
   } catch {
     // ignore persistence errors
   }
 }
 
-export function createProject(ctx: KgContext, name: string, rootPath: string, description?: string): { id: number; name: string; rootPath: string } {
-  const result = ctx.db.prepare('INSERT INTO projects (name, root_path, description) VALUES (?, ?, ?)').run(name, rootPath, description || null);
+export function createProject(
+  ctx: KgContext,
+  name: string,
+  rootPath: string,
+  description?: string,
+): { id: number; name: string; rootPath: string } {
+  const result = ctx.db
+    .prepare('INSERT INTO projects (name, root_path, description) VALUES (?, ?, ?)')
+    .run(name, rootPath, description || null);
   const id = Number(result.lastInsertRowid);
   return { id, name, rootPath };
 }
 
-export function getProject(ctx: KgContext, id: number): { id: number; name: string; rootPath: string; description: string | null; createdAt: string; lastScanned: string } | null {
-  const row = ctx.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as Record<string, SQLOutputValue> | undefined;
+export function getProject(
+  ctx: KgContext,
+  id: number,
+): {
+  id: number;
+  name: string;
+  rootPath: string;
+  description: string | null;
+  createdAt: string;
+  lastScanned: string;
+} | null {
+  const row = ctx.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as
+    Record<string, SQLOutputValue> | undefined;
   if (!row) return null;
   return {
     id: row.id as number,
@@ -55,8 +82,19 @@ export function getProject(ctx: KgContext, id: number): { id: number; name: stri
   };
 }
 
-export function getProjectByName(ctx: KgContext, name: string): { id: number; name: string; rootPath: string; description: string | null; createdAt: string; lastScanned: string } | null {
-  const row = ctx.db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as Record<string, SQLOutputValue> | undefined;
+export function getProjectByName(
+  ctx: KgContext,
+  name: string,
+): {
+  id: number;
+  name: string;
+  rootPath: string;
+  description: string | null;
+  createdAt: string;
+  lastScanned: string;
+} | null {
+  const row = ctx.db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as
+    Record<string, SQLOutputValue> | undefined;
   if (!row) return null;
   return {
     id: row.id as number,
@@ -68,14 +106,20 @@ export function getProjectByName(ctx: KgContext, name: string): { id: number; na
   };
 }
 
-export function listProjects(ctx: KgContext): { id: number; name: string; rootPath: string; fileCount: number; lastScanned: string }[] {
-  const rows = ctx.db.prepare(`
+export function listProjects(
+  ctx: KgContext,
+): { id: number; name: string; rootPath: string; fileCount: number; lastScanned: string }[] {
+  const rows = ctx.db
+    .prepare(
+      `
     SELECT p.*, COUNT(f.id) as file_count 
     FROM projects p 
     LEFT JOIN files f ON f.project_id = p.id 
     GROUP BY p.id 
     ORDER BY p.name
-  `).all() as Record<string, SQLOutputValue>[];
+  `,
+    )
+    .all() as Record<string, SQLOutputValue>[];
   return rows.map((r) => ({
     id: r.id as number,
     name: r.name as string,
@@ -85,7 +129,10 @@ export function listProjects(ctx: KgContext): { id: number; name: string; rootPa
   }));
 }
 
-export function deleteProject(ctx: KgContext, projectId: number): { success: boolean; deletedFiles: number; error?: string } {
+export function deleteProject(
+  ctx: KgContext,
+  projectId: number,
+): { success: boolean; deletedFiles: number; error?: string } {
   if (projectId === 1) {
     return { success: false, deletedFiles: 0, error: 'Cannot delete default project' };
   }

@@ -6,13 +6,7 @@ import type { FileStructure, Language } from './types.js';
 // Types live in ./types.ts (breaks the ast-parser <-> ast/parser and
 // ast-parser <-> multilang-parser import cycles); re-exported here for
 // backwards compatibility with existing consumers.
-export type {
-  Language,
-  ParameterInfo,
-  FunctionInfo,
-  ClassInfo,
-  FileStructure,
-} from './types.js';
+export type { Language, ParameterInfo, FunctionInfo, ClassInfo, FileStructure } from './types.js';
 
 export function detectLanguage(filePath: string): Language {
   const ext = extname(filePath);

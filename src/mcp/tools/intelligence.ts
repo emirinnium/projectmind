@@ -3,7 +3,11 @@ import { basename, dirname, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
-import { IntentEngine, classifyTask, createKgGraphAdapter } from '../../core/search/intent-engine.js';
+import {
+  IntentEngine,
+  classifyTask,
+  createKgGraphAdapter,
+} from '../../core/search/intent-engine.js';
 import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
 import type { CodeChange, PredictorConfig } from '../../core/predictive/types.js';
 import { ContextBudgetOptimizer } from '../../core/context/budget-optimizer.js';
@@ -11,7 +15,11 @@ import type { ContextItem, ContextTaskType } from '../../core/context/types.js';
 import { IntegrityGuard } from '../../core/kg/integrity-guard.js';
 import { IntentBroadcastService } from '../../core/collaboration/broadcast.js';
 import type { ExpectedChanges } from '../../core/collaboration/types.js';
-import { CrossProjectPatternEngine, buildPattern, computeBagOfWordsEmbedding } from '../../core/patterns/cross-project.js';
+import {
+  CrossProjectPatternEngine,
+  buildPattern,
+  computeBagOfWordsEmbedding,
+} from '../../core/patterns/cross-project.js';
 import type { AbstractTemplate } from '../../core/patterns/types.js';
 import { confineToProject } from './_shared.js';
 
@@ -39,7 +47,10 @@ function agentIdentity(deps: McpDependencies, supplied?: string): string {
 // observe the same in-memory + DB state. The cache is keyed by the db
 // reference: if the server is re-wired to a different database instance the
 // service is rebuilt so it never reads/writes a stale DB handle.
-let _sharedBroadcastCache: { db: DatabaseSync | undefined; service: IntentBroadcastService } | null = null;
+let _sharedBroadcastCache: {
+  db: DatabaseSync | undefined;
+  service: IntentBroadcastService;
+} | null = null;
 
 /** Process-wide broadcast service bound to the server DB (F38/F38b). */
 export function getSharedBroadcastService(db?: DatabaseSync): IntentBroadcastService {
@@ -56,7 +67,10 @@ function json(result: object): { content: Array<{ type: 'text'; text: string }> 
 }
 
 function noDb(tool: string): { content: Array<{ type: 'text'; text: string }> } {
-  return json({ success: false, error: `${tool} requires the project database, which is not initialized.` });
+  return json({
+    success: false,
+    error: `${tool} requires the project database, which is not initialized.`,
+  });
 }
 
 /** search_intent — hybrid intent-driven semantic navigation (IntentEngine). */
@@ -70,10 +84,21 @@ function registerSearchIntentTool(server: McpServer, deps: McpDependencies): voi
         'WHEN to call: when you need files relevant to a TASK ("where do I add rate limiting?") rather than a literal string.\n' +
         'For literal text matching use projectmind_run_cli with pm search instead (run_cli on clients without the projectmind_ prefix).',
       inputSchema: {
-        query: z.string().describe('Natural-language task query (e.g. "fix the login timeout bug")'),
-        structuralHints: z.array(z.string()).optional().describe('Optional structural hints (e.g. ["class", "middleware"])'),
-        expectedOutputs: z.array(z.string()).optional().describe('Optional expected outputs/artifacts (e.g. ["http response"])'),
-        filePath: z.string().optional().describe('Optional seed file path to expand structural neighbors from'),
+        query: z
+          .string()
+          .describe('Natural-language task query (e.g. "fix the login timeout bug")'),
+        structuralHints: z
+          .array(z.string())
+          .optional()
+          .describe('Optional structural hints (e.g. ["class", "middleware"])'),
+        expectedOutputs: z
+          .array(z.string())
+          .optional()
+          .describe('Optional expected outputs/artifacts (e.g. ["http response"])'),
+        filePath: z
+          .string()
+          .optional()
+          .describe('Optional seed file path to expand structural neighbors from'),
         limit: z.number().int().min(1).max(50).default(10).describe('Maximum results'),
       },
     },
@@ -90,7 +115,7 @@ function registerSearchIntentTool(server: McpServer, deps: McpDependencies): voi
             filePath: args.filePath,
           },
           adapter,
-          args.limit
+          args.limit,
         );
         return json({
           success: true,
@@ -100,9 +125,12 @@ function registerSearchIntentTool(server: McpServer, deps: McpDependencies): voi
           results,
         });
       } catch (error) {
-        return json({ success: false, error: error instanceof Error ? error.message : String(error) });
+        return json({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    }
+    },
   );
 }
 
@@ -118,10 +146,25 @@ function registerPredictImpactTool(server: McpServer, deps: McpDependencies): vo
         'Returns predicted failures with confidence, reasons and suggested fixes.',
       inputSchema: {
         filePath: z.string().describe('File being changed'),
-        changeType: z.enum(['add', 'modify', 'delete']).default('modify').describe('Kind of change'),
-        affectedFunctions: z.array(z.string()).optional().describe('Function names known/suspected to change'),
-        previousContent: z.string().optional().describe('Pre-change file content (defaults to git HEAD version)'),
-        limit: z.number().int().min(1).max(50).default(10).describe('Maximum predicted failures to return'),
+        changeType: z
+          .enum(['add', 'modify', 'delete'])
+          .default('modify')
+          .describe('Kind of change'),
+        affectedFunctions: z
+          .array(z.string())
+          .optional()
+          .describe('Function names known/suspected to change'),
+        previousContent: z
+          .string()
+          .optional()
+          .describe('Pre-change file content (defaults to git HEAD version)'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .default(10)
+          .describe('Maximum predicted failures to return'),
       },
     },
     async (args) => {
@@ -148,9 +191,12 @@ function registerPredictImpactTool(server: McpServer, deps: McpDependencies): vo
           predictedFailures: predictions,
         });
       } catch (error) {
-        return json({ success: false, error: error instanceof Error ? error.message : String(error) });
+        return json({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    }
+    },
   );
 }
 
@@ -169,8 +215,18 @@ function registerPlanContextBudgetTool(server: McpServer, deps: McpDependencies)
           .array(
             z.object({
               path: z.string().describe('File path (project-relative or absolute)'),
-              tokens: z.number().int().positive().optional().describe('Token cost (auto-estimated when omitted)'),
-              relevanceScore: z.number().min(0).max(1).optional().describe('0..1 relevance (default 0.5)'),
+              tokens: z
+                .number()
+                .int()
+                .positive()
+                .optional()
+                .describe('Token cost (auto-estimated when omitted)'),
+              relevanceScore: z
+                .number()
+                .min(0)
+                .max(1)
+                .optional()
+                .describe('0..1 relevance (default 0.5)'),
               recentlyChanged: z.boolean().optional(),
               importedByQueryFiles: z.boolean().optional(),
               semanticMatch: z.boolean().optional(),
@@ -178,13 +234,19 @@ function registerPlanContextBudgetTool(server: McpServer, deps: McpDependencies)
               apiSurface: z.boolean().optional(),
               couplingScore: z.number().min(0).max(1).optional(),
               isTestFile: z.boolean().optional(),
-            })
+            }),
           )
           .min(1)
           .describe('Candidate files'),
         budget: z.number().int().positive().describe('Token budget to respect'),
-        taskType: z.enum(['bug fix', 'feature', 'refactor', 'test']).optional().describe('Task type for relevance boosts'),
-        strategy: z.enum(['greedy', 'dp', 'adaptive']).optional().describe('Selection strategy (default dp with greedy fallback)'),
+        taskType: z
+          .enum(['bug fix', 'feature', 'refactor', 'test'])
+          .optional()
+          .describe('Task type for relevance boosts'),
+        strategy: z
+          .enum(['greedy', 'dp', 'adaptive'])
+          .optional()
+          .describe('Selection strategy (default dp with greedy fallback)'),
       },
     },
     async (args) => {
@@ -192,10 +254,14 @@ function registerPlanContextBudgetTool(server: McpServer, deps: McpDependencies)
         for (const f of args.files) {
           confineToProject(f.path, deps.projectRoot);
         }
-        const optimizer = new ContextBudgetOptimizer({ strategy: args.strategy, taskType: args.taskType });
+        const optimizer = new ContextBudgetOptimizer({
+          strategy: args.strategy,
+          taskType: args.taskType,
+        });
         const items: ContextItem[] = args.files.map((f) => ({
           path: f.path,
-          tokens: f.tokens ?? ContextBudgetOptimizer.tokenEstimator(resolve(deps.projectRoot, f.path)),
+          tokens:
+            f.tokens ?? ContextBudgetOptimizer.tokenEstimator(resolve(deps.projectRoot, f.path)),
           relevanceScore: f.relevanceScore ?? 0.5,
           recentlyChanged: f.recentlyChanged,
           importedByQueryFiles: f.importedByQueryFiles,
@@ -205,7 +271,11 @@ function registerPlanContextBudgetTool(server: McpServer, deps: McpDependencies)
           couplingScore: f.couplingScore,
           isTestFile: f.isTestFile,
         }));
-        const plan = optimizer.optimize(items, args.budget, args.taskType as ContextTaskType | undefined);
+        const plan = optimizer.optimize(
+          items,
+          args.budget,
+          args.taskType as ContextTaskType | undefined,
+        );
         return json({
           success: true,
           plan: {
@@ -217,9 +287,12 @@ function registerPlanContextBudgetTool(server: McpServer, deps: McpDependencies)
           },
         });
       } catch (error) {
-        return json({ success: false, error: error instanceof Error ? error.message : String(error) });
+        return json({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    }
+    },
   );
 }
 
@@ -234,8 +307,17 @@ function registerCheckKgIntegrityTool(server: McpServer, deps: McpDependencies):
         'WHEN to call: after renames/moves, when imports fail to resolve, or before trusting graph queries.\n' +
         'Set fix=true to apply safe automatic repairs (returns the full report).',
       inputSchema: {
-        fix: z.boolean().default(false).describe('Apply automatic repairs (rename relink, stale-node removal)'),
-        limit: z.number().int().min(1).max(500).default(100).describe('Maximum violations to return'),
+        fix: z
+          .boolean()
+          .default(false)
+          .describe('Apply automatic repairs (rename relink, stale-node removal)'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(500)
+          .default(100)
+          .describe('Maximum violations to return'),
       },
     },
     async (args) => {
@@ -258,9 +340,12 @@ function registerCheckKgIntegrityTool(server: McpServer, deps: McpDependencies):
           violations: violations.slice(0, args.limit),
         });
       } catch (error) {
-        return json({ success: false, error: error instanceof Error ? error.message : String(error) });
+        return json({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    }
+    },
   );
 }
 
@@ -277,9 +362,18 @@ function registerBroadcastIntentTool(server: McpServer, deps: McpDependencies): 
       inputSchema: {
         intentType: z.enum(['read', 'write', 'refactor', 'delete']).describe('What you plan to do'),
         targetFiles: z.array(z.string()).min(1).describe('Files the intent covers'),
-        agentId: z.string().optional().describe('Your agent id (defaults to the server agent name)'),
+        agentId: z
+          .string()
+          .optional()
+          .describe('Your agent id (defaults to the server agent name)'),
         description: z.string().optional().describe('Short human-readable description'),
-        ttlSeconds: z.number().int().min(1).max(86400).optional().describe('Intent lifetime in seconds (default 300)'),
+        ttlSeconds: z
+          .number()
+          .int()
+          .min(1)
+          .max(86400)
+          .optional()
+          .describe('Intent lifetime in seconds (default 300)'),
         expectedChanges: z
           .object({
             signatureChanges: z
@@ -315,9 +409,12 @@ function registerBroadcastIntentTool(server: McpServer, deps: McpDependencies): 
           broadcast,
         });
       } catch (error) {
-        return json({ success: false, error: error instanceof Error ? error.message : String(error) });
+        return json({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    }
+    },
   );
 }
 
@@ -332,18 +429,27 @@ function registerCheckIntentConflictsTool(server: McpServer, deps: McpDependenci
         'WHEN to call: before editing files, right after broadcast_intent or when agent_locks check reports nothing but you still want intent-level coordination.',
       inputSchema: {
         targetFiles: z.array(z.string()).min(1).describe('Files you plan to touch'),
-        agentId: z.string().optional().describe('Your agent id (defaults to the server agent name)'),
+        agentId: z
+          .string()
+          .optional()
+          .describe('Your agent id (defaults to the server agent name)'),
       },
     },
     async (args) => {
       try {
         const service = getSharedBroadcastService(deps.db);
-        const prediction = service.checkConflict(agentIdentity(deps, args.agentId), args.targetFiles);
+        const prediction = service.checkConflict(
+          agentIdentity(deps, args.agentId),
+          args.targetFiles,
+        );
         return json({ success: true, ...prediction });
       } catch (error) {
-        return json({ success: false, error: error instanceof Error ? error.message : String(error) });
+        return json({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    }
+    },
   );
 }
 
@@ -362,8 +468,14 @@ function registerFindPatternsTool(server: McpServer, deps: McpDependencies): voi
         targetProjectId: z.string().describe('Project id to search patterns in (string)'),
         category: z.string().optional().describe('Pattern category filter hint'),
         description: z.string().optional().describe('Pattern description hint'),
-        interfaceName: z.string().optional().describe('Interface name of the query template (defaults to name)'),
-        methodSignatures: z.array(z.string()).optional().describe('Method signatures of the query template'),
+        interfaceName: z
+          .string()
+          .optional()
+          .describe('Interface name of the query template (defaults to name)'),
+        methodSignatures: z
+          .array(z.string())
+          .optional()
+          .describe('Method signatures of the query template'),
         parameters: z.array(z.string()).optional().describe('Parameters of the query template'),
         returnType: z.string().optional().describe('Return type of the query template'),
         limit: z.number().int().min(1).max(50).default(10).describe('Maximum matches'),
@@ -395,7 +507,11 @@ function registerFindPatternsTool(server: McpServer, deps: McpDependencies): voi
           abstractTemplate,
           variants: [],
         });
-        const matches = engine.findSimilarPatternsInProject(queryPattern, args.targetProjectId, deps.db);
+        const matches = engine.findSimilarPatternsInProject(
+          queryPattern,
+          args.targetProjectId,
+          deps.db,
+        );
         return json({
           success: true,
           count: Math.min(matches.length, args.limit),
@@ -413,9 +529,12 @@ function registerFindPatternsTool(server: McpServer, deps: McpDependencies): voi
           })),
         });
       } catch (error) {
-        return json({ success: false, error: error instanceof Error ? error.message : String(error) });
+        return json({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    }
+    },
   );
 }
 

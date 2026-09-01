@@ -19,14 +19,14 @@ export {
 export { logger, type LogLevel } from '../cli/utils/logger.js';
 
 // CLI Shared Utilities (context, services, output, helpers)
-export { 
+export {
   // Context management
   createContext,
   closeContext,
   withContext,
   type CLIContext,
   type ContextFn,
-  
+
   // Service wrappers
   withService,
   withScale,
@@ -34,29 +34,29 @@ export {
   withCoherence,
   withServices,
   type ServiceMap,
-  
+
   // Output formatting
   output,
   formatGenomeScore,
   formatDebtReport,
-  
+
   // Error handling
   handleCliError,
   asyncHandler,
-  
+
   // File operations
   getFilesToCheck,
-  
+
   // Base command class
   BaseCommand,
-  
+
   // Retry utilities
   withRetry,
   type RetryOptions,
-  
+
   // Debug utilities
   debug,
-  
+
   // Agent tracking
   trackAgentTouched,
 } from '../cli/utils/shared.js';

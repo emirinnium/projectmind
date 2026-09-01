@@ -1,4 +1,10 @@
-import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_TOKENS } from './types.js';
+import {
+  LLMProvider,
+  LLMResponse,
+  LLMConfig,
+  DEFAULT_TIMEOUT_MS,
+  DEFAULT_MAX_TOKENS,
+} from './types.js';
 import { validateApiUrl } from './url-validator.js';
 
 export class AnthropicProvider implements LLMProvider {
@@ -27,7 +33,7 @@ export class AnthropicProvider implements LLMProvider {
   async analyze(
     prompt: string,
     systemPrompt?: string,
-    temperature: number = 0.3
+    temperature: number = 0.3,
   ): Promise<LLMResponse> {
     if (!this.isAvailable()) {
       throw new Error('Anthropic API key not configured');
@@ -60,8 +66,11 @@ export class AnthropicProvider implements LLMProvider {
         throw new Error(`Anthropic API error: ${response.status} ${err}`);
       }
 
-      interface AnthropicResponse { content?: Array<{ text: string }>; usage?: { input_tokens: number; output_tokens: number } }
-      const data = await response.json() as AnthropicResponse;
+      interface AnthropicResponse {
+        content?: Array<{ text: string }>;
+        usage?: { input_tokens: number; output_tokens: number };
+      }
+      const data = (await response.json()) as AnthropicResponse;
       const content = data.content?.[0]?.text || '';
       const reasoningTrace = this.extractReasoningTrace(content);
 
@@ -89,7 +98,11 @@ export class AnthropicProvider implements LLMProvider {
       if (line.match(/^\d+\.\s/)) {
         trace.push(line.trim());
         inTrace = true;
-      } else if (line.includes('VERDICT:') || line.includes('CONFIDENCE:') || line.includes('SUGGESTIONS:')) {
+      } else if (
+        line.includes('VERDICT:') ||
+        line.includes('CONFIDENCE:') ||
+        line.includes('SUGGESTIONS:')
+      ) {
         inTrace = false;
       } else if (inTrace && line.trim()) {
         trace.push(line.trim());

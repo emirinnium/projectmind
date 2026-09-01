@@ -48,8 +48,10 @@ export const debtMigrations: Migration[] = [
         .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'files'")
         .get();
       if (filesExists) {
-        const filesColumns = db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>;
-        const hasProjectId = filesColumns.some(c => c.name === 'project_id');
+        const filesColumns = db.prepare('PRAGMA table_info(files)').all() as Array<{
+          name: string;
+        }>;
+        const hasProjectId = filesColumns.some((c) => c.name === 'project_id');
         if (!hasProjectId) {
           db.exec('ALTER TABLE files ADD COLUMN project_id INTEGER DEFAULT 1');
           db.exec('UPDATE files SET project_id = 1 WHERE project_id IS NULL');
@@ -62,8 +64,10 @@ export const debtMigrations: Migration[] = [
         .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'data_flows'")
         .get();
       if (dataFlowsExists) {
-        const dataFlowsColumns = db.prepare("PRAGMA table_info(data_flows)").all() as Array<{ name: string }>;
-        const hasProjectIdDataFlows = dataFlowsColumns.some(c => c.name === 'project_id');
+        const dataFlowsColumns = db.prepare('PRAGMA table_info(data_flows)').all() as Array<{
+          name: string;
+        }>;
+        const hasProjectIdDataFlows = dataFlowsColumns.some((c) => c.name === 'project_id');
         if (!hasProjectIdDataFlows) {
           db.exec('ALTER TABLE data_flows ADD COLUMN project_id INTEGER DEFAULT 1');
           db.exec('UPDATE data_flows SET project_id = 1 WHERE project_id IS NULL');
@@ -135,7 +139,9 @@ export const debtMigrations: Migration[] = [
 
       // 2. coherence_decisions: file_id cascades.
       const decisionsExists = db
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'coherence_decisions'")
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'coherence_decisions'",
+        )
         .get();
       if (decisionsExists) {
         db.exec(`
@@ -189,7 +195,9 @@ export const debtMigrations: Migration[] = [
       }
 
       // 4. Serve imports.ts resolved-path lookups and graph traversal.
-      const importsExists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='imports'").get();
+      const importsExists = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='imports'")
+        .get();
       if (importsExists) {
         db.exec('CREATE INDEX IF NOT EXISTS idx_imports_resolved_path ON imports(resolved_path);');
       }
@@ -223,7 +231,9 @@ export const debtMigrations: Migration[] = [
       }
 
       const decisionsExists = db
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'coherence_decisions'")
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'coherence_decisions'",
+        )
         .get();
       if (decisionsExists) {
         db.exec(`

@@ -78,7 +78,9 @@ export class FastCoherenceAnalyzer {
     suggestions.push(...semanticIssues.suggestions);
 
     if (lines.length > MAX_FILE_LINES) {
-      reasoningTrace.push(`Warning: File exceeds ${MAX_FILE_LINES} lines (${lines.length}) — cognitive load concern`);
+      reasoningTrace.push(
+        `Warning: File exceeds ${MAX_FILE_LINES} lines (${lines.length}) — cognitive load concern`,
+      );
       suggestions.push('Consider splitting this file into smaller modules');
       issues++;
     }
@@ -98,7 +100,13 @@ export class FastCoherenceAnalyzer {
     }
 
     const consoleCount = (options.code.match(/console\.\w+/g) || []).length;
-    const isExcludedPath = options.filePath.includes('/cli/commands/') || options.filePath.includes('\\cli\\commands\\') || options.filePath.includes('/scripts/') || options.filePath.includes('\\scripts\\') || options.filePath.includes('/tests/') || options.filePath.includes('\\tests\\');
+    const isExcludedPath =
+      options.filePath.includes('/cli/commands/') ||
+      options.filePath.includes('\\cli\\commands\\') ||
+      options.filePath.includes('/scripts/') ||
+      options.filePath.includes('\\scripts\\') ||
+      options.filePath.includes('/tests/') ||
+      options.filePath.includes('\\tests\\');
     if (consoleCount > MAX_CONSOLE_COUNT && !isExcludedPath) {
       reasoningTrace.push(`Warning: ${consoleCount} console statements found`);
       suggestions.push('Remove console statements before production');
@@ -110,7 +118,9 @@ export class FastCoherenceAnalyzer {
     let hasContractError = false;
     if (contractViolations.length > 0) {
       for (const violation of contractViolations) {
-        reasoningTrace.push(`[Contract ${violation.severity.toUpperCase()}] ${violation.contractName}: ${violation.message}${violation.line ? ` (line ${violation.line})` : ''}`);
+        reasoningTrace.push(
+          `[Contract ${violation.severity.toUpperCase()}] ${violation.contractName}: ${violation.message}${violation.line ? ` (line ${violation.line})` : ''}`,
+        );
         suggestions.push(`Fix architectural contract violation: ${violation.message}`);
         if (violation.severity === 'error') {
           hasContractError = true;
@@ -123,7 +133,13 @@ export class FastCoherenceAnalyzer {
 
     reasoningTrace.push(`Fast-tier analysis complete. Issues found: ${issues}`);
 
-    const verdict = hasContractError ? 'fail' : issues === 0 ? 'pass' : issues > 2 ? 'fail' : 'warn';
+    const verdict = hasContractError
+      ? 'fail'
+      : issues === 0
+        ? 'pass'
+        : issues > 2
+          ? 'fail'
+          : 'warn';
     const confidence = Math.max(0.3, 0.9 - issues * 0.15);
 
     const result: CoherenceResult = {
@@ -142,25 +158,36 @@ export class FastCoherenceAnalyzer {
   }
 
   private storeDecision(codeHash: string, result: CoherenceResult, filePath: string): void {
-    const fileRow = this.db.prepare('SELECT id FROM files WHERE path = ?').get(filePath) as { id: number } | undefined;
+    const fileRow = this.db.prepare('SELECT id FROM files WHERE path = ?').get(filePath) as
+      { id: number } | undefined;
     const reasoningJson = JSON.stringify(result.reasoningTrace);
     const suggestionsJson = JSON.stringify(result.suggestions);
 
-    const existing = this.db.prepare('SELECT id FROM coherence_decisions WHERE code_hash = ?').get(codeHash) as { id: number } | undefined;
+    const existing = this.db
+      .prepare('SELECT id FROM coherence_decisions WHERE code_hash = ?')
+      .get(codeHash) as { id: number } | undefined;
 
     if (existing) {
       this.db
         .prepare(
           `UPDATE coherence_decisions SET verdict = ?, confidence = ?, reasoning_trace = ?, suggestions = ?, 
-           llm_provider = ?, response_time_ms = ?, analyzed_at = CURRENT_TIMESTAMP WHERE id = ?`
+           llm_provider = ?, response_time_ms = ?, analyzed_at = CURRENT_TIMESTAMP WHERE id = ?`,
         )
-        .run(result.verdict, result.confidence, reasoningJson, suggestionsJson, result.llmProvider, result.responseTimeMs, existing.id);
+        .run(
+          result.verdict,
+          result.confidence,
+          reasoningJson,
+          suggestionsJson,
+          result.llmProvider,
+          result.responseTimeMs,
+          existing.id,
+        );
     } else {
       this.db
         .prepare(
           `INSERT INTO coherence_decisions 
            (file_id, code_hash, verdict, confidence, reasoning_trace, suggestions, llm_provider, response_time_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           fileRow?.id ?? null,
@@ -170,7 +197,7 @@ export class FastCoherenceAnalyzer {
           reasoningJson,
           suggestionsJson,
           result.llmProvider,
-          result.responseTimeMs
+          result.responseTimeMs,
         );
     }
   }
@@ -179,7 +206,10 @@ export class FastCoherenceAnalyzer {
   /**
    * Perform semantic analysis on the code.
    */
-  private semanticAnalysis(code: string, filePath: string): {
+  private semanticAnalysis(
+    code: string,
+    filePath: string,
+  ): {
     issues: number;
     reasoningTrace: string[];
     suggestions: string[];
@@ -192,12 +222,16 @@ export class FastCoherenceAnalyzer {
     const functionMatches = code.match(/function\s+([a-zA-Z0-9_]+)\s*\(/g) || [];
     const arrowFunctionMatches = code.match(/([a-zA-Z0-9_]+)\s*=\s*\(?[^)]*\)?\s*=>/g) || [];
     const allFunctions = [...functionMatches, ...arrowFunctionMatches];
-    
-    const camelCaseFunctions = allFunctions.filter(f => /function\s+[a-z][a-zA-Z0-9]*\(/.test(f) || /^[a-z][a-zA-Z0-9]*\s*=/.test(f));
+
+    const camelCaseFunctions = allFunctions.filter(
+      (f) => /function\s+[a-z][a-zA-Z0-9]*\(/.test(f) || /^[a-z][a-zA-Z0-9]*\s*=/.test(f),
+    );
     const nonCamelCaseFunctions = allFunctions.length - camelCaseFunctions.length;
-    
+
     if (nonCamelCaseFunctions > 0) {
-      reasoningTrace.push(`Warning: ${nonCamelCaseFunctions} functions do not follow camelCase naming convention`);
+      reasoningTrace.push(
+        `Warning: ${nonCamelCaseFunctions} functions do not follow camelCase naming convention`,
+      );
       suggestions.push('Rename functions to follow camelCase convention');
       issues += nonCamelCaseFunctions;
     }
@@ -206,12 +240,12 @@ export class FastCoherenceAnalyzer {
     const variableMatches = code.match(/const\s+([a-zA-Z0-9_]+)\s*=/g) || [];
     const letMatches = code.match(/let\s+([a-zA-Z0-9_]+)\s*=/g) || [];
     const allVariables = [...variableMatches, ...letMatches];
-    
-    const usedVariables = allVariables.filter(v => {
+
+    const usedVariables = allVariables.filter((v) => {
       const varName = v.split(/\s+/)[1];
       return code.includes(varName) && !code.includes(`// ${varName} unused`);
     });
-    
+
     const unusedVariables = allVariables.length - usedVariables.length;
     if (unusedVariables > 0) {
       reasoningTrace.push(`Warning: ${unusedVariables} unused variables detected`);
@@ -221,13 +255,15 @@ export class FastCoherenceAnalyzer {
 
     // Check for complex functions (cyclomatic complexity)
     const functionBodies = code.match(/function\s*[^{]*{([\s\S]*?)}/g) || [];
-    const complexFunctions = functionBodies.filter(body => {
+    const complexFunctions = functionBodies.filter((body) => {
       const decisionPoints = body.match(/\b(if|for|while|case|catch|\?|&&|\|\|)\b/g) || [];
       return decisionPoints.length > MAX_DECISION_POINTS;
     });
 
     if (complexFunctions.length > 0) {
-      reasoningTrace.push(`Warning: ${complexFunctions.length} functions with high cyclomatic complexity (>${MAX_DECISION_POINTS} decision points)`);
+      reasoningTrace.push(
+        `Warning: ${complexFunctions.length} functions with high cyclomatic complexity (>${MAX_DECISION_POINTS} decision points)`,
+      );
       suggestions.push('Refactor complex functions into smaller, more manageable pieces');
       issues += complexFunctions.length;
     }
@@ -235,7 +271,9 @@ export class FastCoherenceAnalyzer {
     // Check for type usage
     const typeUsage = (code.match(/\b[A-Z][a-zA-Z0-9]*\b/g) || []).length;
     if (typeUsage < 5 && filePath.endsWith('.ts')) {
-      reasoningTrace.push(`Warning: Low type usage in TypeScript file (${typeUsage} types detected)`);
+      reasoningTrace.push(
+        `Warning: Low type usage in TypeScript file (${typeUsage} types detected)`,
+      );
       suggestions.push('Consider using more specific types for better type safety');
       issues++;
     }

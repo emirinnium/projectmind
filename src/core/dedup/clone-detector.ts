@@ -64,7 +64,11 @@ function collectDeclaredNames(fn: ts.Node): Set<string> {
       if (ts.isIdentifier(node.name)) {
         names.add(node.name.text);
       }
-    } else if ((ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) && node.name && node !== fn) {
+    } else if (
+      (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) &&
+      node.name &&
+      node !== fn
+    ) {
       names.add(node.name.text);
     }
     ts.forEachChild(node, visit);
@@ -78,10 +82,14 @@ function collectDeclaredNames(fn: ts.Node): Set<string> {
  * positional placeholders so two renamed copies produce identical text.
  */
 function normalizeBody(bodyText: string, declaredNames: Set<string>): string {
-  return bodyText.replace(/\b[A-Za-z_$][\w$]*\b/g, (ident) => (declaredNames.has(ident) ? '_ID' : ident));
+  return bodyText.replace(/\b[A-Za-z_$][\w$]*\b/g, (ident) =>
+    declaredNames.has(ident) ? '_ID' : ident,
+  );
 }
 
-function* walkFunctionLike(sf: ts.SourceFile): Generator<{ node: ts.Node & { body?: ts.Node }; name: string }> {
+function* walkFunctionLike(
+  sf: ts.SourceFile,
+): Generator<{ node: ts.Node & { body?: ts.Node }; name: string }> {
   // Recursive collector flattened into a generator (no delegation needed).
   const found: Array<{ node: ts.Node & { body?: ts.Node }; name: string }> = [];
   const collect = (node: ts.Node): void => {
@@ -90,8 +98,15 @@ function* walkFunctionLike(sf: ts.SourceFile): Generator<{ node: ts.Node & { bod
       found.push({ node, name: node.name.getText(sf) });
     else if (ts.isVariableStatement(node)) {
       for (const decl of node.declarationList.declarations) {
-        if (ts.isIdentifier(decl.name) && decl.initializer && ts.isArrowFunction(decl.initializer)) {
-          found.push({ node: decl.initializer as ts.Node & { body?: ts.Node }, name: decl.name.text });
+        if (
+          ts.isIdentifier(decl.name) &&
+          decl.initializer &&
+          ts.isArrowFunction(decl.initializer)
+        ) {
+          found.push({
+            node: decl.initializer as ts.Node & { body?: ts.Node },
+            name: decl.name.text,
+          });
         }
       }
     }
@@ -136,7 +151,12 @@ export class CloneDetector {
         continue;
       }
       if (!/\.[cm]?[jt]sx?$/i.test(relPath)) continue;
-      const sf = ts.createSourceFile(abs, content, ts.ScriptTarget.Latest, /*setParentNodes*/ false);
+      const sf = ts.createSourceFile(
+        abs,
+        content,
+        ts.ScriptTarget.Latest,
+        /*setParentNodes*/ false,
+      );
 
       for (const unit of this.extractUnits(sf)) {
         scannedFunctions++;

@@ -1,28 +1,28 @@
 /**
  * Database connection management for ProjectMind.
- * 
+ *
  * Provides two patterns:
  * 1. **Singleton** (default, backward-compatible) - via {@link initDatabase}, {@link getDatabase}
  * 2. **Dependency Injection** - via {@link DatabaseManager} class
- * 
+ *
  * Features:
  * - WAL mode for concurrent reads
  * - Statement caching for hot paths
  * - Nested transaction support via SAVEPOINT
  * - Automatic migration on startup
- * 
+ *
  * @example
  * ```typescript
  * // Singleton usage (existing code)
  * const db = initDatabase('./pm-knowledge.db');
- * 
+ *
  * // Dependency injection (new code)
  * const manager = new DatabaseManager('./test.db');
  * const db = manager.init();
  * manager.runInTransaction(() => { ... });
  * manager.close();
  * ```
- * 
+ *
  * @module storage/database
  */
 

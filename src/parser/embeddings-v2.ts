@@ -4,7 +4,13 @@ import { logger } from '../utils/logger.js';
 import { VectorIndex } from '../core/embeddings/vector-index.js';
 
 // Re-export base utilities
-export { cosineSimilarity, vectorDistance, findSimilar, clearEmbeddingCache, getEmbeddingCacheStats } from './legacy-embeddings.js';
+export {
+  cosineSimilarity,
+  vectorDistance,
+  findSimilar,
+  clearEmbeddingCache,
+  getEmbeddingCacheStats,
+} from './legacy-embeddings.js';
 export type { EmbeddingVector } from './legacy-embeddings.js';
 
 // Global vector index
@@ -30,7 +36,10 @@ let codebertSession: InferenceSession | null = null;
 let openaiApiKey: string | undefined = undefined;
 let openaiModel: string = 'text-embedding-3-small';
 
-type TransformerPipeline = (text: string, options?: { pooling?: string; normalize?: boolean }) => Promise<{ data: Float32Array }>;
+type TransformerPipeline = (
+  text: string,
+  options?: { pooling?: string; normalize?: boolean },
+) => Promise<{ data: Float32Array }>;
 let transformersPipeline: TransformerPipeline | null = null;
 
 type InferenceSession = {
@@ -55,7 +64,9 @@ async function getOrtModule(): Promise<OrtModule | null> {
 function getDefaultModelPath(provider: 'unixcoder' | 'codebert'): string {
   try {
     const config = loadConfig();
-    return provider === 'unixcoder' ? config.embeddings.unixcoderModelPath : config.embeddings.codebertModelPath;
+    return provider === 'unixcoder'
+      ? config.embeddings.unixcoderModelPath
+      : config.embeddings.codebertModelPath;
   } catch {
     return provider === 'unixcoder' ? 'models/unixcoder-base.onnx' : 'models/codebert-base.onnx';
   }
@@ -101,11 +112,16 @@ export async function initEmbeddingProvider(options: EmbeddingOptions = {}): Pro
     try {
       const modelName = options.transformersModel || 'Xenova/all-MiniLM-L6-v2';
       const { pipeline } = await import('@xenova/transformers');
-      transformersPipeline = await pipeline('feature-extraction', modelName) as TransformerPipeline;
+      transformersPipeline = (await pipeline(
+        'feature-extraction',
+        modelName,
+      )) as TransformerPipeline;
       currentProvider = 'transformers';
       logger.info(`Transformers.js embedding provider initialized (model: ${modelName})`);
     } catch (e) {
-      logger.warn(`Failed to initialize Transformers.js, falling back to simple embeddings: ${e instanceof Error ? e.message : String(e)}`);
+      logger.warn(
+        `Failed to initialize Transformers.js, falling back to simple embeddings: ${e instanceof Error ? e.message : String(e)}`,
+      );
       currentProvider = 'simple';
     }
     return;
@@ -113,7 +129,9 @@ export async function initEmbeddingProvider(options: EmbeddingOptions = {}): Pro
 
   if (provider === 'unixcoder') {
     try {
-      const ortModule = (await getOrtModule()) as { InferenceSession: new (path: string) => InferenceSession } | null;
+      const ortModule = (await getOrtModule()) as {
+        InferenceSession: new (path: string) => InferenceSession;
+      } | null;
       if (!ortModule) {
         logger.warn('onnxruntime-node not installed, falling back to simple embeddings');
         currentProvider = 'simple';
@@ -129,7 +147,9 @@ export async function initEmbeddingProvider(options: EmbeddingOptions = {}): Pro
       currentProvider = 'unixcoder';
       logger.info('UniXcoder embedding provider initialized');
     } catch (e) {
-      logger.warn(`Failed to initialize UniXcoder, falling back to simple embeddings: ${e instanceof Error ? e.message : String(e)}`);
+      logger.warn(
+        `Failed to initialize UniXcoder, falling back to simple embeddings: ${e instanceof Error ? e.message : String(e)}`,
+      );
       currentProvider = 'simple';
     }
     return;
@@ -137,7 +157,9 @@ export async function initEmbeddingProvider(options: EmbeddingOptions = {}): Pro
 
   if (provider === 'codebert') {
     try {
-      const ortModule = (await getOrtModule()) as { InferenceSession: new (path: string) => InferenceSession } | null;
+      const ortModule = (await getOrtModule()) as {
+        InferenceSession: new (path: string) => InferenceSession;
+      } | null;
       if (!ortModule) {
         logger.warn('onnxruntime-node not installed, falling back to simple embeddings');
         currentProvider = 'simple';
@@ -153,7 +175,9 @@ export async function initEmbeddingProvider(options: EmbeddingOptions = {}): Pro
       currentProvider = 'codebert';
       logger.info('CodeBERT embedding provider initialized');
     } catch (e) {
-      logger.warn(`Failed to initialize CodeBERT, falling back to simple embeddings: ${e instanceof Error ? e.message : String(e)}`);
+      logger.warn(
+        `Failed to initialize CodeBERT, falling back to simple embeddings: ${e instanceof Error ? e.message : String(e)}`,
+      );
       currentProvider = 'simple';
     }
     return;
@@ -172,9 +196,14 @@ export function getCurrentProvider(): EmbeddingProvider {
 /**
  * Generate embedding for text using the current provider
  */
-export async function generateEmbedding(text: string, dim: number = 768, indexId?: string, metadata?: Record<string, string | number | boolean | null>): Promise<number[]> {
+export async function generateEmbedding(
+  text: string,
+  dim: number = 768,
+  indexId?: string,
+  metadata?: Record<string, string | number | boolean | null>,
+): Promise<number[]> {
   let embedding: number[];
-  
+
   if (currentProvider === 'transformers' && transformersPipeline) {
     embedding = await generateTransformersEmbedding(text, dim);
   } else if (currentProvider === 'openai' && openaiApiKey) {
@@ -188,12 +217,12 @@ export async function generateEmbedding(text: string, dim: number = 768, indexId
     const { codeToEmbedding } = await import('./legacy-embeddings.js');
     embedding = codeToEmbedding(text, dim);
   }
-  
+
   // Add to vector index if indexId is provided
   if (indexId) {
     vectorIndex.addVector(indexId, embedding, metadata || {});
   }
-  
+
   return embedding;
 }
 
@@ -215,7 +244,7 @@ export const MAX_EMBEDDING_BATCH = 32;
 export async function generateEmbeddingBatch(
   texts: readonly string[],
   dim: number = 768,
-  opts: { indexIds?: string[]; metadata?: Record<string, string | number | boolean | null> } = {}
+  opts: { indexIds?: string[]; metadata?: Record<string, string | number | boolean | null> } = {},
 ): Promise<number[][]> {
   const chunk = texts.slice(0, MAX_EMBEDDING_BATCH);
   const out: number[][] = [];
@@ -228,7 +257,10 @@ export async function generateEmbeddingBatch(
 /**
  * Find similar vectors in the index.
  */
-export function findSimilarInIndex(queryVector: number[], limit: number = 5): Array<{
+export function findSimilarInIndex(
+  queryVector: number[],
+  limit: number = 5,
+): Array<{
   id: string;
   score: number;
   metadata: Record<string, string | number | boolean | null>;
@@ -342,7 +374,10 @@ async function generateTransformersEmbedding(text: string, dim: number): Promise
     throw new Error('Transformers.js pipeline not initialized');
   }
 
-  const pipe = transformersPipeline as (text: string, options?: { pooling?: string; normalize?: boolean }) => Promise<{ data: Float32Array }>;
+  const pipe = transformersPipeline as (
+    text: string,
+    options?: { pooling?: string; normalize?: boolean },
+  ) => Promise<{ data: Float32Array }>;
   const result = await pipe(text, { pooling: 'mean', normalize: true });
   const embedding = Array.from(result.data).slice(0, dim);
 
@@ -365,7 +400,7 @@ async function generateOpenAIEmbedding(text: string): Promise<number[]> {
   const response = await fetch('https://api.openai.com/v1/embeddings', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${openaiApiKey}`,
+      Authorization: `Bearer ${openaiApiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -379,7 +414,7 @@ async function generateOpenAIEmbedding(text: string): Promise<number[]> {
     throw new Error(`OpenAI API error: ${response.status} ${error}`);
   }
 
-  const data = await response.json() as {
+  const data = (await response.json()) as {
     data: Array<{ embedding: number[] }>;
   };
   if (!data?.data?.[0]?.embedding) {

@@ -14,10 +14,17 @@ import { createProgressReporter } from './progress.js';
  */
 
 const inputSchema = {
-  action: z.enum(['stats', 'pagerank', 'communities', 'subgraph', 'path', 'impact', 'bfs']).describe(
-    'Graph operation: stats=nodes/edges overview, pagerank=critical files by score, communities=module clusters, subgraph=N-hop neighborhood around file, path=shortest import chain from→to, impact=direct+transitive affected set of file, bfs=traversal from file'
-  ),
-  file: z.string().optional().describe('File path (relative or absolute) — required for subgraph/impact/bfs, endpoint for path'),
+  action: z
+    .enum(['stats', 'pagerank', 'communities', 'subgraph', 'path', 'impact', 'bfs'])
+    .describe(
+      'Graph operation: stats=nodes/edges overview, pagerank=critical files by score, communities=module clusters, subgraph=N-hop neighborhood around file, path=shortest import chain from→to, impact=direct+transitive affected set of file, bfs=traversal from file',
+    ),
+  file: z
+    .string()
+    .optional()
+    .describe(
+      'File path (relative or absolute) — required for subgraph/impact/bfs, endpoint for path',
+    ),
   to: z.string().optional().describe('Target file path — required for action=path'),
   hops: z.number().default(2).describe('Radius for subgraph / depth for bfs (default 2)'),
   limit: z.number().default(15).describe('Max results for pagerank/communities listing'),
@@ -70,7 +77,11 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
               success: true,
               action: 'pagerank',
               note: 'Higher score = more the rest of the graph depends on this file. Change carefully.',
-              topFiles: ranked.map((r) => ({ rank: r.rank, path: r.path, score: Number(r.score.toFixed(6)) })),
+              topFiles: ranked.map((r) => ({
+                rank: r.rank,
+                path: r.path,
+                score: Number(r.score.toFixed(6)),
+              })),
             });
           }
           case 'communities': {
@@ -96,7 +107,10 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
           case 'bfs': {
             const f = resolveFile(args.file);
             if (!f) {
-              return json({ success: false, error: `'file' is required for action='${args.action}' and must exist in the knowledge graph (run scan_project first).` });
+              return json({
+                success: false,
+                error: `'file' is required for action='${args.action}' and must exist in the knowledge graph (run scan_project first).`,
+              });
             }
             if (args.action === 'subgraph') {
               await progress(50, 100, `extracting ${args.hops}-hop subgraph`);
@@ -109,7 +123,11 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
                 radius: sg.radius,
                 nodeCount: sg.nodes.length,
                 // Node ids are included so `edges` (file-id pairs) are joinable.
-                nodes: sg.nodes.map((n) => ({ id: n.id, path: n.relativePath || n.path, load: n.cognitiveLoad })),
+                nodes: sg.nodes.map((n) => ({
+                  id: n.id,
+                  path: n.relativePath || n.path,
+                  load: n.cognitiveLoad,
+                })),
                 edges: sg.edges.map((e) => ({ from: e.from, to: e.to, type: e.type })),
               });
             }
@@ -124,10 +142,14 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
                 file: f.rel,
                 directDependents: ir.direct,
                 transitiveDependents: ir.transitive,
-                affected: ir.affected.slice(0, Math.max(1, args.limit)).map((n) => ({ path: n.relativePath || n.path, load: n.cognitiveLoad })),
+                affected: ir.affected
+                  .slice(0, Math.max(1, args.limit))
+                  .map((n) => ({ path: n.relativePath || n.path, load: n.cognitiveLoad })),
                 tests: {
                   count: tests.length,
-                  files: tests.slice(0, Math.max(1, args.limit)).map((n) => n.relativePath || n.path),
+                  files: tests
+                    .slice(0, Math.max(1, args.limit))
+                    .map((n) => n.relativePath || n.path),
                   note: 'Direct test files importing this source — run these after changing it.',
                 },
               });
@@ -140,14 +162,20 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
               action: 'bfs',
               start: f.rel,
               visitedDepth: t.depth,
-              visited: t.visited.slice(0, Math.max(1, args.limit)).map((n) => n.relativePath || n.path),
+              visited: t.visited
+                .slice(0, Math.max(1, args.limit))
+                .map((n) => n.relativePath || n.path),
             });
           }
           case 'path': {
             const from = resolveFile(args.file);
             const to = resolveFile(args.to);
             if (!from || !to) {
-              return json({ success: false, error: "action='path' requires both 'file' (from) and 'to' to exist in the knowledge graph." });
+              return json({
+                success: false,
+                error:
+                  "action='path' requires both 'file' (from) and 'to' to exist in the knowledge graph.",
+              });
             }
             await progress(50, 100, 'searching shortest path');
             const p = g.shortestPath(from.id, to.id, 20);
@@ -163,8 +191,11 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
           }
         }
       } catch (error) {
-        return json({ success: false, error: error instanceof Error ? error.message : String(error) });
+        return json({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    }
+    },
   );
 }

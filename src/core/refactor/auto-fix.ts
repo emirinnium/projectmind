@@ -36,15 +36,24 @@ export interface AutoFixResult {
 }
 
 const FIXERS: FixerMeta[] = [
-  { id: 'organize-imports', description: 'Sort imports: externals before relatives, alphabetical; comments preserved' },
+  {
+    id: 'organize-imports',
+    description: 'Sort imports: externals before relatives, alphabetical; comments preserved',
+  },
   { id: 'dedupe-imports', description: 'Merge duplicate import statements from the same module' },
-  { id: 'remove-unused-imports', description: 'Remove imported bindings with zero references elsewhere in the file' },
+  {
+    id: 'remove-unused-imports',
+    description: 'Remove imported bindings with zero references elsewhere in the file',
+  },
   {
     id: 'add-return-types',
     description:
       'Add explicit return types to functions/methods missing one (checker-inferred; safe literals/Promise-of-safe-literal only)',
   },
-  { id: 'var-to-const', description: 'Convert var declarations to const where provably never reassigned' },
+  {
+    id: 'var-to-const',
+    description: 'Convert var declarations to const where provably never reassigned',
+  },
 ];
 
 interface ImportEntry {
@@ -92,7 +101,9 @@ function collectImports(sf: ts.SourceFile): ImportEntry[] {
   return out;
 }
 
-function renderImport(entry: Pick<ImportEntry, 'defaultName' | 'namespaceName' | 'namedSpecifiers' | 'moduleSpecifier'>): string {
+function renderImport(
+  entry: Pick<ImportEntry, 'defaultName' | 'namespaceName' | 'namedSpecifiers' | 'moduleSpecifier'>,
+): string {
   // Side-effect-only import (no bindings at all).
   if (!entry.defaultName && !entry.namespaceName && entry.namedSpecifiers.length === 0) {
     return `import '${entry.moduleSpecifier}';`;
@@ -159,15 +170,25 @@ export class AutoFixEngine {
   run(fixerId: string, filePath: string, opts: { write?: boolean } = {}): AutoFixResult {
     const meta = FIXERS.find((f) => f.id === fixerId);
     if (!meta && fixerId !== 'all') {
-      throw new Error(`Unknown fixer '${fixerId}'. Available: ${FIXERS.map((f) => f.id).join(', ')}, all`);
+      throw new Error(
+        `Unknown fixer '${fixerId}'. Available: ${FIXERS.map((f) => f.id).join(', ')}, all`,
+      );
     }
 
     const abs = resolve(this.projectRoot, filePath);
     const original = readFileSync(abs, 'utf-8');
     // Deterministic execution order: type analysis must see pre-import-fix
     // line numbers (it reads the on-disk file), so it runs FIRST.
-    const ORDER = ['add-return-types', 'organize-imports', 'dedupe-imports', 'remove-unused-imports', 'var-to-const'];
-    const ids = (meta ? [meta.id] : FIXERS.map((f) => f.id)).sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
+    const ORDER = [
+      'add-return-types',
+      'organize-imports',
+      'dedupe-imports',
+      'remove-unused-imports',
+      'var-to-const',
+    ];
+    const ids = (meta ? [meta.id] : FIXERS.map((f) => f.id)).sort(
+      (a, b) => ORDER.indexOf(a) - ORDER.indexOf(b),
+    );
 
     let current = original;
     for (const id of ids) {
@@ -187,22 +208,31 @@ export class AutoFixEngine {
       changed,
       diff,
       written: changed && !!opts.write,
-      ...(changed
-        ? {}
-        : { reason: 'nothing to do' }),
-      ...(changed && !opts.write ? { reason: 'preview-only: re-run with write:true / --apply to persist' } : {}),
+      ...(changed ? {} : { reason: 'nothing to do' }),
+      ...(changed && !opts.write
+        ? { reason: 'preview-only: re-run with write:true / --apply to persist' }
+        : {}),
     };
   }
 
   private applyOne(fixerId: string, content: string, absPath: string): string {
-    const sf = ts.createSourceFile(absPath, content, ts.ScriptTarget.Latest, /*setParentNodes*/ false);
+    const sf = ts.createSourceFile(
+      absPath,
+      content,
+      ts.ScriptTarget.Latest,
+      /*setParentNodes*/ false,
+    );
     const imports = collectImports(sf);
 
     // Import-region guard applies ONLY to import fixers — the type/keyword
     // fixers operate on function bodies and must run on import-less files too.
     let firstFullStart = 0;
     let lastEnd = 0;
-    if (fixerId === 'organize-imports' || fixerId === 'dedupe-imports' || fixerId === 'remove-unused-imports') {
+    if (
+      fixerId === 'organize-imports' ||
+      fixerId === 'dedupe-imports' ||
+      fixerId === 'remove-unused-imports'
+    ) {
       if (imports.length === 0) return content;
 
       // Guard: imports must form a leading block so rebuilding the region
@@ -226,9 +256,7 @@ export class AutoFixEngine {
         });
         const sameOrder = sorted.every((s, i) => s.start === imports[i].start);
         if (sameOrder) return content;
-        const block = sorted
-          .map((s) => content.slice(s.fullStart, s.end).trimEnd())
-          .join('\n');
+        const block = sorted.map((s) => content.slice(s.fullStart, s.end).trimEnd()).join('\n');
         return content.slice(0, firstFullStart) + block + content.slice(lastEnd);
       }
 
@@ -256,7 +284,11 @@ export class AutoFixEngine {
 
         const kept = [...byModule.values()];
         kept.sort((a, b) =>
-          a.isExternal === b.isExternal ? a.moduleSpecifier.localeCompare(b.moduleSpecifier) : a.isExternal ? -1 : 1
+          a.isExternal === b.isExternal
+            ? a.moduleSpecifier.localeCompare(b.moduleSpecifier)
+            : a.isExternal
+              ? -1
+              : 1,
         );
         const block = kept.map(renderImport).join('\n');
         return content.slice(0, firstFullStart) + block + content.slice(lastEnd);
@@ -283,11 +315,21 @@ export class AutoFixEngine {
           const keepDefault = !!imp.defaultName && used.has(imp.defaultName);
           const keepNs = !!imp.namespaceName && used.has(imp.namespaceName);
           const named = imp.namedSpecifiers.filter((spec) => used.has(localBindingName(spec)));
-          if ((imp.defaultName && !keepDefault) || (imp.namespaceName && !keepNs) || named.length !== imp.namedSpecifiers.length) {
+          if (
+            (imp.defaultName && !keepDefault) ||
+            (imp.namespaceName && !keepNs) ||
+            named.length !== imp.namedSpecifiers.length
+          ) {
             removedAny = true;
           }
-          const next = { ...imp, defaultName: keepDefault ? imp.defaultName : null, namespaceName: keepNs ? imp.namespaceName : null, namedSpecifiers: named };
-          const empty = !next.defaultName && !next.namespaceName && next.namedSpecifiers.length === 0;
+          const next = {
+            ...imp,
+            defaultName: keepDefault ? imp.defaultName : null,
+            namespaceName: keepNs ? imp.namespaceName : null,
+            namedSpecifiers: named,
+          };
+          const empty =
+            !next.defaultName && !next.namespaceName && next.namedSpecifiers.length === 0;
           if (empty) continue; // drop entire import line
           survivors.push(renderImport(next));
         }
@@ -348,14 +390,21 @@ export class AutoFixEngine {
         const cur = ts.createSourceFile(absPath, content, ts.ScriptTarget.Latest, false);
         const edits: Array<{ start: number; end: number; text: string }> = [];
         const applyPositions = (node: ts.Node): void => {
-          if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) && node.body && !node.type && node.name && !ts.isComputedPropertyName(node.name)) {
+          if (
+            (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) &&
+            node.body &&
+            !node.type &&
+            node.name &&
+            !ts.isComputedPropertyName(node.name)
+          ) {
             const line = cur.getLineAndCharacterOfPosition(node.getStart(cur)).line + 1;
             const t = inferred.get(`${line}:${node.name.getText(cur)}`);
             if (t) {
               // Insert right after the parameter list's closing paren.
               let idx = node.parameters.end;
               while (idx < content.length && content[idx] !== ')') idx++;
-              if (idx < content.length) edits.push({ start: idx + 1, end: idx + 1, text: `: ${t}` });
+              if (idx < content.length)
+                edits.push({ start: idx + 1, end: idx + 1, text: `: ${t}` });
             }
           }
           ts.forEachChild(node, applyPositions);
@@ -380,11 +429,17 @@ export class AutoFixEngine {
         }
         const candidates: VarCandidate[] = [];
         const visit = (node: ts.Node): void => {
-          if (ts.isVariableStatement(node) && !(node.declarationList.flags & ts.NodeFlags.BlockScoped)) {
+          if (
+            ts.isVariableStatement(node) &&
+            !(node.declarationList.flags & ts.NodeFlags.BlockScoped)
+          ) {
             // var only (let/const are BlockScoped). All bindings need an
             // initializer and a plain identifier name.
             const decls = node.declarationList.declarations;
-            if (decls.length > 0 && decls.every((d) => d.initializer !== undefined && ts.isIdentifier(d.name))) {
+            if (
+              decls.length > 0 &&
+              decls.every((d) => d.initializer !== undefined && ts.isIdentifier(d.name))
+            ) {
               candidates.push({
                 kwPos: node.declarationList.getStart(cur),
                 stmtStart: node.getStart(cur),
@@ -408,9 +463,11 @@ export class AutoFixEngine {
 
         const convertible = candidates.filter((c) =>
           c.names.every((nm) => {
-            const reassign = new RegExp(`\\b${nm.replace(/\$/g, '\\$')}\\b\\s*(=[^=]|\\+=|-=|\\*=|/=|%=|\\+\\+|--)`);
+            const reassign = new RegExp(
+              `\\b${nm.replace(/\$/g, '\\$')}\\b\\s*(=[^=]|\\+=|-=|\\*=|/=|%=|\\+\\+|--)`,
+            );
             return !reassign.test(maskedText);
-          })
+          }),
         );
         if (convertible.length === 0) return content;
 

@@ -130,7 +130,8 @@ export function annotateToolRegistration(server: McpServer): void {
     cfg._meta = toolCacheHintMeta(name)._meta as Record<string, JsonLike>;
     if (DEDICATED_READ_ONLY.has(name)) {
       const openWorld = !READ_ONLY_OPEN_WORLD_EXCEPTIONS.has(name);
-      const annotations = (cfg as Record<string, JsonLike>).annotations as Record<string, JsonLike> | undefined;
+      const annotations = (cfg as Record<string, JsonLike>).annotations as
+        Record<string, JsonLike> | undefined;
       (cfg as Record<string, JsonLike>).annotations = {
         ...(annotations?.title ? {} : { title: humanizeToolName(name) }),
         readOnlyHint: true,
@@ -153,21 +154,45 @@ export function annotateToolRegistration(server: McpServer): void {
  * generate, ...) are deliberately excluded and stay unannotated.
  */
 const PARITY_READ_ONLY_ROOTS = new Set([
-  'report', 'genome', 'scale', 'health', 'heatmap', 'ownership',
-  'search', 'impact', 'context', 'audit', 'license', 'graph',
-  'churn', 'api-surface', 'dedup', 'debug', 'coupling',
-  'refactor-roi', 'context-budget', 'pr-preview', 'doctor',
-  'debt-prioritize', 'flags', 'skill-recommend', 'test-quality',
-  'sbom', 'deps-fresh', 'secrets-life',
+  'report',
+  'genome',
+  'scale',
+  'health',
+  'heatmap',
+  'ownership',
+  'search',
+  'impact',
+  'context',
+  'audit',
+  'license',
+  'graph',
+  'churn',
+  'api-surface',
+  'dedup',
+  'debug',
+  'coupling',
+  'refactor-roi',
+  'context-budget',
+  'pr-preview',
+  'doctor',
+  'debt-prioritize',
+  'flags',
+  'skill-recommend',
+  'test-quality',
+  'sbom',
+  'deps-fresh',
+  'secrets-life',
 ]);
 
 /** Full annotation set for a parity tool identified by its CLI path, if read-only. */
-export function parityAnnotations(path: string[]): {
-  readOnlyHint: boolean;
-  idempotentHint: boolean;
-  destructiveHint: boolean;
-  openWorldHint?: boolean;
-} | undefined {
+export function parityAnnotations(path: string[]):
+  | {
+      readOnlyHint: boolean;
+      idempotentHint: boolean;
+      destructiveHint: boolean;
+      openWorldHint?: boolean;
+    }
+  | undefined {
   if (path.length > 0 && PARITY_READ_ONLY_ROOTS.has(path[0])) {
     const openWorld = !PARITY_OPEN_WORLD_EXCEPTIONS.has(path[0]);
     return {

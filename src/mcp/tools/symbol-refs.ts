@@ -53,7 +53,9 @@ export interface FindSymbolReferencesResult {
  */
 function pickDeclarationPosition(sourceText: string, symbol: string): number {
   const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const declPattern = new RegExp(`\\b(?:class|interface|function|enum|type|const|let|var)\\s+${escaped}\\b`);
+  const declPattern = new RegExp(
+    `\\b(?:class|interface|function|enum|type|const|let|var)\\s+${escaped}\\b`,
+  );
   const declMatch = declPattern.exec(sourceText);
   if (declMatch) return declMatch.index;
 
@@ -64,7 +66,10 @@ function pickDeclarationPosition(sourceText: string, symbol: string): number {
 
 /** Resolve a character offset to 1-based line/column plus a trimmed snippet.
  *  Mirrors `describeSpan` in src/cli/commands/refs.ts. */
-function describeSpan(text: string, start: number): { line: number; column: number; snippet: string } {
+function describeSpan(
+  text: string,
+  start: number,
+): { line: number; column: number; snippet: string } {
   const before = text.slice(0, start);
   const line = before.split(/\r?\n/).length;
   const lastNewline = before.lastIndexOf('\n');
@@ -88,7 +93,7 @@ function describeSpan(text: string, start: number): { line: number; column: numb
  */
 export function findSymbolReferencesForTool(
   deps: McpDependencies,
-  args: FindSymbolReferencesArgs
+  args: FindSymbolReferencesArgs,
 ): FindSymbolReferencesResult {
   const absPath = confineToProject(args.file, deps.projectRoot);
 
@@ -153,9 +158,20 @@ export function registerFindSymbolReferencesTool(server: McpServer, deps: McpDep
         'e.g. before renaming a function, assessing dead code, or understanding the blast radius of a change.\n' +
         'Resolves through the project tsconfig so imports, aliases and type positions count.',
       inputSchema: {
-        file: z.string().describe('Path of the file containing the symbol (relative to project root or absolute in-project)'),
-        symbol: z.string().describe('Symbol name to locate (e.g. a function, class, const or type name)'),
-        max: z.number().int().min(1).optional().describe('Maximum references to return (default 40)'),
+        file: z
+          .string()
+          .describe(
+            'Path of the file containing the symbol (relative to project root or absolute in-project)',
+          ),
+        symbol: z
+          .string()
+          .describe('Symbol name to locate (e.g. a function, class, const or type name)'),
+        max: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe('Maximum references to return (default 40)'),
       },
     },
     async (args) => {
@@ -174,6 +190,6 @@ export function registerFindSymbolReferencesTool(server: McpServer, deps: McpDep
           content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
         };
       }
-    }
+    },
   );
 }

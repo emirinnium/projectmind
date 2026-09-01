@@ -1,4 +1,10 @@
-import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_TOKENS } from './types.js';
+import {
+  LLMProvider,
+  LLMResponse,
+  LLMConfig,
+  DEFAULT_TIMEOUT_MS,
+  DEFAULT_MAX_TOKENS,
+} from './types.js';
 import { validateApiUrl } from './url-validator.js';
 
 interface GroqUsage {
@@ -38,7 +44,7 @@ export class GroqProvider implements LLMProvider {
   async analyze(
     prompt: string,
     systemPrompt?: string,
-    temperature: number = 0.3
+    temperature: number = 0.3,
   ): Promise<LLMResponse> {
     if (!this.isAvailable()) {
       throw new Error('Groq API key not configured');
@@ -60,7 +66,7 @@ export class GroqProvider implements LLMProvider {
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
           model: this.model,
@@ -75,7 +81,7 @@ export class GroqProvider implements LLMProvider {
         throw new Error(`Groq API error: ${response.status} ${err}`);
       }
 
-      const data = await response.json() as GroqResponse;
+      const data = (await response.json()) as GroqResponse;
       const choice = data.choices?.[0];
       const content = choice?.message?.content || '';
 
@@ -85,10 +91,12 @@ export class GroqProvider implements LLMProvider {
         .filter((line: string) => line.trim().match(/^\d+\.\s/))
         .map((l: string) => l.trim());
 
-      const usage = data.usage ? {
-        inputTokens: data.usage.prompt_tokens || 0,
-        outputTokens: data.usage.completion_tokens || 0,
-      } : undefined;
+      const usage = data.usage
+        ? {
+            inputTokens: data.usage.prompt_tokens || 0,
+            outputTokens: data.usage.completion_tokens || 0,
+          }
+        : undefined;
 
       return {
         content,

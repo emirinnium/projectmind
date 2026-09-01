@@ -14,13 +14,16 @@ export interface GitChurnEntry {
  * Shared implementation for `churn` and `refactor-roi` commands — both need
  * the same real change-frequency signal (no fabricated numbers).
  */
-export function collectGitChurn(projectRoot: string, sinceDays: number): Map<string, GitChurnEntry> {
+export function collectGitChurn(
+  projectRoot: string,
+  sinceDays: number,
+): Map<string, GitChurnEntry> {
   const churn = new Map<string, GitChurnEntry>();
   try {
     const out = execFileSync(
       'git',
       ['log', `--since=${sinceDays} days ago`, '--pretty=format:@@%an', '--name-only'],
-      { cwd: projectRoot, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 }
+      { cwd: projectRoot, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 },
     );
     let currentAuthor = 'unknown';
     for (const rawLine of out.split(/\r?\n/)) {

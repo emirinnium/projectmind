@@ -32,7 +32,11 @@ class Logger {
     return levels[level] >= levels[this.minLevel];
   }
 
-  private format(level: LogLevel, message: string, context?: Record<string, string | number | boolean | null>): string {
+  private format(
+    level: LogLevel,
+    message: string,
+    context?: Record<string, string | number | boolean | null>,
+  ): string {
     const timestamp = new Date().toISOString();
     const ctx = context ? ` ${JSON.stringify(context)}` : '';
     const prefix = this.contextPrefix ? `[${this.contextPrefix}] ` : '';

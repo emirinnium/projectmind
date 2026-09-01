@@ -18,33 +18,39 @@ export class ProjectRepository {
   constructor(private readonly db: DatabaseSync = getDatabase()) {}
 
   create(name: string, rootPath: string, description?: string): Project {
-    const result = this.db.prepare(
-      'INSERT INTO projects (name, root_path, description) VALUES (?, ?, ?)'
-    ).run(name, rootPath, description || null);
+    const result = this.db
+      .prepare('INSERT INTO projects (name, root_path, description) VALUES (?, ?, ?)')
+      .run(name, rootPath, description || null);
     const id = Number(result.lastInsertRowid);
     return this.getById(id)!;
   }
 
   getById(id: number): Project | null {
-    const row = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as Record<string, SQLOutputValue> | undefined;
+    const row = this.db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as
+      Record<string, SQLOutputValue> | undefined;
     if (!row) return null;
     return this.mapRow(row);
   }
 
   getByName(name: string): Project | null {
-    const row = this.db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as Record<string, SQLOutputValue> | undefined;
+    const row = this.db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as
+      Record<string, SQLOutputValue> | undefined;
     if (!row) return null;
     return this.mapRow(row);
   }
 
   list(): Array<Project & { fileCount: number }> {
-    const rows = this.db.prepare(`
+    const rows = this.db
+      .prepare(
+        `
       SELECT p.*, COUNT(f.id) as file_count 
       FROM projects p 
       LEFT JOIN files f ON f.project_id = p.id 
       GROUP BY p.id 
       ORDER BY p.name
-    `).all() as Record<string, SQLOutputValue>[];
+    `,
+      )
+      .all() as Record<string, SQLOutputValue>[];
     return rows.map((r) => ({ ...this.mapRow(r), fileCount: (r.file_count as number) || 0 }));
   }
 

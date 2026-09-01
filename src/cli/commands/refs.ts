@@ -17,66 +17,69 @@ export function createRefsCommand(): Command {
     .argument('<file>', 'File containing the symbol')
     .argument('<symbol>', 'Symbol name to locate')
     .option('--max <n>', 'Maximum references to display', '40')
-    .action(asyncHandler(async (filePath: string, symbol: string, opts: { max: string }) => {
-      const root = loadConfig().projectRoot;
+    .action(
+      asyncHandler(async (filePath: string, symbol: string, opts: { max: string }) => {
+        const root = loadConfig().projectRoot;
 
-      if (!existsSync(resolve(root, filePath))) {
-        output.warn(`File not found: ${resolve(root, filePath)}`);
-        return;
-      }
-
-      output.section(`Finding references of "${symbol}"`);
-      output.kv('File', filePath);
-      output.info('Building language-service program (first run may take a few seconds)...');
-
-      const ls = createProjectLanguageService(root, [resolve(root, filePath)]);
-      if (!ls) {
-        output.warn('No usable tsconfig.json at project root — language-service unavailable.');
-        return;
-      }
-      try {
-        const targetFile = ls.norm(resolve(root, filePath));
-        const sourceText = ts.sys.readFile(targetFile) ?? '';
-        const position = pickDeclarationPosition(sourceText, symbol);
-        if (position < 0) {
-          output.warn(`Symbol "${symbol}" not found as a whole word in ${filePath}.`);
+        if (!existsSync(resolve(root, filePath))) {
+          output.warn(`File not found: ${resolve(root, filePath)}`);
           return;
         }
 
-        const referencedSymbols = ls.service.findReferences(targetFile, position) ?? [];
-        let shown = 0;
-        let total = 0;
+        output.section(`Finding references of "${symbol}"`);
+        output.kv('File', filePath);
+        output.info('Building language-service program (first run may take a few seconds)...');
 
-        for (const refSym of referencedSymbols) {
-          for (const ref of [refSym.definition, ...refSym.references]) {
-            total++;
-            if (shown >= parseInt(opts.max, 10)) continue;
-            const sfPath = ref.fileName.replace(/\\/g, '/');
-            const sfText = ts.sys.readFile(ref.fileName) ?? '';
-            const { line, column, snippet } = describeSpan(sfText, ref.textSpan.start);
-            output.kv(
-              `  ${sfPath}:${line}:${column}`,
-              `${('isWriteAccess' in ref && ref.isWriteAccess) ? '✍️ write' : 'read'} | ${snippet}`
-            );
-            shown++;
+        const ls = createProjectLanguageService(root, [resolve(root, filePath)]);
+        if (!ls) {
+          output.warn('No usable tsconfig.json at project root — language-service unavailable.');
+          return;
+        }
+        try {
+          const targetFile = ls.norm(resolve(root, filePath));
+          const sourceText = ts.sys.readFile(targetFile) ?? '';
+          const position = pickDeclarationPosition(sourceText, symbol);
+          if (position < 0) {
+            output.warn(`Symbol "${symbol}" not found as a whole word in ${filePath}.`);
+            return;
           }
-        }
 
-        output.kv('Total references', String(total));
-        if (total === 0) {
-          output.info('No references found — symbol may be unused (candidate dead code).');
+          const referencedSymbols = ls.service.findReferences(targetFile, position) ?? [];
+          let shown = 0;
+          let total = 0;
+
+          for (const refSym of referencedSymbols) {
+            for (const ref of [refSym.definition, ...refSym.references]) {
+              total++;
+              if (shown >= parseInt(opts.max, 10)) continue;
+              const sfPath = ref.fileName.replace(/\\/g, '/');
+              const sfText = ts.sys.readFile(ref.fileName) ?? '';
+              const { line, column, snippet } = describeSpan(sfText, ref.textSpan.start);
+              output.kv(
+                `  ${sfPath}:${line}:${column}`,
+                `${'isWriteAccess' in ref && ref.isWriteAccess ? '✍️ write' : 'read'} | ${snippet}`,
+              );
+              shown++;
+            }
+          }
+
+          output.kv('Total references', String(total));
+          if (total === 0) {
+            output.info('No references found — symbol may be unused (candidate dead code).');
+          }
+        } finally {
+          ls.dispose();
         }
-      } finally {
-        ls.dispose();
-      }
-    })
-  );
+      }),
+    );
 }
 
 /** Prefer a declaration-style occurrence (class X / function X / const X ...), else first word hit. */
 function pickDeclarationPosition(sourceText: string, symbol: string): number {
   const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const declPattern = new RegExp(`\\b(?:class|interface|function|enum|type|const|let|var)\\s+${escaped}\\b`);
+  const declPattern = new RegExp(
+    `\\b(?:class|interface|function|enum|type|const|let|var)\\s+${escaped}\\b`,
+  );
   const declMatch = declPattern.exec(sourceText);
   if (declMatch) return declMatch.index;
 
@@ -85,7 +88,10 @@ function pickDeclarationPosition(sourceText: string, symbol: string): number {
   return anyMatch ? anyMatch.index : -1;
 }
 
-function describeSpan(text: string, start: number): { line: number; column: number; snippet: string } {
+function describeSpan(
+  text: string,
+  start: number,
+): { line: number; column: number; snippet: string } {
   const before = text.slice(0, start);
   const line = before.split(/\r?\n/).length;
   const lastNewline = before.lastIndexOf('\n');

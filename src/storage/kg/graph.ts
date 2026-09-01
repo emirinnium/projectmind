@@ -141,7 +141,8 @@ export class KnowledgeGraph {
         },
       },
       parser: {
-        parseFile: (content: string, filePath?: string) => parseFileAst(filePath ?? 'inline.ts', content),
+        parseFile: (content: string, filePath?: string) =>
+          parseFileAst(filePath ?? 'inline.ts', content),
       },
       embedding: {
         generateEmbedding: async (text: string) => {
@@ -149,7 +150,9 @@ export class KnowledgeGraph {
           return generateEmbedding(text);
         },
         cosineSimilarity: (a: number[], b: number[]) => {
-          let dot = 0, normA = 0, normB = 0;
+          let dot = 0,
+            normA = 0,
+            normB = 0;
           for (let i = 0; i < a.length; i++) {
             dot += a[i]! * b[i]!;
             normA += a[i]! * a[i]!;
@@ -188,30 +191,61 @@ export class KnowledgeGraph {
   }
 
   // ===== Project Management =====
-  createProject(name: string, rootPath: string, description?: string): { id: number; name: string; rootPath: string } {
+  createProject(
+    name: string,
+    rootPath: string,
+    description?: string,
+  ): { id: number; name: string; rootPath: string } {
     return createProject(this.ctx, name, rootPath, description);
   }
 
-  getProject(id: number): { id: number; name: string; rootPath: string; description: string | null; createdAt: string; lastScanned: string } | null {
+  getProject(id: number): {
+    id: number;
+    name: string;
+    rootPath: string;
+    description: string | null;
+    createdAt: string;
+    lastScanned: string;
+  } | null {
     return getProject(this.ctx, id);
   }
 
-  getProjectByName(name: string): { id: number; name: string; rootPath: string; description: string | null; createdAt: string; lastScanned: string } | null {
+  getProjectByName(name: string): {
+    id: number;
+    name: string;
+    rootPath: string;
+    description: string | null;
+    createdAt: string;
+    lastScanned: string;
+  } | null {
     return getProjectByName(this.ctx, name);
   }
 
-  listProjects(): { id: number; name: string; rootPath: string; fileCount: number; lastScanned: string }[] {
+  listProjects(): {
+    id: number;
+    name: string;
+    rootPath: string;
+    fileCount: number;
+    lastScanned: string;
+  }[] {
     return listProjects(this.ctx);
   }
 
-  switchProject(projectId: number): { success: boolean; project: { id: number; name: string; rootPath: string } | null; error?: string } {
+  switchProject(projectId: number): {
+    success: boolean;
+    project: { id: number; name: string; rootPath: string } | null;
+    error?: string;
+  } {
     const project = this.getProject(projectId);
     if (!project) {
       return { success: false, project: null, error: `Project ${projectId} not found` };
     }
     this.currentProjectId = projectId;
     this.persistCurrentProjectId();
-    return { success: true, project: { id: project.id, name: project.name, rootPath: project.rootPath } };
+    return {
+      success: true,
+      project: { id: project.id, name: project.name, rootPath: project.rootPath },
+    };
   }
 
   getCurrentProjectId(): number {
@@ -234,7 +268,11 @@ export class KnowledgeGraph {
   }
 
   // ===== Data-Flow / Taint Analysis =====
-  getOrCreateResource(qualifiedName: string, kind: string, identity: string): { id: number; qualifiedName: string; kind: string; identity: string } {
+  getOrCreateResource(
+    qualifiedName: string,
+    kind: string,
+    identity: string,
+  ): { id: number; qualifiedName: string; kind: string; identity: string } {
     return getOrCreateResource(this.ctx, qualifiedName, kind, identity);
   }
 
@@ -249,15 +287,33 @@ export class KnowledgeGraph {
     via?: string;
     sourceFunctionName?: string;
     targetFunctionName?: string;
-  }): { id: number; fromResource: { id: number; qualifiedName: string; kind: string; identity: string }; toResource: { id: number; qualifiedName: string; kind: string; identity: string } } {
+  }): {
+    id: number;
+    fromResource: { id: number; qualifiedName: string; kind: string; identity: string };
+    toResource: { id: number; qualifiedName: string; kind: string; identity: string };
+  } {
     return recordDataFlow(this.ctx, params);
   }
 
-  getDataFlows(projectId?: number): { id: number; fromResource: { id: number; qualifiedName: string; kind: string; identity: string }; toResource: { id: number; qualifiedName: string; kind: string; identity: string }; kind: string; via: string | null; sourceFunctionName: string | null; targetFunctionName: string | null }[] {
+  getDataFlows(projectId?: number): {
+    id: number;
+    fromResource: { id: number; qualifiedName: string; kind: string; identity: string };
+    toResource: { id: number; qualifiedName: string; kind: string; identity: string };
+    kind: string;
+    via: string | null;
+    sourceFunctionName: string | null;
+    targetFunctionName: string | null;
+  }[] {
     return getDataFlows(this.ctx, projectId);
   }
 
-  getResourceFlows(resourceQualifiedName: string): { id: number; direction: string; resource: { id: number; qualifiedName: string; kind: string; identity: string }; kind: string; via: string | null }[] {
+  getResourceFlows(resourceQualifiedName: string): {
+    id: number;
+    direction: string;
+    resource: { id: number; qualifiedName: string; kind: string; identity: string };
+    kind: string;
+    via: string | null;
+  }[] {
     return getResourceFlows(this.ctx, resourceQualifiedName);
   }
 
@@ -300,11 +356,20 @@ export class KnowledgeGraph {
     return findSimilarFiles(this.ctx, targetEmbedding, threshold, limit);
   }
 
-  getFunctions(fileId: number): { id: number; name: string; signature: string; complexity: number; startLine: number; endLine: number }[] {
+  getFunctions(fileId: number): {
+    id: number;
+    name: string;
+    signature: string;
+    complexity: number;
+    startLine: number;
+    endLine: number;
+  }[] {
     return getFunctions(this.ctx, fileId);
   }
 
-  getClasses(fileId: number): { id: number; name: string; methodsCount: number; propertiesCount: number }[] {
+  getClasses(
+    fileId: number,
+  ): { id: number; name: string; methodsCount: number; propertiesCount: number }[] {
     return getClasses(this.ctx, fileId);
   }
 
@@ -338,7 +403,13 @@ export class KnowledgeGraph {
     return getMemory(this.ctx, scope, key);
   }
 
-  storeTeamMemory(params: { agentName: string; scope: string; key: string; value: string; isPublic: boolean }): TeamMemoryStoreComputation {
+  storeTeamMemory(params: {
+    agentName: string;
+    scope: string;
+    key: string;
+    value: string;
+    isPublic: boolean;
+  }): TeamMemoryStoreComputation {
     return storeTeamMemory(this.ctx, params);
   }
 
@@ -363,7 +434,7 @@ export class KnowledgeGraph {
   acquireFileLock(
     filePath: string,
     agentName: string,
-    options: { ttlMinutes?: number; reason?: string } = {}
+    options: { ttlMinutes?: number; reason?: string } = {},
   ): AcquireResult {
     return acquireFileLock(this.ctx, filePath, agentName, options);
   }
@@ -389,11 +460,16 @@ export class KnowledgeGraph {
     return getDirectDependents(this.ctx, sourcePath);
   }
 
-  getImportsWithDetails(fileId: number): { source: string; kind: string; resolvedFile: FileInfo | null }[] {
+  getImportsWithDetails(
+    fileId: number,
+  ): { source: string; kind: string; resolvedFile: FileInfo | null }[] {
     return getImportsWithDetails(this.ctx, fileId);
   }
 
-  traceImports(fileId: number, maxDepth: number = 10): { file: FileInfo; depth: number; path: string[] }[] {
+  traceImports(
+    fileId: number,
+    maxDepth: number = 10,
+  ): { file: FileInfo; depth: number; path: string[] }[] {
     return traceImports(this.ctx, fileId, maxDepth);
   }
 
@@ -402,19 +478,49 @@ export class KnowledgeGraph {
   }
 
   // ===== Dynamic Call Tracing =====
-  ingestDynamicCalls(calls: { fromFunctionName: string; toFunctionName: string; workloadId: string; callCount?: number; staticMissed?: boolean }[]): { inserted: number; updated: number; errors: string[] } {
+  ingestDynamicCalls(
+    calls: {
+      fromFunctionName: string;
+      toFunctionName: string;
+      workloadId: string;
+      callCount?: number;
+      staticMissed?: boolean;
+    }[],
+  ): { inserted: number; updated: number; errors: string[] } {
     return ingestDynamicCalls(this.ctx, calls);
   }
 
-  getDynamicCalls(workloadId: string): { fromFunctionId: number; toFunctionId: number; callCount: number; staticMissed: boolean; workloadId: string; fromFunctionName: string; toFunctionName: string }[] {
+  getDynamicCalls(workloadId: string): {
+    fromFunctionId: number;
+    toFunctionId: number;
+    callCount: number;
+    staticMissed: boolean;
+    workloadId: string;
+    fromFunctionName: string;
+    toFunctionName: string;
+  }[] {
     return getDynamicCalls(this.ctx, workloadId);
   }
 
-  getAllDynamicCalls(): { fromFunctionId: number; toFunctionId: number; callCount: number; staticMissed: boolean; workloadId: string; fromFunctionName: string; toFunctionName: string }[] {
+  getAllDynamicCalls(): {
+    fromFunctionId: number;
+    toFunctionId: number;
+    callCount: number;
+    staticMissed: boolean;
+    workloadId: string;
+    fromFunctionName: string;
+    toFunctionName: string;
+  }[] {
     return getAllDynamicCalls(this.ctx);
   }
 
-  getStaticMissedCalls(): { fromFunctionName: string; toFunctionName: string; workloadId: string; callCount: number; staticMissed: boolean }[] {
+  getStaticMissedCalls(): {
+    fromFunctionName: string;
+    toFunctionName: string;
+    workloadId: string;
+    callCount: number;
+    staticMissed: boolean;
+  }[] {
     return getStaticMissedCalls(this.ctx);
   }
 
@@ -427,11 +533,20 @@ export class KnowledgeGraph {
   }
 
   // ===== Coherence & Dependency Graph =====
-  getCoherenceDecisions(fileId: number): { id: number; verdict: string; confidence: number; analyzedAt: string; llmProvider: string | null }[] {
+  getCoherenceDecisions(fileId: number): {
+    id: number;
+    verdict: string;
+    confidence: number;
+    analyzedAt: string;
+    llmProvider: string | null;
+  }[] {
     return getCoherenceDecisions(this.ctx, fileId);
   }
 
-  getDependencyGraph(modulePath: string): { nodes: FileInfo[]; edges: { from: string; to: string; kind: string }[] } {
+  getDependencyGraph(modulePath: string): {
+    nodes: FileInfo[];
+    edges: { from: string; to: string; kind: string }[];
+  } {
     return getDependencyGraph(this.ctx, modulePath);
   }
 
@@ -446,14 +561,18 @@ export class KnowledgeGraph {
   /**
    * Search for files by semantic similarity to a natural language query.
    */
-  async searchSemantic(query: string, limit = 5, threshold = 0.7): Promise<{
-    files: FileInfo[],
+  async searchSemantic(
+    query: string,
+    limit = 5,
+    threshold = 0.7,
+  ): Promise<{
+    files: FileInfo[];
     matches: Array<{
-      file: FileInfo,
-      lineNumber: number,
-      lineContent: string,
-      score: number
-    }>
+      file: FileInfo;
+      lineNumber: number;
+      lineContent: string;
+      score: number;
+    }>;
   }> {
     // Generate an embedding for the query
     const queryEmbedding = await this.deps.embedding.generateEmbedding(query);
@@ -463,10 +582,10 @@ export class KnowledgeGraph {
 
     // File-level semantic search only (no line-by-line embedding trap)
     const matches: Array<{
-      file: FileInfo,
-      lineNumber: number,
-      lineContent: string,
-      score: number
+      file: FileInfo;
+      lineNumber: number;
+      lineContent: string;
+      score: number;
     }> = [];
 
     for (const file of similarFiles) {
@@ -476,10 +595,12 @@ export class KnowledgeGraph {
           file,
           lineNumber: 1,
           lineContent: file.path,
-          score: 0.85
+          score: 0.85,
         });
       } catch (error) {
-        logger.error(`Error processing file ${file.path}`, { error: error instanceof Error ? error.message : String(error) });
+        logger.error(`Error processing file ${file.path}`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 
@@ -488,14 +609,17 @@ export class KnowledgeGraph {
 
     return {
       files: similarFiles,
-      matches: matches.slice(0, limit)
+      matches: matches.slice(0, limit),
     };
   }
 
-/**
- * Replay agent actions from memory to synchronize context.
- */
-  async replayAgentActions(agentName: string, sessionId?: number): Promise<{
+  /**
+   * Replay agent actions from memory to synchronize context.
+   */
+  async replayAgentActions(
+    agentName: string,
+    sessionId?: number,
+  ): Promise<{
     success: boolean;
     actions: Array<{
       action: string;
@@ -514,11 +638,17 @@ export class KnowledgeGraph {
     }> = [];
 
     // Get agent memories
-    const memories = this.getMemory('agent_actions', sessionId ? `session_${sessionId}` : agentName);
+    const memories = this.getMemory(
+      'agent_actions',
+      sessionId ? `session_${sessionId}` : agentName,
+    );
 
     for (const memory of memories) {
       try {
-        const parsed = typeof memory.value === 'string' ? JSON.parse(memory.value) as AgentAction : memory.value as AgentAction;
+        const parsed =
+          typeof memory.value === 'string'
+            ? (JSON.parse(memory.value) as AgentAction)
+            : (memory.value as AgentAction);
         const { action, filePath, details } = parsed;
 
         // Replay the action — update the knowledge graph to reflect what the agent did.
@@ -556,14 +686,16 @@ export class KnowledgeGraph {
             errors.push(`Unknown action: ${action}`);
         }
       } catch (error) {
-        errors.push(`Error replaying action: ${error instanceof Error ? error.message : String(error)}`);
+        errors.push(
+          `Error replaying action: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
 
     return {
       success: errors.length === 0,
       actions,
-      errors
+      errors,
     };
   }
 
@@ -586,7 +718,7 @@ export class KnowledgeGraph {
 
     // Get the list of files being watched by agents
     const watchedFiles = this.getAgentTouchedFiles();
-    const watchedFilePaths = new Set(watchedFiles.map(file => file.path));
+    const watchedFilePaths = new Set(watchedFiles.map((file) => file.path));
 
     for (const filePath of filePaths) {
       try {
@@ -631,7 +763,9 @@ export class KnowledgeGraph {
           syncedFiles++;
         }
       } catch (error) {
-        errors.push(`Error syncing file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+        errors.push(
+          `Error syncing file ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
 

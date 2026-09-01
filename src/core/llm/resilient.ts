@@ -11,7 +11,8 @@ import { logger } from '../../utils/logger.js';
  * this behavior without touching individual implementations.
  */
 
-const RETRYABLE = /429|rate.?limit|too many requests|timeout|timed?\s*out|econn|enotfound|eai_again|socket|5\d\d/i;
+const RETRYABLE =
+  /429|rate.?limit|too many requests|timeout|timed?\s*out|econn|enotfound|eai_again|socket|5\d\d/i;
 
 export interface ResilienceOptions {
   /** Attempts beyond the first one. Default 2 (i.e. up to 3 calls total). */
@@ -26,7 +27,7 @@ interface RateLimitedProvider extends LLMProvider {
 
 export function withProviderResilience(
   provider: LLMProvider,
-  opts: ResilienceOptions = {}
+  opts: ResilienceOptions = {},
 ): LLMProvider {
   const maxRetries = opts.maxRetries ?? 2;
   const minIntervalMs = opts.minIntervalMs ?? 1200;
@@ -38,7 +39,11 @@ export function withProviderResilience(
     model: provider.model,
     isAvailable: () => provider.isAvailable(),
 
-    async analyze(prompt: string, systemPrompt?: string, temperature?: number): Promise<LLMResponse> {
+    async analyze(
+      prompt: string,
+      systemPrompt?: string,
+      temperature?: number,
+    ): Promise<LLMResponse> {
       // Client-side rate limiting: space calls apart.
       const last = wrapped.__lastCallAt ?? 0;
       const wait = last + minIntervalMs - Date.now();
@@ -55,7 +60,7 @@ export function withProviderResilience(
           if (attempt > maxRetries || !RETRYABLE.test(msg)) throw e;
           const backoffMs = Math.min(8000, minIntervalMs * 2 ** attempt);
           logger.warn(
-            `[llm:${provider.name}] transient failure (${msg.slice(0, 120)}) — retry ${attempt}/${maxRetries} in ${backoffMs}ms`
+            `[llm:${provider.name}] transient failure (${msg.slice(0, 120)}) — retry ${attempt}/${maxRetries} in ${backoffMs}ms`,
           );
           await new Promise((r) => setTimeout(r, backoffMs));
         }

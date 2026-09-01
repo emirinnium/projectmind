@@ -46,7 +46,7 @@ export class CoherenceCache extends AdvancedCache<string, CoherenceResult> {
     code: string,
     filePath: string,
     deep: boolean,
-    compute: () => Promise<CoherenceResult>
+    compute: () => Promise<CoherenceResult>,
   ): Promise<CoherenceResult> {
     const key = this.makeKey(code, filePath, deep);
     const cached = this.get(key);

@@ -1,5 +1,13 @@
 // Sync simple embeddings (backwards compatible)
-export { cosineSimilarity, vectorDistance, findSimilar, clearEmbeddingCache, getEmbeddingCacheStats, codeToEmbedding, textToEmbedding } from './legacy-embeddings.js';
+export {
+  cosineSimilarity,
+  vectorDistance,
+  findSimilar,
+  clearEmbeddingCache,
+  getEmbeddingCacheStats,
+  codeToEmbedding,
+  textToEmbedding,
+} from './legacy-embeddings.js';
 export type { EmbeddingVector } from './legacy-embeddings.js';
 
 export type EmbeddingProvider = 'simple' | 'unixcoder' | 'codebert';

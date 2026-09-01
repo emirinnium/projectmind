@@ -146,9 +146,12 @@ export function registerCliBridgeTool(server: McpServer, deps: McpDependencies):
         'flags (-o/--output/--config) may not escape the project root.',
       ].join(' '),
       inputSchema: {
-        args: z.array(z.string()).min(1).describe(
-          'Argument vector AFTER the binary name. Example: ["doctor","scan-health"]. Root "mcp"/"init" and destructive subcommands are blocked.'
-        ),
+        args: z
+          .array(z.string())
+          .min(1)
+          .describe(
+            'Argument vector AFTER the binary name. Example: ["doctor","scan-health"]. Root "mcp"/"init" and destructive subcommands are blocked.',
+          ),
         timeoutMs: z.number().optional().describe('Kill after this many ms (default 120000)'),
       },
     },
@@ -157,24 +160,41 @@ export function registerCliBridgeTool(server: McpServer, deps: McpDependencies):
         const argv = args.args.map((a) => String(a));
         if (!validateCliCommand(argv)) {
           return {
-            content: [{ type: 'text', text: JSON.stringify({ ok: false, error: `Command "${argv.join(' ')}" is not allowed through run_cli (root not allowlisted, subcommand not whitelisted, or blocked as destructive/restricted).` }) }],
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  ok: false,
+                  error: `Command "${argv.join(' ')}" is not allowed through run_cli (root not allowlisted, subcommand not whitelisted, or blocked as destructive/restricted).`,
+                }),
+              },
+            ],
           };
         }
-        
+
         if (deps.agentName) {
           trackAgentAccess(deps.kg, deps.agentName, `cli:${argv[0]}`);
         }
 
-        const res = await runCliCapture(argv, { timeoutMs: args.timeoutMs, projectRoot: deps.projectRoot });
+        const res = await runCliCapture(argv, {
+          timeoutMs: args.timeoutMs,
+          projectRoot: deps.projectRoot,
+        });
 
         return {
           content: [
             {
               type: 'text',
               text: JSON.stringify(
-                { ok: res.ok, exitCode: res.exitCode, durationMs: res.durationMs, stdout: res.stdout, stderr: res.stderr },
+                {
+                  ok: res.ok,
+                  exitCode: res.exitCode,
+                  durationMs: res.durationMs,
+                  stdout: res.stdout,
+                  stderr: res.stderr,
+                },
                 null,
-                2
+                2,
               ),
             },
           ],
@@ -184,11 +204,14 @@ export function registerCliBridgeTool(server: McpServer, deps: McpDependencies):
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }),
+              text: JSON.stringify({
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+              }),
             },
           ],
         };
       }
-    }
+    },
   );
 }

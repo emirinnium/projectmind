@@ -11,24 +11,36 @@ export const collaborationMigrations: Migration[] = [
     name: 'add_pattern_origin_and_collaboration',
     up: (db: DatabaseSync) => {
       // Check if columns exist before adding (schema may already include them)
-      const patternsExists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='patterns'").get();
-      const teamExists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='team_memories'").get();
+      const patternsExists = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='patterns'")
+        .get();
+      const teamExists = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='team_memories'")
+        .get();
       if (patternsExists) {
-        const patternsCols = db.prepare("PRAGMA table_info(patterns)").all() as Array<{name: string}>;
-        if (!patternsCols.find(c => c.name === 'project_id')) {
+        const patternsCols = db.prepare('PRAGMA table_info(patterns)').all() as Array<{
+          name: string;
+        }>;
+        if (!patternsCols.find((c) => c.name === 'project_id')) {
           db.exec(`ALTER TABLE patterns ADD COLUMN project_id INTEGER;`);
         }
         db.exec(`CREATE INDEX IF NOT EXISTS idx_patterns_project ON patterns(project_id);`);
       }
       if (teamExists) {
-        const teamCols = db.prepare("PRAGMA table_info(team_memories)").all() as Array<{name: string}>;
-        if (!teamCols.find(c => c.name === 'project_id')) {
+        const teamCols = db.prepare('PRAGMA table_info(team_memories)').all() as Array<{
+          name: string;
+        }>;
+        if (!teamCols.find((c) => c.name === 'project_id')) {
           db.exec(`ALTER TABLE team_memories ADD COLUMN project_id INTEGER;`);
         }
-        db.exec(`CREATE INDEX IF NOT EXISTS idx_team_memories_project ON team_memories(project_id);`);
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_team_memories_project ON team_memories(project_id);`,
+        );
       }
       // Ensure pending_intents table exists with correct schema
-      const pendingExists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pending_intents'").get();
+      const pendingExists = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pending_intents'")
+        .get();
       if (!pendingExists) {
         db.exec(`CREATE TABLE pending_intents (
           id VARCHAR(36) PRIMARY KEY,
@@ -39,17 +51,25 @@ export const collaborationMigrations: Migration[] = [
           timestamp INTEGER DEFAULT (strftime('%s', 'now')),
           ttl_seconds INTEGER DEFAULT 300
         );`);
-        db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_intents_timestamp ON pending_intents(timestamp);`);
+        db.exec(
+          `CREATE INDEX IF NOT EXISTS idx_pending_intents_timestamp ON pending_intents(timestamp);`,
+        );
       } else {
         // If table exists but missing timestamp column, add it.
-        const pendingCols = db.prepare("PRAGMA table_info(pending_intents)").all() as Array<{name: string}>;
+        const pendingCols = db.prepare('PRAGMA table_info(pending_intents)').all() as Array<{
+          name: string;
+        }>;
         const colNames = new Set(pendingCols.map((c) => c.name));
         if (!colNames.has('timestamp') && !colNames.has('expires_at')) {
           db.exec(`ALTER TABLE pending_intents ADD COLUMN timestamp INTEGER DEFAULT 0;`);
-          db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_intents_timestamp ON pending_intents(timestamp);`);
+          db.exec(
+            `CREATE INDEX IF NOT EXISTS idx_pending_intents_timestamp ON pending_intents(timestamp);`,
+          );
         } else if (colNames.has('timestamp')) {
           // Legacy table that already carries the column — ensure its index.
-          db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_intents_timestamp ON pending_intents(timestamp);`);
+          db.exec(
+            `CREATE INDEX IF NOT EXISTS idx_pending_intents_timestamp ON pending_intents(timestamp);`,
+          );
         }
       }
       db.exec(`CREATE INDEX IF NOT EXISTS idx_pending_intents_agent ON pending_intents(agent_id);`);
@@ -74,14 +94,21 @@ export const collaborationMigrations: Migration[] = [
         .get();
       if (!tableExists) return; // fresh DBs get the canonical shape from SCHEMA_SQL.
 
-      const cols = db.prepare('PRAGMA table_info(pending_intents)').all() as Array<{ name: string; type: string }>;
-      const colTypes = new Map<string, string>(cols.map((c) => [c.name, (c.type || '').toUpperCase()]));
+      const cols = db.prepare('PRAGMA table_info(pending_intents)').all() as Array<{
+        name: string;
+        type: string;
+      }>;
+      const colTypes = new Map<string, string>(
+        cols.map((c) => [c.name, (c.type || '').toUpperCase()]),
+      );
       const hasExpires = colTypes.has('expires_at');
       const hasBroadcast = colTypes.has('broadcast_at');
 
       // Indexes defined by explicit SQL (sqlite_autoindex_* excluded).
       const userIndexes = db
-        .prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pending_intents' AND sql IS NOT NULL")
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pending_intents' AND sql IS NOT NULL",
+        )
         .all() as Array<{ sql: string }>;
 
       // Canonical DDL — exact copy of schema.ts pending_intents.
@@ -137,8 +164,12 @@ export const collaborationMigrations: Migration[] = [
             // index referenced a dropped column — intentionally skipped
           }
         }
-        db.exec('CREATE INDEX IF NOT EXISTS idx_pending_intents_agent ON pending_intents(agent_id);');
-        db.exec('CREATE INDEX IF NOT EXISTS idx_pending_intents_type ON pending_intents(intent_type);');
+        db.exec(
+          'CREATE INDEX IF NOT EXISTS idx_pending_intents_agent ON pending_intents(agent_id);',
+        );
+        db.exec(
+          'CREATE INDEX IF NOT EXISTS idx_pending_intents_type ON pending_intents(intent_type);',
+        );
       };
 
       if (colTypes.has('timestamp') && colTypes.has('ttl_seconds') && !hasExpires) {
@@ -165,7 +196,9 @@ export const collaborationMigrations: Migration[] = [
 
       if (!hasExpires) {
         if (!hasBroadcast) {
-          db.exec('ALTER TABLE pending_intents ADD COLUMN broadcast_at INTEGER NOT NULL DEFAULT 0;');
+          db.exec(
+            'ALTER TABLE pending_intents ADD COLUMN broadcast_at INTEGER NOT NULL DEFAULT 0;',
+          );
         }
         db.exec('ALTER TABLE pending_intents ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0;');
         return;
@@ -193,7 +226,9 @@ export const collaborationMigrations: Migration[] = [
 
       if (expiresType === 'INTEGER') {
         if (!hasBroadcast) {
-          db.exec('ALTER TABLE pending_intents ADD COLUMN broadcast_at INTEGER NOT NULL DEFAULT 0;');
+          db.exec(
+            'ALTER TABLE pending_intents ADD COLUMN broadcast_at INTEGER NOT NULL DEFAULT 0;',
+          );
         }
         const setClauses = [`expires_at = ${toUnixMs('expires_at')}`];
         setClauses.push(`broadcast_at = ${toUnixMs('broadcast_at')}`);

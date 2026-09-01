@@ -13,7 +13,7 @@ import { COGNITIVE_LOAD_THRESHOLD } from './index.js';
 export function analyzeTechnicalDebt(
   file: { path: string; relativePath: string; lastModified?: string; cognitiveLoad?: number },
   content: string,
-  churn: Map<string, GitChurnEntry> = new Map()
+  churn: Map<string, GitChurnEntry> = new Map(),
 ): DebtItem[] {
   const items: DebtItem[] = [];
   const reasoningTrace: string[] = [];
@@ -34,7 +34,9 @@ export function analyzeTechnicalDebt(
   }
 
   if (complexFunctionNames.length > 0) {
-    reasoningTrace.push(`High cyclomatic complexity detected in ${complexFunctionNames.length} functions`);
+    reasoningTrace.push(
+      `High cyclomatic complexity detected in ${complexFunctionNames.length} functions`,
+    );
     items.push({
       id: 0,
       type: 'complexity',
@@ -53,7 +55,7 @@ export function analyzeTechnicalDebt(
     const lastModified = new Date(file.lastModified).getTime();
     const now = Date.now();
     const ageInDays = (now - lastModified) / (1000 * 60 * 60 * 24);
-    
+
     if (ageInDays > 365) {
       reasoningTrace.push(`File is ${Math.floor(ageInDays)} days old - potential legacy code`);
       items.push({
@@ -71,40 +73,40 @@ export function analyzeTechnicalDebt(
   }
 
   // 3. Cognitive Load Analysis — tiered scheme (consistent with architecture.ts and tracker-core.ts)
-    if (file.cognitiveLoad) {
-      if (file.cognitiveLoad > COGNITIVE_LOAD_THRESHOLD) {
-        reasoningTrace.push(`High cognitive load detected (${file.cognitiveLoad})`);
-        items.push({
-          id: 0,
-          type: "cognitive_load",
-          description: `High cognitive load in ${file.relativePath} (${file.cognitiveLoad})`,
-          severity: "high",
-          suggestion: `Split file into smaller modules or simplify logic`,
-          reasoningTrace,
-          detectedAt: new Date().toISOString(),
-          resolved: false,
-          filePath: file.path,
-        });
-      } else if (file.cognitiveLoad > 0.4) {
-        reasoningTrace.push(`Moderate cognitive load detected (${file.cognitiveLoad})`);
-        items.push({
-          id: 0,
-          type: "cognitive_load",
-          description: `Moderate cognitive load in ${file.relativePath} (${file.cognitiveLoad})`,
-          severity: "medium",
-          suggestion: `Consider refactoring to reduce complexity in ${file.relativePath}`,
-          reasoningTrace,
-          detectedAt: new Date().toISOString(),
-          resolved: false,
-          filePath: file.path,
-        });
-      }
+  if (file.cognitiveLoad) {
+    if (file.cognitiveLoad > COGNITIVE_LOAD_THRESHOLD) {
+      reasoningTrace.push(`High cognitive load detected (${file.cognitiveLoad})`);
+      items.push({
+        id: 0,
+        type: 'cognitive_load',
+        description: `High cognitive load in ${file.relativePath} (${file.cognitiveLoad})`,
+        severity: 'high',
+        suggestion: `Split file into smaller modules or simplify logic`,
+        reasoningTrace,
+        detectedAt: new Date().toISOString(),
+        resolved: false,
+        filePath: file.path,
+      });
+    } else if (file.cognitiveLoad > 0.4) {
+      reasoningTrace.push(`Moderate cognitive load detected (${file.cognitiveLoad})`);
+      items.push({
+        id: 0,
+        type: 'cognitive_load',
+        description: `Moderate cognitive load in ${file.relativePath} (${file.cognitiveLoad})`,
+        severity: 'medium',
+        suggestion: `Consider refactoring to reduce complexity in ${file.relativePath}`,
+        reasoningTrace,
+        detectedAt: new Date().toISOString(),
+        resolved: false,
+        filePath: file.path,
+      });
     }
+  }
   // 4. Change Frequency Analysis
   const churnEntry = churn.get(file.relativePath.replace(/\\/g, '/'));
   if (churnEntry && churnEntry.count >= 10) {
     reasoningTrace.push(
-      `File changed ${churnEntry.count} times in the last 90 days by ${churnEntry.authors.size} author(s)`
+      `File changed ${churnEntry.count} times in the last 90 days by ${churnEntry.authors.size} author(s)`,
     );
     items.push({
       id: 0,

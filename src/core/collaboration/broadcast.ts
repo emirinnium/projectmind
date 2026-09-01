@@ -97,7 +97,9 @@ function parseTargetFiles(raw: string | null | undefined): string[] | undefined 
  * plain object (the ExpectedChanges shape) or be discarded. Scalars/arrays
  * are valid JSON but would break downstream consumers expecting an object.
  */
-function parseExpectedChanges(raw: string | null | undefined): IntentBroadcast['expectedChanges'] | undefined {
+function parseExpectedChanges(
+  raw: string | null | undefined,
+): IntentBroadcast['expectedChanges'] | undefined {
   if (!raw) return undefined;
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -126,7 +128,10 @@ export class IntentBroadcastService {
   private readonly branchDetector?: () => string | null;
   private schemaChecked = false;
 
-  constructor(private db?: DatabaseSync, options: IntentBroadcastOptions = {}) {
+  constructor(
+    private db?: DatabaseSync,
+    options: IntentBroadcastOptions = {},
+  ) {
     this.privateBranchPatterns = options.privateBranchPatterns ?? DEFAULT_PRIVATE_BRANCH_PATTERNS;
     this.fallbackBranch = options.fallbackBranch ?? 'main';
     this.branchDetector = options.branchDetector;
@@ -147,7 +152,9 @@ export class IntentBroadcastService {
       ...broadcast,
       targetFiles: sanitizeTargetFiles(broadcast.targetFiles),
       expectedChanges: broadcast.expectedChanges
-        ? (JSON.parse(JSON.stringify(broadcast.expectedChanges)) as IntentBroadcast['expectedChanges'])
+        ? (JSON.parse(
+            JSON.stringify(broadcast.expectedChanges),
+          ) as IntentBroadcast['expectedChanges'])
         : undefined,
     };
     b.ttlSeconds = b.ttlSeconds ?? DEFAULT_TTL_SECONDS;
@@ -204,7 +211,7 @@ export class IntentBroadcastService {
             `SELECT id, agent_id, intent_type, target_files, session_id, description,
                     expected_changes, broadcast_at, expires_at
              FROM pending_intents
-             WHERE agent_id != ? AND expires_at >= ?`
+             WHERE agent_id != ? AND expires_at >= ?`,
           )
           .all(agentId, Date.now()) as PendingIntentRow[];
 
@@ -320,7 +327,7 @@ export class IntentBroadcastService {
           .prepare(
             `SELECT agent_id, intent_type, target_files
              FROM pending_intents
-             WHERE intent_type != 'read' AND expires_at >= ?`
+             WHERE intent_type != 'read' AND expires_at >= ?`,
           )
           .all(now) as Array<{ agent_id: string; intent_type: string; target_files: string }>;
 
@@ -360,24 +367,28 @@ export class IntentBroadcastService {
   }
 
   /**
-    * Active (unexpired) intents from OTHER agents, merged from in-memory
-    * broadcasts and the shared DB. Used by read paths (e.g. get_context
-    * conflict warnings) that need per-intent detail rather than the aggregate
-    * {@link checkConflict} verdict. Never throws: DB problems simply shrink
-    * the result to the in-memory set.
-    *
-    * Dedup is by CONTENT (agentId|intentType|targetFiles|timestamp), not by
-    * id: the in-memory copy carries the broadcaster's UUID while the persisted
-    * row carries an integer row-id, so id-based dedup would double-report the
-    * same intent.
-    */
+   * Active (unexpired) intents from OTHER agents, merged from in-memory
+   * broadcasts and the shared DB. Used by read paths (e.g. get_context
+   * conflict warnings) that need per-intent detail rather than the aggregate
+   * {@link checkConflict} verdict. Never throws: DB problems simply shrink
+   * the result to the in-memory set.
+   *
+   * Dedup is by CONTENT (agentId|intentType|targetFiles|timestamp), not by
+   * id: the in-memory copy carries the broadcaster's UUID while the persisted
+   * row carries an integer row-id, so id-based dedup would double-report the
+   * same intent.
+   */
   getActiveIntents(excludeAgentId?: string): IntentBroadcast[] {
     const now = Date.now();
     const seen = new Set<string>();
     const out: IntentBroadcast[] = [];
 
-    const contentKey = (agentId: string, intentType: string, targetFiles: string[], timestamp: number): string =>
-      `${agentId}|${intentType}|${[...targetFiles].sort().join(',')}|${timestamp}`;
+    const contentKey = (
+      agentId: string,
+      intentType: string,
+      targetFiles: string[],
+      timestamp: number,
+    ): string => `${agentId}|${intentType}|${[...targetFiles].sort().join(',')}|${timestamp}`;
 
     for (const [agentId, broadcasts] of this.activeIntents) {
       if (excludeAgentId !== undefined && agentId === excludeAgentId) continue;
@@ -401,7 +412,7 @@ export class IntentBroadcastService {
             `SELECT id, agent_id, intent_type, target_files, session_id, description,
                     expected_changes, broadcast_at, expires_at
              FROM pending_intents
-             WHERE expires_at >= ?`
+             WHERE expires_at >= ?`,
           )
           .all(now) as PendingIntentRow[];
 
@@ -488,7 +499,7 @@ export class IntentBroadcastService {
           `INSERT INTO pending_intents
              (agent_id, intent_type, target_files, session_id, description,
               expected_changes, broadcast_at, expires_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           b.agentId,
@@ -498,7 +509,7 @@ export class IntentBroadcastService {
           b.description ?? null,
           b.expectedChanges ? JSON.stringify(b.expectedChanges) : null,
           b.timestamp,
-          expiresAt
+          expiresAt,
         );
     } catch {
       // ignore DB errors to keep broadcast resilient
@@ -515,7 +526,9 @@ export class IntentBroadcastService {
     if (this.schemaChecked) return;
     this.schemaChecked = true;
     try {
-      const cols = db.prepare('PRAGMA table_info(pending_intents)').all() as Array<{ name: string }>;
+      const cols = db.prepare('PRAGMA table_info(pending_intents)').all() as Array<{
+        name: string;
+      }>;
       const names = new Set(cols.map((c) => c.name));
       const additions: Array<[string, string]> = [
         ['session_id', 'TEXT'],

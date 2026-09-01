@@ -9,9 +9,8 @@ class ContextCommand extends BaseCommand {
   registerCommands(): Command {
     const cmd = this.cmd;
 
-    cmd
-      .argument('<file>', 'File path')
-      .action(asyncHandler(async (filePath: string) => {
+    cmd.argument('<file>', 'File path').action(
+      asyncHandler(async (filePath: string) => {
         await this.withService(['scale'], async (_ctx, services) => {
           const scale = services.scale!;
           const kg = scale.getKnowledgeGraph();
@@ -36,7 +35,8 @@ class ContextCommand extends BaseCommand {
             }
           }
         });
-      }));
+      }),
+    );
 
     return cmd;
   }

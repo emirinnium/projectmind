@@ -17,7 +17,8 @@ import { renderModuleSvg, renderModulePng } from '@/cli/commands/graph-render.js
 export type ArchitectureDiagramFormat = 'svg' | 'png' | 'mermaid';
 
 /** Layer identifiers for cross-layer boundary coloring. */
-export type LayerName = 'core' | 'service' | 'api' | 'presentation' | 'infrastructure' | 'cross-cutting';
+export type LayerName =
+  'core' | 'service' | 'api' | 'presentation' | 'infrastructure' | 'cross-cutting';
 
 /** Color mapping for each layer layer in the Mermaid diagram. */
 export const LAYER_COLORS: Record<LayerName, string> = {
@@ -70,9 +71,7 @@ export interface CircularDependency {
 }
 
 /** Detect cycles in a dependency graph represented as adjacency list. */
-export function detectCircularDeps(
-  adjacency: Map<string, string[]>
-): CircularDependency[] {
+export function detectCircularDeps(adjacency: Map<string, string[]>): CircularDependency[] {
   const visited = new Set<string>();
   const inStack = new Set<string>();
   const cycles: CircularDependency[] = [];
@@ -196,7 +195,7 @@ function buildMermaid(report: ScaleReport): string {
  */
 export function exportArchitectureDiagramForTool(
   deps: McpDependencies,
-  args: ExportArchitectureDiagramArgs
+  args: ExportArchitectureDiagramArgs,
 ): ExportArchitectureDiagramResult {
   const report = deps.scale.getScaleReport();
   const format = args.format ?? 'svg';
@@ -229,7 +228,7 @@ export interface EnhancedArchitectureDiagramResult extends ExportArchitectureDia
  */
 export function exportEnhancedArchitectureDiagramForTool(
   deps: McpDependencies,
-  args: ExportArchitectureDiagramArgs
+  args: ExportArchitectureDiagramArgs,
 ): EnhancedArchitectureDiagramResult {
   const report = deps.scale.getScaleReport();
   const format = args.format ?? 'mermaid';
@@ -296,7 +295,7 @@ function filterReport(report: ScaleReport, module?: string, depth?: number): Sca
         .map((m) => m.path)
         .join(', ');
       throw new Error(
-        `No module matches "${module}". Available modules: ${available}${modules.length > 10 ? ', …' : ''}`
+        `No module matches "${module}". Available modules: ${available}${modules.length > 10 ? ', …' : ''}`,
       );
     }
     modules = matches;
@@ -321,7 +320,10 @@ function filterReport(report: ScaleReport, module?: string, depth?: number): Sca
  * - `depth`: cap the number of modules shown (top N by file count; default all)
  * - Returns Mermaid graph TD with layer color-coding and circular dependency warnings.
  */
-export function registerExportArchitectureDiagramTool(server: McpServer, deps: McpDependencies): void {
+export function registerExportArchitectureDiagramTool(
+  server: McpServer,
+  deps: McpDependencies,
+): void {
   server.registerTool(
     'export_architecture_diagram',
     {
@@ -332,9 +334,22 @@ export function registerExportArchitectureDiagramTool(server: McpServer, deps: M
         '`module` narrows the diagram to one module (exact path or name match, else case-insensitive path substring); `depth` caps the number of modules shown (top N by file count).\n' +
         'Mermaid output includes layer color-coding and circular dependency highlights.',
       inputSchema: {
-        format: z.enum(['svg', 'png', 'mermaid']).optional().describe('Output format (default "svg")'),
-        module: z.string().optional().describe('Narrow the diagram to a single module: exact path or name match, else case-insensitive path substring'),
-        depth: z.number().int().min(1).optional().describe('Maximum number of modules to include (top N by file count; default all)'),
+        format: z
+          .enum(['svg', 'png', 'mermaid'])
+          .optional()
+          .describe('Output format (default "svg")'),
+        module: z
+          .string()
+          .optional()
+          .describe(
+            'Narrow the diagram to a single module: exact path or name match, else case-insensitive path substring',
+          ),
+        depth: z
+          .number()
+          .int()
+          .min(1)
+          .optional()
+          .describe('Maximum number of modules to include (top N by file count; default all)'),
       },
     },
     async (args) => {
@@ -361,7 +376,7 @@ export function registerExportArchitectureDiagramTool(server: McpServer, deps: M
         }
         const responseText = [
           result.content,
-          ...notes.length > 0 ? [`%% Circular dependencies:`, ...notes] : [],
+          ...(notes.length > 0 ? [`%% Circular dependencies:`, ...notes] : []),
         ].join('\n');
         return {
           content: [{ type: 'text', text: responseText }],
@@ -372,6 +387,6 @@ export function registerExportArchitectureDiagramTool(server: McpServer, deps: M
           content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
         };
       }
-    }
+    },
   );
 }

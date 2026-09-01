@@ -129,9 +129,10 @@ export class IntegrityGuard {
     const missingPaths = new Set<string>();
 
     // 1. Missing / moved files
-    const fileRows = db
-      .prepare('SELECT id, relative_path FROM files')
-      .all() as Array<{ id: number; relative_path: string }>;
+    const fileRows = db.prepare('SELECT id, relative_path FROM files').all() as Array<{
+      id: number;
+      relative_path: string;
+    }>;
 
     for (const row of fileRows) {
       const fullPath = join(this.root, row.relative_path);
@@ -204,7 +205,7 @@ export class IntegrityGuard {
         `SELECT i.id AS import_id, i.file_id AS file_id, f.relative_path AS file, i.source AS src
          FROM imports i
          JOIN files f ON f.id = i.file_id
-         WHERE i.resolved = 0`
+         WHERE i.resolved = 0`,
       )
       .all() as Array<{ import_id: number; file_id: number; file: string; src: string }>;
 
@@ -254,7 +255,10 @@ export class IntegrityGuard {
 
     for (const v of vios) {
       if (v.type === 'moved_file' && v.suggestedPath) {
-        db.prepare('UPDATE files SET relative_path = ? WHERE id = ?').run(v.suggestedPath, v.kgNodeId);
+        db.prepare('UPDATE files SET relative_path = ? WHERE id = ?').run(
+          v.suggestedPath,
+          v.kgNodeId,
+        );
         repaired++;
       } else if (v.type === 'stale_import') {
         // F27: resolve against the IMPORTING file's directory using the
@@ -268,7 +272,7 @@ export class IntegrityGuard {
                 db
                   .prepare(
                     `SELECT i.id FROM imports i JOIN files f ON f.id = i.file_id
-                     WHERE f.relative_path = ? AND i.source = ? AND i.resolved = 0`
+                     WHERE f.relative_path = ? AND i.source = ? AND i.resolved = 0`,
                   )
                   .get(v.sourcePath ?? v.filePath, specifier) as { id: number } | undefined
               )?.id;
@@ -279,7 +283,7 @@ export class IntegrityGuard {
           // F27: set BOTH resolved=1 AND resolved_path.
           db.prepare('UPDATE imports SET resolved = 1, resolved_path = ? WHERE id = ?').run(
             resolvedRel,
-            importId
+            importId,
           );
           repaired++;
         }
@@ -309,7 +313,7 @@ export class IntegrityGuard {
          JOIN files f ON f.id = fn.file_id
          WHERE NOT EXISTS (SELECT 1 FROM calls c WHERE c.from_function_id = fn.id)
            AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.to_function_id = fn.id)
-           AND NOT EXISTS (SELECT 1 FROM imports i WHERE i.source LIKE '%' || fn.name || '%')`
+           AND NOT EXISTS (SELECT 1 FROM imports i WHERE i.source LIKE '%' || fn.name || '%')`,
       )
       .all() as Array<{ fn_id: number; name: string; file_id: number; rel: string }>;
 
@@ -343,7 +347,7 @@ export class IntegrityGuard {
         try {
           const content = readFileSync(fullPath, 'utf-8');
           const re = new RegExp(
-            `export\\s+(?:default\\s+)?(?:async\\s+)?(?:function\\s+${escapeRegExp(row.name)}\\b|(?:const|let|var)\\s+${escapeRegExp(row.name)}\\b)`
+            `export\\s+(?:default\\s+)?(?:async\\s+)?(?:function\\s+${escapeRegExp(row.name)}\\b|(?:const|let|var)\\s+${escapeRegExp(row.name)}\\b)`,
           );
           exported = re.test(content);
         } catch {
@@ -383,7 +387,7 @@ export class IntegrityGuard {
       .prepare(
         `SELECT f.name FROM functions f
          WHERE NOT EXISTS (SELECT 1 FROM calls c WHERE c.from_function_id = f.id)
-          AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.to_function_id = f.id)`
+          AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.to_function_id = f.id)`,
       )
       .all() as Array<{ name: string }>;
     return rows.map((r) => r.name);
@@ -406,7 +410,7 @@ export class IntegrityGuard {
          )
          AND NOT EXISTS (
            SELECT 1 FROM imports i WHERE i.source LIKE '%' || f.relative_path || '%'
-         )`
+         )`,
       )
       .all() as Array<{ id: number; relative_path: string }>;
     return rows.map((r) => ({ id: r.id, relativePath: r.relative_path }));
@@ -434,13 +438,17 @@ export class IntegrityGuard {
     for (let hop = 0; hop < MAX_RENAME_HOPS; hop++) {
       let out: string;
       try {
-        out = execFileSync('git', ['log', '--follow', '--name-status', '--format=%H', '--', current], {
-          cwd: this.root,
-          encoding: 'utf-8',
-          maxBuffer: 4 * 1024 * 1024,
-          stdio: ['ignore', 'pipe', 'ignore'],
-          timeout: DEFAULT_INTEGRITY_TIMEOUT_MS,
-        });
+        out = execFileSync(
+          'git',
+          ['log', '--follow', '--name-status', '--format=%H', '--', current],
+          {
+            cwd: this.root,
+            encoding: 'utf-8',
+            maxBuffer: 4 * 1024 * 1024,
+            stdio: ['ignore', 'pipe', 'ignore'],
+            timeout: DEFAULT_INTEGRITY_TIMEOUT_MS,
+          },
+        );
       } catch {
         break; // not a git repo / git missing — fall through to FS search
       }

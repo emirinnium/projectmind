@@ -62,7 +62,17 @@ export function confineToProject(filePath: string, projectRoot: string): string 
 }
 
 /** CLI flags whose VALUE is a filesystem path (arrow hight-risk read/write). */
-const PATH_VALUE_FLAGS = new Set(['-o', '--output', '-i', '--input', '--config', '--file', '--path', '--root', '--dir']);
+const PATH_VALUE_FLAGS = new Set([
+  '-o',
+  '--output',
+  '-i',
+  '--input',
+  '--config',
+  '--file',
+  '--path',
+  '--root',
+  '--dir',
+]);
 
 /**
  * K4: Reject path-valued CLI flags whose value would read/write OUTSIDE the

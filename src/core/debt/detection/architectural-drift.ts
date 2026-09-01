@@ -8,14 +8,16 @@ import type { DebtItem } from './persistence.js';
  * for normal relative imports as well as path aliases.
  */
 export class ArchitecturalDriftDetector {
-  private persistence: { createDebtItem(opts: {
-    type: 'architectural_drift';
-    description: string;
-    severity: 'high' | 'medium' | 'low';
-    suggestion: string;
-    reasoningTrace: string[];
-    filePath: string | null;
-  }): DebtItem };
+  private persistence: {
+    createDebtItem(opts: {
+      type: 'architectural_drift';
+      description: string;
+      severity: 'high' | 'medium' | 'low';
+      suggestion: string;
+      reasoningTrace: string[];
+      filePath: string | null;
+    }): DebtItem;
+  };
 
   constructor(persistence: ArchitecturalDriftDetector['persistence']) {
     this.persistence = persistence;
@@ -33,7 +35,7 @@ export class ArchitecturalDriftDetector {
     const graph = new Map<string, Set<string>>();
     for (const file of files) {
       const edges = getStatement(
-        `SELECT resolved_path FROM imports WHERE file_id = ? AND resolved_path IS NOT NULL`
+        `SELECT resolved_path FROM imports WHERE file_id = ? AND resolved_path IS NOT NULL`,
       ).all(file.id) as Array<{ resolved_path: string }>;
       for (const { resolved_path } of edges) {
         // Only keep edges that land on known files (self-project edges).
@@ -47,14 +49,16 @@ export class ArchitecturalDriftDetector {
       // Persist immediately so findings reach debt_items and every report.
       // Dedupe also prevents rotated representations of the same cycle from
       // creating multiple debt rows within a single run.
-      items.push(this.persistence.createDebtItem({
-        type: 'architectural_drift',
-        description: `Circular dependency detected: ${cycle.join(' -> ')}`,
-        severity: 'high',
-        suggestion: 'Break the cycle by extracting shared logic into a separate module',
-        reasoningTrace: [`Cycle: ${cycle.join(' -> ')}`],
-        filePath: null,
-      }));
+      items.push(
+        this.persistence.createDebtItem({
+          type: 'architectural_drift',
+          description: `Circular dependency detected: ${cycle.join(' -> ')}`,
+          severity: 'high',
+          suggestion: 'Break the cycle by extracting shared logic into a separate module',
+          reasoningTrace: [`Cycle: ${cycle.join(' -> ')}`],
+          filePath: null,
+        }),
+      );
     }
 
     return items;
@@ -69,7 +73,11 @@ export class ArchitecturalDriftDetector {
         if (cycle[i] < cycle[minIdx]) minIdx = i;
       }
       const normalized = [...cycle.slice(minIdx), ...cycle.slice(0, minIdx)];
-      if (!unique.some((u) => u.length === normalized.length && u.every((n, i) => n === normalized[i]))) {
+      if (
+        !unique.some(
+          (u) => u.length === normalized.length && u.every((n, i) => n === normalized[i]),
+        )
+      ) {
         unique.push(normalized);
       }
     }

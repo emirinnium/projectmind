@@ -1,7 +1,12 @@
 import ts from 'typescript';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { logger } from '../utils/logger.js';
-import { createLangParser, detectLanguageFromPath, type LangSyntaxNode, type StructuralLanguage } from './language-service.js';
+import {
+  createLangParser,
+  detectLanguageFromPath,
+  type LangSyntaxNode,
+  type StructuralLanguage,
+} from './language-service.js';
 
 export interface StructuralMatch {
   filePath: string;
@@ -144,7 +149,10 @@ export class StructuralSearcher {
    * When `dryRun` is true, no files are written; the caller receives full
    * before/after diffs in the `diffs` array.
    */
-  replace(options: StructuralReplaceOptions, filePaths: string[]): { replaced: number; files: string[]; dryRun: boolean; diffs: FileDiff[] } {
+  replace(
+    options: StructuralReplaceOptions,
+    filePaths: string[],
+  ): { replaced: number; files: string[]; dryRun: boolean; diffs: FileDiff[] } {
     const replaced: string[] = [];
     const diffs: FileDiff[] = [];
     let count = 0;
@@ -160,7 +168,10 @@ export class StructuralSearcher {
           const sorted = [...matches].sort((a, b) => b.startOffset - a.startOffset);
           let next = content;
           for (const match of sorted) {
-            next = next.substring(0, match.startOffset) + options.replacement + next.substring(match.endOffset);
+            next =
+              next.substring(0, match.startOffset) +
+              options.replacement +
+              next.substring(match.endOffset);
           }
           return { next, applied: matches.length };
         };
@@ -176,7 +187,10 @@ export class StructuralSearcher {
           // Validate that the replacement text can be parsed as a compatible node.
           // Use the first match to determine node compatibility.
           const firstMatchNode = this.findFirstMatchNode(sourceFile, matches[0]);
-          if (firstMatchNode && !this.parseReplacementForNode(options.replacement, firstMatchNode)) {
+          if (
+            firstMatchNode &&
+            !this.parseReplacementForNode(options.replacement, firstMatchNode)
+          ) {
             // Replacement text is not valid for the matched node type — skip this file.
             continue;
           }
@@ -208,7 +222,10 @@ export class StructuralSearcher {
    * Locate the actual AST node for a given match so we can determine
    * whether the replacement text is syntactically compatible.
    */
-  private findFirstMatchNode(sourceFile: ts.SourceFile, match: StructuralMatch): ts.Node | undefined {
+  private findFirstMatchNode(
+    sourceFile: ts.SourceFile,
+    match: StructuralMatch,
+  ): ts.Node | undefined {
     let found: ts.Node | undefined;
     const visit = (node: ts.Node) => {
       if (found) return;
@@ -224,9 +241,13 @@ export class StructuralSearcher {
     return found;
   }
 
-  private findMatches(sourceFile: ts.SourceFile, options: StructuralReplaceOptions): StructuralMatch[] {
+  private findMatches(
+    sourceFile: ts.SourceFile,
+    options: StructuralReplaceOptions,
+  ): StructuralMatch[] {
     const matches: StructuralMatch[] = [];
-    const language = options.language ?? detectLanguageFromPath(sourceFile.fileName) ?? 'typescript';
+    const language =
+      options.language ?? detectLanguageFromPath(sourceFile.fileName) ?? 'typescript';
 
     const visit = (node: ts.Node) => {
       if (this.matchesNode(node, options, language)) {
@@ -254,7 +275,11 @@ export class StructuralSearcher {
   /**
    * Multi-language node matching
    */
-  private matchesNode(node: ts.Node | LangSyntaxNode, options: StructuralSearchOptions, language: StructuralLanguage): boolean {
+  private matchesNode(
+    node: ts.Node | LangSyntaxNode,
+    options: StructuralSearchOptions,
+    language: StructuralLanguage,
+  ): boolean {
     if (language === 'typescript' || language === 'javascript') {
       return this.matchesTypeScriptNode(node as ts.Node, options);
     }
@@ -297,7 +322,11 @@ export class StructuralSearcher {
     return true;
   }
 
-  private matchesMultiLanguageNode(node: LangSyntaxNode, options: StructuralSearchOptions, language: 'python' | 'go' | 'rust' | 'java'): boolean {
+  private matchesMultiLanguageNode(
+    node: LangSyntaxNode,
+    options: StructuralSearchOptions,
+    language: 'python' | 'go' | 'rust' | 'java',
+  ): boolean {
     // Match by node kind (tree-sitter node type, e.g. 'function_definition')
     if (options.nodeKind && node.type !== options.nodeKind) {
       return false;
@@ -344,7 +373,12 @@ export class StructuralSearcher {
    * Byte offsets (`startIndex`/`endIndex`) are reported on the matches so the
    * replace path can splice text directly.
    */
-  private searchMultiLanguage(filePath: string, content: string, options: StructuralSearchOptions, language: 'python' | 'go' | 'rust' | 'java'): StructuralMatch[] {
+  private searchMultiLanguage(
+    filePath: string,
+    content: string,
+    options: StructuralSearchOptions,
+    language: 'python' | 'go' | 'rust' | 'java',
+  ): StructuralMatch[] {
     const results: StructuralMatch[] = [];
     const maxResults = options.maxResults || 50;
 
@@ -417,7 +451,8 @@ export class StructuralSearcher {
       // `parseDiagnostics` exists on SourceFile at runtime but is not in the
       // TypeScript type declarations.  Access it via a narrow type assertion
       // to reject error-recovery ASTs produced by invalid syntax.
-      if ((sf as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics?.length) return undefined;
+      if ((sf as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics?.length)
+        return undefined;
       const stmt = sf.statements[0];
       if (ts.isVariableStatement(stmt)) {
         const decl = stmt.declarationList.declarations[0];
@@ -442,7 +477,8 @@ export class StructuralSearcher {
     try {
       const sf = ts.createSourceFile('__pm_replace.ts', text, ts.ScriptTarget.Latest, true);
       // Reject if parser produced diagnostics (syntax errors / error-recovery nodes).
-      if ((sf as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics?.length) return undefined;
+      if ((sf as { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics?.length)
+        return undefined;
       if (sf.statements.length > 0) {
         return sf.statements[0];
       }
@@ -460,7 +496,7 @@ export class StructuralSearcher {
   private isDeclarationNode(node: ts.Node): boolean {
     const k = node.kind;
     return (
-      k >= ts.SyntaxKind.FunctionDeclaration && k <= ts.SyntaxKind.VariableDeclaration ||
+      (k >= ts.SyntaxKind.FunctionDeclaration && k <= ts.SyntaxKind.VariableDeclaration) ||
       k === ts.SyntaxKind.ClassDeclaration ||
       k === ts.SyntaxKind.InterfaceDeclaration ||
       k === ts.SyntaxKind.TypeAliasDeclaration ||

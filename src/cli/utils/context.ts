@@ -15,10 +15,10 @@ export interface CLIContext {
 
 export async function createContext(overrideRoot?: string): Promise<CLIContext> {
   const config = loadConfig();
-  
+
   const projectRoot = overrideRoot || config.projectRoot;
   const databasePath = overrideRoot ? '.projectmind/pm-knowledge.db' : config.databasePath;
-  
+
   const dbPath = join(projectRoot, databasePath);
   const dbDir = dirname(dbPath);
   if (!existsSync(dbDir)) {

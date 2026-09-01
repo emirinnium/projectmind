@@ -86,10 +86,10 @@ export function loadConfig(): ProjectMindConfig {
     try {
       const rawContent = readFileSync(configPath, 'utf-8');
       const parsed = JSON.parse(rawContent);
-      
+
       // Validate with Zod schema
       const validated = validateConfig(parsed as unknown);
-      
+
       // Merge with defaults and resolve API keys from env vars
       const config = mergeWithDefaults(validated);
       return config;
@@ -125,7 +125,11 @@ export function loadConfig(): ProjectMindConfig {
  *
  * Returns a path RELATIVE TO projectRoot.
  */
-function normalizeStatePath(raw: string | undefined, fallback: string, projectRoot: string): string {
+function normalizeStatePath(
+  raw: string | undefined,
+  fallback: string,
+  projectRoot: string,
+): string {
   if (raw === undefined || raw.trim() === '') {
     return fallback;
   }
@@ -159,18 +163,22 @@ export function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
     model: validated.llm?.model ?? DEFAULT_CONFIG.llm.model,
     apiKey: resolveApiKey(validated.llm?.apiKey, provider),
     deepModel: validated.llm?.deepModel ?? DEFAULT_CONFIG.llm.deepModel,
-    confidenceThreshold: validated.llm?.confidenceThreshold ?? DEFAULT_CONFIG.llm.confidenceThreshold,
+    confidenceThreshold:
+      validated.llm?.confidenceThreshold ?? DEFAULT_CONFIG.llm.confidenceThreshold,
     maxCacheSize: validated.llm?.maxCacheSize ?? DEFAULT_CONFIG.llm.maxCacheSize,
   };
 
   const embeddingsConfig = {
     provider: validated.embeddings?.provider ?? DEFAULT_CONFIG.embeddings.provider,
-    unixcoderModelPath: validated.embeddings?.unixcoderModelPath ?? DEFAULT_CONFIG.embeddings.unixcoderModelPath,
-    codebertModelPath: validated.embeddings?.codebertModelPath ?? DEFAULT_CONFIG.embeddings.codebertModelPath,
+    unixcoderModelPath:
+      validated.embeddings?.unixcoderModelPath ?? DEFAULT_CONFIG.embeddings.unixcoderModelPath,
+    codebertModelPath:
+      validated.embeddings?.codebertModelPath ?? DEFAULT_CONFIG.embeddings.codebertModelPath,
     dimension: validated.embeddings?.dimension ?? DEFAULT_CONFIG.embeddings.dimension,
     openaiApiKey: validated.embeddings?.openaiApiKey ?? process.env.OPENAI_API_KEY,
     openaiModel: validated.embeddings?.openaiModel ?? DEFAULT_CONFIG.embeddings.openaiModel,
-    transformersModel: validated.embeddings?.transformersModel ?? DEFAULT_CONFIG.embeddings.transformersModel,
+    transformersModel:
+      validated.embeddings?.transformersModel ?? DEFAULT_CONFIG.embeddings.transformersModel,
   };
 
   const featuresConfig = {
@@ -182,8 +190,16 @@ export function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
 
   return {
     projectRoot: validated.projectRoot ?? DEFAULT_CONFIG.projectRoot,
-    databasePath: normalizeStatePath(validated.databasePath, DEFAULT_CONFIG.databasePath, validated.projectRoot ?? DEFAULT_CONFIG.projectRoot),
-    embeddingsDir: normalizeStatePath(validated.embeddingsDir, DEFAULT_CONFIG.embeddingsDir, validated.projectRoot ?? DEFAULT_CONFIG.projectRoot),
+    databasePath: normalizeStatePath(
+      validated.databasePath,
+      DEFAULT_CONFIG.databasePath,
+      validated.projectRoot ?? DEFAULT_CONFIG.projectRoot,
+    ),
+    embeddingsDir: normalizeStatePath(
+      validated.embeddingsDir,
+      DEFAULT_CONFIG.embeddingsDir,
+      validated.projectRoot ?? DEFAULT_CONFIG.projectRoot,
+    ),
     maxDepth: validated.maxDepth ?? DEFAULT_CONFIG.maxDepth,
     ignorePatterns: validated.ignorePatterns ?? DEFAULT_CONFIG.ignorePatterns,
     llm: llmConfig,

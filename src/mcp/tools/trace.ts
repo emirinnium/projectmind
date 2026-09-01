@@ -8,15 +8,20 @@ export function registerIngestTraceTool(server: McpServer, deps: McpDependencies
     'ingest_trace',
     {
       title: 'Ingest Runtime Trace',
-      description: 'Ingest runtime call trace data into the knowledge graph. Supports JSON arrays of trace events.',
+      description:
+        'Ingest runtime call trace data into the knowledge graph. Supports JSON arrays of trace events.',
       inputSchema: {
-        traceData: z.array(z.object({
-          fromFunctionName: z.string(),
-          toFunctionName: z.string(),
-          workloadId: z.string(),
-          callCount: z.number().optional(),
-          staticMissed: z.boolean().optional(),
-        })).describe('Array of trace events from runtime execution'),
+        traceData: z
+          .array(
+            z.object({
+              fromFunctionName: z.string(),
+              toFunctionName: z.string(),
+              workloadId: z.string(),
+              callCount: z.number().optional(),
+              staticMissed: z.boolean().optional(),
+            }),
+          )
+          .describe('Array of trace events from runtime execution'),
         workloadId: z.string().optional().describe('Workload identifier for grouping trace data'),
         clear: z.boolean().default(false).describe('Clear existing dynamic calls before ingest'),
       },
@@ -37,21 +42,25 @@ export function registerIngestTraceTool(server: McpServer, deps: McpDependencies
           args.traceData.map((c) => ({
             ...c,
             workloadId: c.workloadId || workloadId,
-          }))
+          })),
         );
 
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: true,
-                workloadId,
-                inserted: result.inserted,
-                updated: result.updated,
-                errors: result.errors,
-                totalProcessed: result.inserted + result.updated,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: true,
+                  workloadId,
+                  inserted: result.inserted,
+                  updated: result.updated,
+                  errors: result.errors,
+                  totalProcessed: result.inserted + result.updated,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -60,14 +69,18 @@ export function registerIngestTraceTool(server: McpServer, deps: McpDependencies
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 }

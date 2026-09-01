@@ -22,7 +22,9 @@ export interface FileLock {
 
 /** Delete expired locks; returns how many were purged. */
 export function purgeExpiredLocks(ctx: KgContext): number {
-  const result = ctx.db.prepare('DELETE FROM agent_file_locks WHERE expires_at <= CURRENT_TIMESTAMP').run();
+  const result = ctx.db
+    .prepare('DELETE FROM agent_file_locks WHERE expires_at <= CURRENT_TIMESTAMP')
+    .run();
   return Number(result.changes ?? 0);
 }
 
@@ -52,34 +54,42 @@ export function acquireFileLock(
   ctx: KgContext,
   filePath: string,
   agentName: string,
-  options: { ttlMinutes?: number; reason?: string } = {}
+  options: { ttlMinutes?: number; reason?: string } = {},
 ): AcquireResult {
   purgeExpiredLocks(ctx);
 
   const ttlMinutes = Math.max(1, Math.min(24 * 60, Math.floor(options.ttlMinutes ?? 30)));
-  const existing = ctx.db.prepare(
-    'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?'
-  ).get(filePath) as Record<string, SQLOutputValue> | undefined;
+  const existing = ctx.db
+    .prepare(
+      'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?',
+    )
+    .get(filePath) as Record<string, SQLOutputValue> | undefined;
 
   if (existing) {
     const lock = rowToLock(existing);
     // Re-acquire by the SAME agent refreshes the TTL.
     if (lock.agentName === agentName) {
-      ctx.db.prepare(
-        "UPDATE agent_file_locks SET expires_at = datetime('now', '+' || ? || ' minutes'), reason = COALESCE(?, reason) WHERE id = ?"
-      ).run(String(ttlMinutes), options.reason ?? null, lock.id);
+      ctx.db
+        .prepare(
+          "UPDATE agent_file_locks SET expires_at = datetime('now', '+' || ? || ' minutes'), reason = COALESCE(?, reason) WHERE id = ?",
+        )
+        .run(String(ttlMinutes), options.reason ?? null, lock.id);
       return { status: 'acquired', lock: { ...lock, expiresAt: lock.expiresAt } };
     }
     return { status: 'held', heldBy: lock };
   }
 
-  const result = ctx.db.prepare(
-    "INSERT INTO agent_file_locks (file_path, agent_name, reason, expires_at) VALUES (?, ?, ?, datetime('now', '+' || ? || ' minutes'))"
-  ).run(filePath, agentName, options.reason ?? null, String(ttlMinutes));
+  const result = ctx.db
+    .prepare(
+      "INSERT INTO agent_file_locks (file_path, agent_name, reason, expires_at) VALUES (?, ?, ?, datetime('now', '+' || ? || ' minutes'))",
+    )
+    .run(filePath, agentName, options.reason ?? null, String(ttlMinutes));
 
-  const created = ctx.db.prepare(
-    'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE id = ?'
-  ).get(Number(result.lastInsertRowid)) as Record<string, SQLOutputValue>;
+  const created = ctx.db
+    .prepare(
+      'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE id = ?',
+    )
+    .get(Number(result.lastInsertRowid)) as Record<string, SQLOutputValue>;
 
   return { status: 'acquired', lock: rowToLock(created) };
 }
@@ -90,12 +100,18 @@ export interface ReleaseResult {
 }
 
 /** Release a lock. Only the owning agent may release it. */
-export function releaseFileLock(ctx: KgContext, filePath: string, agentName: string): ReleaseResult {
+export function releaseFileLock(
+  ctx: KgContext,
+  filePath: string,
+  agentName: string,
+): ReleaseResult {
   purgeExpiredLocks(ctx);
 
-  const row = ctx.db.prepare(
-    'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?'
-  ).get(filePath) as Record<string, SQLOutputValue> | undefined;
+  const row = ctx.db
+    .prepare(
+      'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?',
+    )
+    .get(filePath) as Record<string, SQLOutputValue> | undefined;
 
   if (!row) return { status: 'not-found' };
   const lock = rowToLock(row);
@@ -109,12 +125,16 @@ export function releaseFileLock(ctx: KgContext, filePath: string, agentName: str
 export function getActiveLocks(ctx: KgContext, agentName?: string): FileLock[] {
   purgeExpiredLocks(ctx);
   const rows = agentName
-    ? (ctx.db.prepare(
-        'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE agent_name = ? ORDER BY acquired_at DESC LIMIT 200'
-      ).all(agentName) as Record<string, SQLOutputValue>[])
-    : (ctx.db.prepare(
-        'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks ORDER BY acquired_at DESC LIMIT 500'
-      ).all() as Record<string, SQLOutputValue>[]);
+    ? (ctx.db
+        .prepare(
+          'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE agent_name = ? ORDER BY acquired_at DESC LIMIT 200',
+        )
+        .all(agentName) as Record<string, SQLOutputValue>[])
+    : (ctx.db
+        .prepare(
+          'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks ORDER BY acquired_at DESC LIMIT 500',
+        )
+        .all() as Record<string, SQLOutputValue>[]);
   return rows.map(rowToLock);
 }
 
@@ -127,14 +147,20 @@ export interface ConflictReport {
  * Check a batch of files before editing: which are free, which are locked
  * by OTHER agents. Own locks are reported as free (agent may proceed).
  */
-export function checkFileConflicts(ctx: KgContext, filePaths: string[], agentName: string): ConflictReport {
+export function checkFileConflicts(
+  ctx: KgContext,
+  filePaths: string[],
+  agentName: string,
+): ConflictReport {
   purgeExpiredLocks(ctx);
   const report: ConflictReport = { free: [], conflicts: [] };
 
   for (const filePath of filePaths) {
-    const row = ctx.db.prepare(
-      'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?'
-    ).get(filePath) as Record<string, SQLOutputValue> | undefined;
+    const row = ctx.db
+      .prepare(
+        'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?',
+      )
+      .get(filePath) as Record<string, SQLOutputValue> | undefined;
 
     if (!row || row.agent_name === agentName) {
       report.free.push(filePath);

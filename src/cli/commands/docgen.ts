@@ -15,74 +15,83 @@ export function createDocgenCommand(): Command {
     .option('-f, --format <fmt>', 'Output: markdown|html', 'markdown')
     .option('-o, --output <dir>', 'Output directory', 'docs')
     .option('--api', 'Generate API reference')
-    .action(asyncHandler(async (opts: { format: string; output: string; api: boolean }) => {
-      await withService(['scale'], async (_ctx, services) => {
-        const scale = services.scale!;
-        const config = loadConfig();
-        
-        output.section('Documentation Generation');
-        
-        const report = scale.getScaleReport();
-        const allFiles = report.modules.flatMap(m => m.files || []);
-        const tsFiles = allFiles.filter(f => f.language === 'typescript');
-        
-        if (!opts.api) {
-          output.info('Use --api to generate API reference');
-          return;
-        }
-        
-        const outputDir = join(config.projectRoot, opts.output);
-        if (!existsSync(outputDir)) {
-          mkdirSync(outputDir, { recursive: true });
-        }
-        
-        let generated = 0;
-        
-        for (const file of tsFiles.slice(0, 20)) {
-          try {
-            const content = readFileSync(file.path, 'utf-8');
-            
-            const exports = extractExports(content);
-            if (exports.length === 0) continue;
-            
-            const doc = generateFileDoc(file.relativePath, exports, content);
-            const outPath = join(config.projectRoot, opts.output, file.relativePath.replace(/\.ts$/, '.md'));
-            const outDir = dirname(outPath);
-            if (!existsSync(outDir)) {
-              mkdirSync(outDir, { recursive: true });
-            }
-            
-            writeFileSync(outPath, doc);
-            generated++;
-          } catch {
-            logger.debug(`Failed to generate doc for file, skipping`);
+    .action(
+      asyncHandler(async (opts: { format: string; output: string; api: boolean }) => {
+        await withService(['scale'], async (_ctx, services) => {
+          const scale = services.scale!;
+          const config = loadConfig();
+
+          output.section('Documentation Generation');
+
+          const report = scale.getScaleReport();
+          const allFiles = report.modules.flatMap((m) => m.files || []);
+          const tsFiles = allFiles.filter((f) => f.language === 'typescript');
+
+          if (!opts.api) {
+            output.info('Use --api to generate API reference');
+            return;
           }
-        }
-        
-        output.success(`Generated ${generated} API docs in ${opts.output}/`);
-        
-        // Generate index
-        const indexPath = join(config.projectRoot, opts.output, 'index.md');
-        writeFileSync(indexPath, generateIndex(report));
-        output.success(`Index written to ${opts.output}/index.md`);
-      });
-    }));
+
+          const outputDir = join(config.projectRoot, opts.output);
+          if (!existsSync(outputDir)) {
+            mkdirSync(outputDir, { recursive: true });
+          }
+
+          let generated = 0;
+
+          for (const file of tsFiles.slice(0, 20)) {
+            try {
+              const content = readFileSync(file.path, 'utf-8');
+
+              const exports = extractExports(content);
+              if (exports.length === 0) continue;
+
+              const doc = generateFileDoc(file.relativePath, exports, content);
+              const outPath = join(
+                config.projectRoot,
+                opts.output,
+                file.relativePath.replace(/\.ts$/, '.md'),
+              );
+              const outDir = dirname(outPath);
+              if (!existsSync(outDir)) {
+                mkdirSync(outDir, { recursive: true });
+              }
+
+              writeFileSync(outPath, doc);
+              generated++;
+            } catch {
+              logger.debug(`Failed to generate doc for file, skipping`);
+            }
+          }
+
+          output.success(`Generated ${generated} API docs in ${opts.output}/`);
+
+          // Generate index
+          const indexPath = join(config.projectRoot, opts.output, 'index.md');
+          writeFileSync(indexPath, generateIndex(report));
+          output.success(`Index written to ${opts.output}/index.md`);
+        });
+      }),
+    );
 
   docgenCmd
     .command('readme')
     .description('Generate README.md from project info')
     .option('-o, --output <file>', 'Output file', 'README.md')
-    .action(asyncHandler(async (opts: { output: string }) => {
-      await withService(['scale'], async (_ctx, services) => {
-        const scale = services.scale!;
-        const config = loadConfig();
-        const report = scale.getScaleReport();
-        
-        const outputPath = join(config.projectRoot, opts.output);
-        
-        const languagesStr = Object.entries(report.languages).map(([k, v]) => `${k} (${(v as { files: number }).files})`).join(', ');
-        
-        const readme = `# ProjectMind Project
+    .action(
+      asyncHandler(async (opts: { output: string }) => {
+        await withService(['scale'], async (_ctx, services) => {
+          const scale = services.scale!;
+          const config = loadConfig();
+          const report = scale.getScaleReport();
+
+          const outputPath = join(config.projectRoot, opts.output);
+
+          const languagesStr = Object.entries(report.languages)
+            .map(([k, v]) => `${k} (${(v as { files: number }).files})`)
+            .join(', ');
+
+          const readme = `# ProjectMind Project
 
 Living Codebase Intelligence Layer for AI Agents
 
@@ -117,25 +126,35 @@ projectmind agent status  # Agent sessions
 
 *Generated by ProjectMind on ${new Date().toISOString().split('T')[0]}*
 `;
-        
-        writeFileSync(outputPath, readme);
-        output.success(`README written to ${opts.output}`);
-      });
-    }));
+
+          writeFileSync(outputPath, readme);
+          output.success(`README written to ${opts.output}`);
+        });
+      }),
+    );
 
   return docgenCmd;
 }
 
 import ts from 'typescript';
 
-function extractExports(content: string): Array<{ name: string; type: string; params: string; doc?: string }> {
-  const sourceFile = ts.createSourceFile('input.ts', content, ts.ScriptTarget.Latest, /* setParentNodes */ true, ts.ScriptKind.TS);
+function extractExports(
+  content: string,
+): Array<{ name: string; type: string; params: string; doc?: string }> {
+  const sourceFile = ts.createSourceFile(
+    'input.ts',
+    content,
+    ts.ScriptTarget.Latest,
+    /* setParentNodes */ true,
+    ts.ScriptKind.TS,
+  );
   const exports: Array<{ name: string; type: string; params: string; doc?: string }> = [];
 
   const jsdocOf = (node: ts.Node): string | undefined => {
     for (const d of ts.getJSDocCommentsAndTags(node)) {
       if (ts.isJSDoc(d) && d.comment) {
-        const text = typeof d.comment === 'string' ? d.comment : d.comment.map(c => c.getText()).join('');
+        const text =
+          typeof d.comment === 'string' ? d.comment : d.comment.map((c) => c.getText()).join('');
         if (text.trim()) return text.trim();
       }
     }
@@ -144,21 +163,46 @@ function extractExports(content: string): Array<{ name: string; type: string; pa
 
   const isExported = (node: ts.Node): boolean => {
     if (!ts.canHaveModifiers(node)) return false;
-    return node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+    return node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
   };
 
   const visit = (node: ts.Node): void => {
     if (ts.isFunctionDeclaration(node) && isExported(node)) {
-      const params = node.parameters.map(p => p.getText(sourceFile)).join(', ');
-      exports.push({ name: node.name?.text ?? 'anonymous', type: 'function', params, doc: jsdocOf(node) });
+      const params = node.parameters.map((p) => p.getText(sourceFile)).join(', ');
+      exports.push({
+        name: node.name?.text ?? 'anonymous',
+        type: 'function',
+        params,
+        doc: jsdocOf(node),
+      });
     } else if (ts.isClassDeclaration(node) && isExported(node)) {
-      exports.push({ name: node.name?.text ?? 'anonymous', type: 'class', params: '', doc: jsdocOf(node) });
+      exports.push({
+        name: node.name?.text ?? 'anonymous',
+        type: 'class',
+        params: '',
+        doc: jsdocOf(node),
+      });
     } else if (ts.isInterfaceDeclaration(node) && isExported(node)) {
-      exports.push({ name: node.name?.text ?? 'anonymous', type: 'interface', params: '', doc: jsdocOf(node) });
+      exports.push({
+        name: node.name?.text ?? 'anonymous',
+        type: 'interface',
+        params: '',
+        doc: jsdocOf(node),
+      });
     } else if (ts.isTypeAliasDeclaration(node) && isExported(node)) {
-      exports.push({ name: node.name?.text ?? 'anonymous', type: 'type', params: '', doc: jsdocOf(node) });
+      exports.push({
+        name: node.name?.text ?? 'anonymous',
+        type: 'type',
+        params: '',
+        doc: jsdocOf(node),
+      });
     } else if (ts.isEnumDeclaration(node) && isExported(node)) {
-      exports.push({ name: node.name?.text ?? 'anonymous', type: 'enum', params: '', doc: jsdocOf(node) });
+      exports.push({
+        name: node.name?.text ?? 'anonymous',
+        type: 'enum',
+        params: '',
+        doc: jsdocOf(node),
+      });
     } else if (ts.isVariableStatement(node) && isExported(node)) {
       for (const decl of node.declarationList.declarations) {
         if (ts.isIdentifier(decl.name)) {
@@ -173,7 +217,11 @@ function extractExports(content: string): Array<{ name: string; type: string; pa
   return exports;
 }
 
-function generateFileDoc(relPath: string, exports: Array<{ name: string; type: string; params: string; doc?: string }>, _content: string): string {
+function generateFileDoc(
+  relPath: string,
+  exports: Array<{ name: string; type: string; params: string; doc?: string }>,
+  _content: string,
+): string {
   const lines = [
     `# ${relPath}`,
     '',
@@ -181,7 +229,7 @@ function generateFileDoc(relPath: string, exports: Array<{ name: string; type: s
     `**Exports:** ${exports.length}`,
     '',
   ];
-  
+
   for (const exp of exports) {
     lines.push(`## ${exp.type}: \`${exp.name}\``);
     if (exp.doc) {
@@ -195,18 +243,20 @@ function generateFileDoc(relPath: string, exports: Array<{ name: string; type: s
       lines.push(`\`\`\`typescript`, `export interface ${exp.name}`, `\`\`\``, '');
     }
   }
-  
+
   return lines.join('\n');
 }
 
-function generateIndex(report: DocgenReport & { totalFiles?: number; totalLines?: number }): string {
+function generateIndex(
+  report: DocgenReport & { totalFiles?: number; totalLines?: number },
+): string {
   return `# API Documentation
 
 ## Project: ProjectMind
 
 ## Modules
 
-${report.modules.map(m => `- [${m.path}](${m.path.replace(/[^a-zA-Z0-9]/g, '-')}.md) (${m.fileCount} files)`).join('\n')}
+${report.modules.map((m) => `- [${m.path}](${m.path.replace(/[^a-zA-Z0-9]/g, '-')}.md) (${m.fileCount} files)`).join('\n')}
 
 ## Summary
 

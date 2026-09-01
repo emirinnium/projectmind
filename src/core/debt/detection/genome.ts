@@ -49,34 +49,36 @@ export class GenomeComputer {
     const projectPatterns = this.patternCache ?? [];
 
     const violations = this.getStmt(
-      "SELECT COUNT(*) as cnt FROM debt_items WHERE resolved = 0 AND severity = 'high'"
+      "SELECT COUNT(*) as cnt FROM debt_items WHERE resolved = 0 AND severity = 'high'",
     ).get() as { cnt: number };
 
     const violationCount = violations?.cnt ?? 0;
-    
+
     // Calculate weighted confidence by usage count (more used = more reliable)
     let totalWeight = 0;
     let weightedSum = 0;
     let highConfidenceCount = 0;
-    
+
     for (const p of projectPatterns) {
       const weight = Math.max(1, p.usageCount);
       weightedSum += p.confidence * weight;
       totalWeight += weight;
       if (p.confidence >= 0.8) highConfidenceCount++;
     }
-    
-    const avgConfidence = projectPatterns.reduce((s: number, p: Pattern) => s + p.confidence, 0) / Math.max(projectPatterns.length, 1);
+
+    const avgConfidence =
+      projectPatterns.reduce((s: number, p: Pattern) => s + p.confidence, 0) /
+      Math.max(projectPatterns.length, 1);
     const weightedConfidence = totalWeight > 0 ? weightedSum / totalWeight : avgConfidence;
-    
+
     const violationPenalty = Math.min(violationCount * 0.02, 0.3);
-    
+
     // Import resolution bonus (0-5%) - check if imports table has resolved column
     let importResolutionRate = 0;
     let importBonus = 0;
     try {
       const importStats = this.getStmt(
-        "SELECT COUNT(*) as total, SUM(CASE WHEN resolved = 1 THEN 1 ELSE 0 END) as resolved FROM imports"
+        'SELECT COUNT(*) as total, SUM(CASE WHEN resolved = 1 THEN 1 ELSE 0 END) as resolved FROM imports',
       ).get() as { total: number; resolved: number };
       importResolutionRate = importStats.total > 0 ? importStats.resolved / importStats.total : 0;
       importBonus = importResolutionRate * 0.05;
@@ -85,13 +87,13 @@ export class GenomeComputer {
       importResolutionRate = 0;
       importBonus = 0;
     }
-    
+
     // Circular dependency penalty
     let circularDepCount = 0;
     let circularDepPenalty = 0;
     try {
       const circularDeps = this.getStmt(
-        "SELECT COUNT(*) as cnt FROM circular_dependencies"
+        'SELECT COUNT(*) as cnt FROM circular_dependencies',
       ).get() as { cnt: number };
       circularDepCount = circularDeps?.cnt ?? 0;
       circularDepPenalty = Math.min(circularDepCount * 0.05, 0.2);
@@ -100,10 +102,10 @@ export class GenomeComputer {
       circularDepCount = 0;
       circularDepPenalty = 0;
     }
-    
+
     // Marker count from TODO/FIXME scanning across all project files.
-      // Marker count is recorded in the genome breakdown but does not penalty
-      // the coherence score (unlike violation/circular dep penalties).
+    // Marker count is recorded in the genome breakdown but does not penalty
+    // the coherence score (unlike violation/circular dep penalties).
     let markerCount = 0;
     try {
       const allFiles = this.kg.getAllFiles();
@@ -126,15 +128,24 @@ export class GenomeComputer {
     } catch {
       markerCount = 0;
     }
-    
+
     // Agent coverage bonus (0-5%)
     const agentSessions = this.kg.getAgentSessions().length;
     const agentCoverage = Math.min(agentSessions / 10, 1); // Max bonus at 10 sessions
     const agentBonus = agentCoverage * 0.05;
-    
-    const coherenceScore = Math.max(0, Math.min(1, 
-      (weightedConfidence * 0.7 + avgConfidence * 0.3) - violationPenalty - circularDepPenalty + importBonus + agentBonus
-    ));
+
+    const coherenceScore = Math.max(
+      0,
+      Math.min(
+        1,
+        weightedConfidence * 0.7 +
+          avgConfidence * 0.3 -
+          violationPenalty -
+          circularDepPenalty +
+          importBonus +
+          agentBonus,
+      ),
+    );
 
     const breakdown: GenomeBreakdown = {
       avgConfidence: Math.round(avgConfidence * 1000) / 1000,
@@ -158,21 +169,21 @@ export class GenomeComputer {
       computedAt: new Date().toISOString(),
     });
 
-  const checksum = this.hashCode(genomeData);
-  this.getStmt(
-    `INSERT OR REPLACE INTO project_genome (checksum, genome_data, coherence_score, computed_at) 
-     VALUES (?, ?, ?, ?)`
-  ).run(checksum, genomeData, coherenceScore, new Date().toISOString());
+    const checksum = this.hashCode(genomeData);
+    this.getStmt(
+      `INSERT OR REPLACE INTO project_genome (checksum, genome_data, coherence_score, computed_at) 
+     VALUES (?, ?, ?, ?)`,
+    ).run(checksum, genomeData, coherenceScore, new Date().toISOString());
 
-  // Prune history: keep only the 10 most recent genome snapshots so the
-  // table cannot grow unboundedly across a long-lived server.
-  this.getStmt(
-    `DELETE FROM project_genome WHERE id NOT IN (
+    // Prune history: keep only the 10 most recent genome snapshots so the
+    // table cannot grow unboundedly across a long-lived server.
+    this.getStmt(
+      `DELETE FROM project_genome WHERE id NOT IN (
        SELECT id FROM project_genome ORDER BY computed_at DESC, id DESC LIMIT 10
-     )`
-  ).run();
+     )`,
+    ).run();
 
-  return { genomeData, coherenceScore, breakdown };
+    return { genomeData, coherenceScore, breakdown };
   }
 
   private patternCache: Pattern[] | null = null;

@@ -15,12 +15,12 @@ function parseTsconfigAliases(tsconfigPath: string): PathAlias[] {
     const content = readFileSync(tsconfigPath, 'utf-8');
     const config = JSON.parse(content);
     const aliases: PathAlias[] = [];
-    
+
     if (config.compilerOptions?.paths) {
       for (const [prefix, paths] of Object.entries(config.compilerOptions.paths)) {
         aliases.push({
           prefix: prefix.replace(/\*$/, ''),
-          paths: (paths as string[]).map(p => p.replace(/\*$/, '')),
+          paths: (paths as string[]).map((p) => p.replace(/\*$/, '')),
         });
       }
     }
@@ -30,7 +30,11 @@ function parseTsconfigAliases(tsconfigPath: string): PathAlias[] {
   }
 }
 
-function resolveWithAliases(importPath: string, aliases: PathAlias[], baseDir: string): string | null {
+function resolveWithAliases(
+  importPath: string,
+  aliases: PathAlias[],
+  baseDir: string,
+): string | null {
   for (const alias of aliases) {
     if (importPath.startsWith(alias.prefix)) {
       const remainder = importPath.slice(alias.prefix.length);
@@ -52,20 +56,31 @@ export function registerResolvePathTool(server: McpServer, deps: McpDependencies
     'resolve_path',
     {
       title: 'Resolve Path',
-      description: 'Resolve a file path with TypeScript/JS module resolution rules (supports path aliases, index files, extensions).',
+      description:
+        'Resolve a file path with TypeScript/JS module resolution rules (supports path aliases, index files, extensions).',
       inputSchema: {
         importPath: z.string().describe('The import path to resolve'),
-        fromFilePath: z.string().describe('The file containing the import (for relative resolution)'),
-        tsconfigPath: z.string().optional().describe('Optional path to tsconfig.json for path aliases'),
+        fromFilePath: z
+          .string()
+          .describe('The file containing the import (for relative resolution)'),
+        tsconfigPath: z
+          .string()
+          .optional()
+          .describe('Optional path to tsconfig.json for path aliases'),
       },
     },
     async (args) => {
       let importPath = args.importPath;
       const fromFile = deps.kg.getFileByPath(args.fromFilePath);
-      
+
       if (!fromFile) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ error: 'From file not found in knowledge graph' }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ error: 'From file not found in knowledge graph' }),
+            },
+          ],
         };
       }
 
@@ -84,7 +99,11 @@ export function registerResolvePathTool(server: McpServer, deps: McpDependencies
       // Try alias resolution first
       if (aliases.length > 0) {
         // Alias targets are relative to the project root, not the importing file's dir.
-        const aliasResolved = resolveWithAliases(importPath, aliases, loadConfig().projectRoot.replace(/\\/g, '/'));
+        const aliasResolved = resolveWithAliases(
+          importPath,
+          aliases,
+          loadConfig().projectRoot.replace(/\\/g, '/'),
+        );
         if (aliasResolved) {
           importPath = aliasResolved;
         }
@@ -92,7 +111,7 @@ export function registerResolvePathTool(server: McpServer, deps: McpDependencies
 
       // Try to resolve using knowledge graph
       let resolved = deps.kg.getFileByImport(importPath, args.fromFilePath);
-      
+
       if (!resolved) {
         // Try manual resolution
         const fromDir = dirname(fromFile.relativePath).replace(/\\/g, '/');
@@ -102,7 +121,18 @@ export function registerResolvePathTool(server: McpServer, deps: McpDependencies
 
       if (!resolved) {
         // Try with extensions
-        const extensions = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '/index.ts', '/index.tsx', '/index.js', '/index.jsx'];
+        const extensions = [
+          '.ts',
+          '.tsx',
+          '.js',
+          '.jsx',
+          '.mjs',
+          '.cjs',
+          '/index.ts',
+          '/index.tsx',
+          '/index.js',
+          '/index.jsx',
+        ];
         for (const ext of extensions) {
           const tryPath = importPath + ext;
           resolved = deps.kg.getFileByImport(tryPath, args.fromFilePath);
@@ -115,12 +145,16 @@ export function registerResolvePathTool(server: McpServer, deps: McpDependencies
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                resolved: false,
-                importPath: args.importPath,
-                fromFile: fromFile.relativePath,
-                message: 'Could not resolve path',
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  resolved: false,
+                  importPath: args.importPath,
+                  fromFile: fromFile.relativePath,
+                  message: 'Could not resolve path',
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -130,23 +164,27 @@ export function registerResolvePathTool(server: McpServer, deps: McpDependencies
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              resolved: true,
-              importPath: args.importPath,
-              fromFile: fromFile.relativePath,
-              resolvedFile: {
-                path: resolved.relativePath,
-                language: resolved.language,
-                sizeBytes: resolved.sizeBytes,
-                cognitiveLoad: resolved.cognitiveLoad,
-                agentTouched: resolved.agentTouched,
-                imports: deps.kg.getImports(resolved.id).map((i) => i.source),
+            text: JSON.stringify(
+              {
+                resolved: true,
+                importPath: args.importPath,
+                fromFile: fromFile.relativePath,
+                resolvedFile: {
+                  path: resolved.relativePath,
+                  language: resolved.language,
+                  sizeBytes: resolved.sizeBytes,
+                  cognitiveLoad: resolved.cognitiveLoad,
+                  agentTouched: resolved.agentTouched,
+                  imports: deps.kg.getImports(resolved.id).map((i) => i.source),
+                },
               },
-            }, null, 2),
+              null,
+              2,
+            ),
           },
         ],
       };
-    }
+    },
   );
 }
 
@@ -155,9 +193,12 @@ export function registerFindFileByImportTool(server: McpServer, deps: McpDepende
     'find_file_by_import',
     {
       title: 'Find File by Import',
-      description: 'Find all files that match an import pattern (useful for finding where a module is defined).',
+      description:
+        'Find all files that match an import pattern (useful for finding where a module is defined).',
       inputSchema: {
-        pattern: z.string().describe('Import pattern to search for (e.g., "react", "./utils", "@/components")'),
+        pattern: z
+          .string()
+          .describe('Import pattern to search for (e.g., "react", "./utils", "@/components")'),
       },
     },
     async (args) => {
@@ -166,20 +207,24 @@ export function registerFindFileByImportTool(server: McpServer, deps: McpDepende
         content: [
           {
             type: 'text',
-            text: JSON.stringify({
-              pattern: args.pattern,
-              matches: files.map((f) => ({
-                path: f.relativePath,
-                language: f.language,
-                sizeBytes: f.sizeBytes,
-                cognitiveLoad: f.cognitiveLoad,
-                agentTouched: f.agentTouched,
-              })),
-              count: files.length,
-            }, null, 2),
+            text: JSON.stringify(
+              {
+                pattern: args.pattern,
+                matches: files.map((f) => ({
+                  path: f.relativePath,
+                  language: f.language,
+                  sizeBytes: f.sizeBytes,
+                  cognitiveLoad: f.cognitiveLoad,
+                  agentTouched: f.agentTouched,
+                })),
+                count: files.length,
+              },
+              null,
+              2,
+            ),
           },
         ],
       };
-    }
+    },
   );
 }

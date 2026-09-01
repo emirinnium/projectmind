@@ -16,9 +16,18 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
         'WHEN NOT to call: between every single edit (use get_context + check_coherence instead). Pass full=true only when you suspect cache corruption.',
       inputSchema: {
         root: z.string().default('.').describe('Root directory to scan'),
-        analyzeImports: z.boolean().default(true).describe('Analyze import/dependency relationships'),
-        findCircularDeps: z.boolean().default(false).describe('Find circular dependencies after scan'),
-        full: z.boolean().default(false).describe('Force full scan (bypass incremental mtime check)'),
+        analyzeImports: z
+          .boolean()
+          .default(true)
+          .describe('Analyze import/dependency relationships'),
+        findCircularDeps: z
+          .boolean()
+          .default(false)
+          .describe('Find circular dependencies after scan'),
+        full: z
+          .boolean()
+          .default(false)
+          .describe('Force full scan (bypass incremental mtime check)'),
       },
     },
     async (args, extra) => {
@@ -46,11 +55,17 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
             importStats.totalImports += imports.length;
             importStats.resolvedImports += imports.filter((i) => i.resolvedFile).length;
             importStats.unresolvedImports += imports.filter((i) => !i.resolvedFile).length;
-            importStats.externalDependencies += imports.filter((i) => i.kind === 'import' && !i.resolvedFile).length;
+            importStats.externalDependencies += imports.filter(
+              (i) => i.kind === 'import' && !i.resolvedFile,
+            ).length;
             // Progress during the per-file import analysis pass (throttled
             // internally; cheap no-op when client did not request progress).
             if (i % 250 === 0 && allFiles.length > 0) {
-              await progress(40 + Math.round((i / allFiles.length) * 40), 100, `import analysis ${i}/${allFiles.length}`);
+              await progress(
+                40 + Math.round((i / allFiles.length) * 40),
+                100,
+                `import analysis ${i}/${allFiles.length}`,
+              );
             }
           }
         }
@@ -65,38 +80,42 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: true,
-                scanned: result.scannedFiles,
-                errors: result.errorFiles,
-                totalFiles: report.totalFiles,
-                agentCoverage: `${(report.agentCoverage * 100).toFixed(1)}%`,
-                avgCognitiveLoad: report.avgCognitiveLoad,
-                languages: report.languages,
-                modules: report.modules.map((m) => ({
-                  path: m.path,
-                  fileCount: m.fileCount,
-                  cognitiveLoad: m.cognitiveLoad,
-                  agentCoverage: `${(m.agentCoverage * 100).toFixed(1)}%`,
-                })),
-                topHotspots: report.topHotspots.map((f) => ({
-                  path: f.relativePath,
-                  cognitiveLoad: f.cognitiveLoad,
-                  agentTouched: f.agentTouched,
-                })),
-                uncoveredFiles: report.uncoveredFiles.map((f) => ({
-                  path: f.relativePath,
-                  cognitiveLoad: f.cognitiveLoad,
-                })),
-                importAnalysis: importStats,
-                circularDependencies: circularDeps,
-                circularDependencyCount: circularDeps.length,
-                scanStats: {
-                  durationMs: result.durationMs,
-                  filesPerSecond: result.filesPerSecond,
-                  memoryUsedMB: result.memoryUsedMB,
+              text: JSON.stringify(
+                {
+                  success: true,
+                  scanned: result.scannedFiles,
+                  errors: result.errorFiles,
+                  totalFiles: report.totalFiles,
+                  agentCoverage: `${(report.agentCoverage * 100).toFixed(1)}%`,
+                  avgCognitiveLoad: report.avgCognitiveLoad,
+                  languages: report.languages,
+                  modules: report.modules.map((m) => ({
+                    path: m.path,
+                    fileCount: m.fileCount,
+                    cognitiveLoad: m.cognitiveLoad,
+                    agentCoverage: `${(m.agentCoverage * 100).toFixed(1)}%`,
+                  })),
+                  topHotspots: report.topHotspots.map((f) => ({
+                    path: f.relativePath,
+                    cognitiveLoad: f.cognitiveLoad,
+                    agentTouched: f.agentTouched,
+                  })),
+                  uncoveredFiles: report.uncoveredFiles.map((f) => ({
+                    path: f.relativePath,
+                    cognitiveLoad: f.cognitiveLoad,
+                  })),
+                  importAnalysis: importStats,
+                  circularDependencies: circularDeps,
+                  circularDependencyCount: circularDeps.length,
+                  scanStats: {
+                    durationMs: result.durationMs,
+                    filesPerSecond: result.filesPerSecond,
+                    memoryUsedMB: result.memoryUsedMB,
+                  },
                 },
-              }, null, 2),
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -105,15 +124,19 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 }
 
@@ -131,22 +154,31 @@ export function registerStartSessionTool(server: McpServer, deps: McpDependencie
       try {
         const sessionId = deps.kg.startAgentSession(args.agentName);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, sessionId, agentName: args.agentName }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: true, sessionId, agentName: args.agentName }),
+            },
+          ],
         };
       } catch (error) {
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 }
 
@@ -164,22 +196,31 @@ export function registerEndSessionTool(server: McpServer, deps: McpDependencies)
       try {
         deps.kg.endAgentSession(args.sessionId);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, status: 'ended', sessionId: args.sessionId }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ success: true, status: 'ended', sessionId: args.sessionId }),
+            },
+          ],
         };
       } catch (error) {
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 }
 
@@ -205,14 +246,18 @@ export function registerGetAgentSessionsTool(server: McpServer, deps: McpDepende
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 }

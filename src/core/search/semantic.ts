@@ -10,7 +10,7 @@ export async function searchSemantic(
   embeddingGenerator: (text: string) => Promise<number[]>,
   cosineSimilarity: (a: number[], b: number[]) => number,
   fileEmbeddings: Map<string, number[]>,
-  options: SemanticSearchOptions = {}
+  options: SemanticSearchOptions = {},
 ): Promise<Array<{ filePath: string; score: number }>> {
   const text = typeof query === 'string' ? query : (query.naturalLanguage ?? query.text ?? '');
   const queryEmbedding = await embeddingGenerator(text);

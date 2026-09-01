@@ -32,9 +32,15 @@ class ContextBudgetCommand extends BaseCommand {
     const cmd = this.cmd;
 
     cmd
-      .argument('[task]', 'Task description used to boost relevant files (e.g. "fix the login bug")')
+      .argument(
+        '[task]',
+        'Task description used to boost relevant files (e.g. "fix the login bug")',
+      )
       .option('--budget <tokens>', 'Token budget to respect', '8000')
-      .option('--files <paths...>', 'Candidate files (defaults to the files in the knowledge graph)')
+      .option(
+        '--files <paths...>',
+        'Candidate files (defaults to the files in the knowledge graph)',
+      )
       .option('--strategy <strategy>', 'Selection strategy: greedy|dp|adaptive', 'dp')
       .option('--limit <n>', 'Maximum candidate files to consider', '50')
       .option('--format <fmt>', 'Output format: text|json', 'text')
@@ -43,14 +49,24 @@ class ContextBudgetCommand extends BaseCommand {
           await this.withContext(async (ctx) => {
             const budget = parseInt(opts.budget, 10);
             if (!Number.isFinite(budget) || budget <= 0) {
-              throw new Error(`Invalid --budget value: "${opts.budget}" (expected a positive integer)`);
+              throw new Error(
+                `Invalid --budget value: "${opts.budget}" (expected a positive integer)`,
+              );
             }
             const limit = parseInt(opts.limit, 10);
             if (!Number.isFinite(limit) || limit <= 0) {
-              throw new Error(`Invalid --limit value: "${opts.limit}" (expected a positive integer)`);
+              throw new Error(
+                `Invalid --limit value: "${opts.limit}" (expected a positive integer)`,
+              );
             }
-            if (opts.strategy !== 'greedy' && opts.strategy !== 'dp' && opts.strategy !== 'adaptive') {
-              throw new Error(`Invalid --strategy value: "${opts.strategy}" (expected greedy|dp|adaptive)`);
+            if (
+              opts.strategy !== 'greedy' &&
+              opts.strategy !== 'dp' &&
+              opts.strategy !== 'adaptive'
+            ) {
+              throw new Error(
+                `Invalid --strategy value: "${opts.strategy}" (expected greedy|dp|adaptive)`,
+              );
             }
             const strategy = opts.strategy;
 
@@ -66,7 +82,9 @@ class ContextBudgetCommand extends BaseCommand {
             if (opts.files && opts.files.length > 0) {
               items = opts.files.slice(0, limit).map((path) => ({
                 path,
-                tokens: ContextBudgetOptimizer.tokenEstimator(resolve(ctx.config.projectRoot, path)),
+                tokens: ContextBudgetOptimizer.tokenEstimator(
+                  resolve(ctx.config.projectRoot, path),
+                ),
                 relevanceScore: 0.5,
                 isTestFile: isTestPath(path),
               }));
@@ -102,8 +120,8 @@ class ContextBudgetCommand extends BaseCommand {
                     excludedFiles: plan.excludedFiles,
                   },
                   null,
-                  2
-                )
+                  2,
+                ),
               );
               return;
             }
@@ -131,7 +149,7 @@ class ContextBudgetCommand extends BaseCommand {
               }
             }
           });
-        })
+        }),
       );
 
     return cmd;

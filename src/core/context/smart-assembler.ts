@@ -6,5 +6,13 @@
  * is split into specialized modules.
  */
 
-export { assembleUserContext, UserContextItem, UserContextResult } from './user-context-assembler.js';
-export { assembleSystemContext, SystemContextItem, SystemContextResult } from './system-context-assembler.js';
+export {
+  assembleUserContext,
+  UserContextItem,
+  UserContextResult,
+} from './user-context-assembler.js';
+export {
+  assembleSystemContext,
+  SystemContextItem,
+  SystemContextResult,
+} from './system-context-assembler.js';

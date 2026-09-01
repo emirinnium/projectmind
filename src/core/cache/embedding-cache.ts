@@ -14,7 +14,8 @@ import { stableHash } from '../../utils/hash.js';
 export class EmbeddingCache extends AdvancedCache<string, number[]> {
   private readonly inFlight = new Map<string, Promise<number[]>>();
 
-  constructor(maxSize: number = 50_000, ttlMs: number = 86_400_000) { // 24 hours
+  constructor(maxSize: number = 50_000, ttlMs: number = 86_400_000) {
+    // 24 hours
     super({
       maxSize,
       ttlMs,
@@ -34,7 +35,11 @@ export class EmbeddingCache extends AdvancedCache<string, number[]> {
    * Cache-aside with single-flight: returns the cached vector, or computes
    * it exactly once even when several callers race the same text.
    */
-  async getOrCompute(text: string, dim: number, compute: () => Promise<number[]> | number[]): Promise<number[]> {
+  async getOrCompute(
+    text: string,
+    dim: number,
+    compute: () => Promise<number[]> | number[],
+  ): Promise<number[]> {
     const key = this.makeKey(text, dim);
     const cached = this.get(key);
     if (cached !== undefined) return cached;

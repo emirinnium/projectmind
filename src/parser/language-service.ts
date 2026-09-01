@@ -87,7 +87,10 @@ export function getParserFor(grammar: Parser.Language): Parser {
  * Returns null when the extension is unsupported or parsing fails — callers
  * treat unparseable files as "no results" rather than errors.
  */
-export function createLangParser(filePath: string, content?: string): { language: StructuralLanguage; root: LangSyntaxNode } | null {
+export function createLangParser(
+  filePath: string,
+  content?: string,
+): { language: StructuralLanguage; root: LangSyntaxNode } | null {
   const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
   const entry = LANGUAGE_MAP[ext];
   if (!entry) return null;

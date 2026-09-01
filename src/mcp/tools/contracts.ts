@@ -71,7 +71,7 @@ const SOURCE_IGNORES = [
  */
 export async function evaluateContracts(
   deps: McpDependencies,
-  args: CheckContractsArgs
+  args: CheckContractsArgs,
 ): Promise<CheckContractsResult> {
   const engine = new ContractEngine();
   const contracts = engine.getContracts();
@@ -151,12 +151,25 @@ export function registerCheckContractsTool(server: McpServer, deps: McpDependenc
     {
       title: 'Check Architectural Contracts',
       description:
-        'Enforce the project\'s architectural contracts on a single file or the whole repo and return file:line violations. ' +
+        "Enforce the project's architectural contracts on a single file or the whole repo and return file:line violations. " +
         'Runs the ContractEngine over matching source files and reports violations with their severity.',
       inputSchema: {
-        filePath: z.string().optional().describe('Path of a single file to check (relative to project root or absolute in-project)'),
-        scope: z.enum(['file', 'project']).optional().describe('"file" checks a single filePath; "project" scans the whole repo (default when no filePath given)'),
-        severityFilter: z.enum(['error', 'warning', 'all']).optional().describe('Only return violations of this severity (default "all")'),
+        filePath: z
+          .string()
+          .optional()
+          .describe(
+            'Path of a single file to check (relative to project root or absolute in-project)',
+          ),
+        scope: z
+          .enum(['file', 'project'])
+          .optional()
+          .describe(
+            '"file" checks a single filePath; "project" scans the whole repo (default when no filePath given)',
+          ),
+        severityFilter: z
+          .enum(['error', 'warning', 'all'])
+          .optional()
+          .describe('Only return violations of this severity (default "all")'),
       },
     },
     async (args) => {
@@ -175,6 +188,6 @@ export function registerCheckContractsTool(server: McpServer, deps: McpDependenc
           content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
         };
       }
-    }
+    },
   );
 }

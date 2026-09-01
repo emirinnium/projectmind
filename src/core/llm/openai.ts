@@ -1,4 +1,10 @@
-import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_TOKENS } from './types.js';
+import {
+  LLMProvider,
+  LLMResponse,
+  LLMConfig,
+  DEFAULT_TIMEOUT_MS,
+  DEFAULT_MAX_TOKENS,
+} from './types.js';
 import { validateApiUrl } from './url-validator.js';
 
 export class OpenAIProvider implements LLMProvider {
@@ -24,7 +30,7 @@ export class OpenAIProvider implements LLMProvider {
   async analyze(
     prompt: string,
     systemPrompt?: string,
-    temperature: number = 0.3
+    temperature: number = 0.3,
   ): Promise<LLMResponse> {
     if (!this.isAvailable()) {
       throw new Error('OpenAI API key not configured');
@@ -46,7 +52,7 @@ export class OpenAIProvider implements LLMProvider {
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
           model: this.model,
@@ -61,13 +67,18 @@ export class OpenAIProvider implements LLMProvider {
         throw new Error(`OpenAI API error: ${response.status} ${err}`);
       }
 
-      interface OpenAIChoice { message?: { content?: string } }
-      interface OpenAIResponse { choices?: OpenAIChoice[]; usage?: { prompt_tokens: number; completion_tokens: number } }
-      const data = await response.json() as OpenAIResponse;
+      interface OpenAIChoice {
+        message?: { content?: string };
+      }
+      interface OpenAIResponse {
+        choices?: OpenAIChoice[];
+        usage?: { prompt_tokens: number; completion_tokens: number };
+      }
+      const data = (await response.json()) as OpenAIResponse;
       const content = data.choices?.[0]?.message?.content || '';
 
       const reasoningTrace = content.includes('<thinking>')
-        ? content.split('<thinking>')[1]?.split('</thinking>')[0]?.split(/\r?\n/) ?? [content]
+        ? (content.split('<thinking>')[1]?.split('</thinking>')[0]?.split(/\r?\n/) ?? [content])
         : [content];
 
       return {

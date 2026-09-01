@@ -4,12 +4,14 @@ import type { CacheOptions } from '../../../../src/core/cache/types.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeOptions(overrides: Partial<CacheOptions<string, string>> = {}): CacheOptions<string, string> {
+function makeOptions<K = string, V = string>(
+  overrides: Partial<CacheOptions<K, V>> = {},
+): CacheOptions<K, V> {
   return {
     maxSize: 5,
     ttlMs: 60_000,
     ...overrides,
-  };
+  } as CacheOptions<K, V>;
 }
 
 // ─── Test suites ─────────────────────────────────────────────────────────────
@@ -21,7 +23,7 @@ describe('CacheEviction — LRU Eviction', () => {
       makeOptions({
         maxSize: 3,
         onEvict: (key, _value) => evicted.push(key),
-      })
+      }),
     );
 
     eviction.set('a', '1');
@@ -42,7 +44,7 @@ describe('CacheEviction — LRU Eviction', () => {
       makeOptions({
         maxSize: 5,
         onEvict: (key, _value) => evicted.push(key),
-      })
+      }),
     );
 
     eviction.set('a', '1');
@@ -59,7 +61,7 @@ describe('CacheEviction — LRU Eviction', () => {
       makeOptions({
         maxSize: 2,
         onEvict: (key, _value) => evicted.push(key),
-      })
+      }),
     );
 
     eviction.set('a', '1');
@@ -80,7 +82,7 @@ describe('CacheEviction — LRU Eviction', () => {
       makeOptions({
         maxSize: 1,
         onEvict: (key, _value) => evicted.push(key),
-      })
+      }),
     );
 
     eviction.set('a', '1');
@@ -99,7 +101,7 @@ describe('CacheEviction — LRU Eviction', () => {
       makeOptions({
         maxSize: 2,
         onEvict: (key, value) => evicted.push({ key, value }),
-      })
+      }),
     );
 
     eviction.set('a', 'val-a');
@@ -117,7 +119,7 @@ describe('CacheEviction — MRU Promotion on Access', () => {
       makeOptions({
         maxSize: 3,
         onEvict: (key, _value) => evicted.push(key),
-      })
+      }),
     );
 
     eviction.set('a', '1');
@@ -140,9 +142,7 @@ describe('CacheEviction — MRU Promotion on Access', () => {
   it('updates lastAccessed timestamp on get', () => {
     vi.useFakeTimers();
 
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 60_000 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 10, ttlMs: 60_000 }));
 
     eviction.set('a', '1');
     const entryBefore = eviction.getMap().get('a');
@@ -158,9 +158,7 @@ describe('CacheEviction — MRU Promotion on Access', () => {
   });
 
   it('increments accessCount on get', () => {
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 60_000 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 10, ttlMs: 60_000 }));
 
     eviction.set('a', '1');
     eviction.get('a');
@@ -172,9 +170,7 @@ describe('CacheEviction — MRU Promotion on Access', () => {
   });
 
   it('re-inserts entry at end of Map on access (LRU order)', () => {
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 5, ttlMs: 60_000 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 5, ttlMs: 60_000 }));
 
     eviction.set('a', '1');
     eviction.set('b', '2');
@@ -192,9 +188,7 @@ describe('CacheEviction — TTL Expiration', () => {
   it('returns undefined for expired entries on get', () => {
     vi.useFakeTimers();
 
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 100 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 10, ttlMs: 100 }));
 
     eviction.set('key', 'value');
     expect(eviction.get('key')).toBe('value');
@@ -208,9 +202,7 @@ describe('CacheEviction — TTL Expiration', () => {
   it('has() returns false for expired entries', () => {
     vi.useFakeTimers();
 
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 100 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 10, ttlMs: 100 }));
 
     eviction.set('key', 'value');
     expect(eviction.has('key')).toBe(true);
@@ -224,9 +216,7 @@ describe('CacheEviction — TTL Expiration', () => {
   it('returns value before TTL expires', () => {
     vi.useFakeTimers();
 
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 1000 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 10, ttlMs: 1000 }));
 
     eviction.set('key', 'value');
     vi.advanceTimersByTime(500);
@@ -239,9 +229,7 @@ describe('CacheEviction — TTL Expiration', () => {
   it('removes expired entry from map on get', () => {
     vi.useFakeTimers();
 
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 100 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 10, ttlMs: 100 }));
 
     eviction.set('key', 'value');
     vi.advanceTimersByTime(150);
@@ -255,9 +243,7 @@ describe('CacheEviction — TTL Expiration', () => {
   it('removes expired entry from map on has', () => {
     vi.useFakeTimers();
 
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 100 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 10, ttlMs: 100 }));
 
     eviction.set('key', 'value');
     vi.advanceTimersByTime(150);
@@ -305,9 +291,7 @@ describe('CacheEviction — Delete and Clear Operations', () => {
 
 describe('CacheEviction — Size Tracking', () => {
   it('getStats reports correct size and maxSize', () => {
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 10 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 10 }));
 
     eviction.set('a', '1');
     eviction.set('b', '2');
@@ -318,9 +302,7 @@ describe('CacheEviction — Size Tracking', () => {
   });
 
   it('size increases with each set', () => {
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 10 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 10 }));
 
     expect(eviction.getStats().size).toBe(0);
     eviction.set('a', '1');
@@ -330,9 +312,7 @@ describe('CacheEviction — Size Tracking', () => {
   });
 
   it('size decreases after eviction', () => {
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 2 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 2 }));
 
     eviction.set('a', '1');
     eviction.set('b', '2');
@@ -343,9 +323,7 @@ describe('CacheEviction — Size Tracking', () => {
   });
 
   it('estimateMemoryUsage returns positive value', () => {
-    const eviction = new CacheEviction<string, string>(
-      makeOptions({ maxSize: 10 })
-    );
+    const eviction = new CacheEviction<string, string>(makeOptions({ maxSize: 10 }));
 
     eviction.set('key', 'some value');
     const usage = eviction.estimateMemoryUsage();
@@ -356,8 +334,10 @@ describe('CacheEviction — Size Tracking', () => {
     const eviction = new CacheEviction<string, string>(
       makeOptions({
         maxSize: 10,
-        serialize: () => { throw new Error('serialize error'); },
-      })
+        serialize: () => {
+          throw new Error('serialize error');
+        },
+      }),
     );
 
     eviction.set('key', 'value');

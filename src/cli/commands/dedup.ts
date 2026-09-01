@@ -9,13 +9,17 @@ export function createDedupCommand(): Command {
     .option('-m, --mode <mode>', 'Detection mode: debt (default) | ast', 'debt')
     .option('--min-lines <n>', 'AST mode: minimum function body lines', '6')
     .option('--limit <n>', 'AST mode: max groups to report', '20')
-    .action(asyncHandler(async (opts: { type?: string; mode?: string; minLines?: string; limit?: string }) => {
-      if (opts.mode === 'ast') {
-        await runAstDedup(opts);
-        return;
-      }
-      await runDebtDedup(opts.type);
-    }));
+    .action(
+      asyncHandler(
+        async (opts: { type?: string; mode?: string; minLines?: string; limit?: string }) => {
+          if (opts.mode === 'ast') {
+            await runAstDedup(opts);
+            return;
+          }
+          await runDebtDedup(opts.type);
+        },
+      ),
+    );
 }
 
 async function runAstDedup(opts: { minLines?: string; limit?: string }): Promise<void> {
@@ -37,18 +41,25 @@ async function runAstDedup(opts: { minLines?: string; limit?: string }): Promise
     const detector = new CloneDetector(process.cwd());
     const result = detector.detect(files, { minLines, maxGroups: limit });
 
-    output.kv('Scanned', `${result.scannedFunctions} functions across ${result.scannedFiles} files`);
+    output.kv(
+      'Scanned',
+      `${result.scannedFunctions} functions across ${result.scannedFiles} files`,
+    );
     if (result.groups.length === 0) {
       output.success('No clone groups found');
       output.info(result.note);
       return;
     }
     for (const [i, group] of result.groups.entries()) {
-      output.kv(`Group ${i + 1} (${group.size}x, ~${group.approxLines} lines)`, `fingerprint ${group.fingerprint}`);
+      output.kv(
+        `Group ${i + 1} (${group.size}x, ~${group.approxLines} lines)`,
+        `fingerprint ${group.fingerprint}`,
+      );
       for (const occ of group.occurrences.slice(0, 5)) {
         output.kv(`  · ${occ.filePath}:${occ.startLine}-${occ.endLine}`, occ.name);
       }
-      if (group.occurrences.length > 5) output.info(`  … +${group.occurrences.length - 5} more occurrences`);
+      if (group.occurrences.length > 5)
+        output.info(`  … +${group.occurrences.length - 5} more occurrences`);
     }
     output.info(result.note);
   });

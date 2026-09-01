@@ -25,7 +25,10 @@ export class CacheRegistry {
     return this.caches.get(name) as import('./advanced-cache.js').AdvancedCache<K, V> | undefined;
   }
 
-  getOrCreate<K, V>(name: string, factory: () => import('./advanced-cache.js').AdvancedCache<K, V>): import('./advanced-cache.js').AdvancedCache<K, V> {
+  getOrCreate<K, V>(
+    name: string,
+    factory: () => import('./advanced-cache.js').AdvancedCache<K, V>,
+  ): import('./advanced-cache.js').AdvancedCache<K, V> {
     let cache = this.caches.get(name);
     if (!cache) {
       cache = factory();

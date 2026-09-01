@@ -71,7 +71,8 @@ export function deriveInclusionReason(item: ContextItem, taskType?: TaskType): s
   if (item.recentlyChanged) return 'recently changed';
   if (taskType === 'bug fix' && item.errorHandling) return 'error-handling file (bug fix)';
   if (taskType === 'feature' && item.apiSurface) return 'API surface (feature)';
-  if (taskType === 'refactor' && (item.couplingScore ?? 0) >= 0.5) return 'high coupling (refactor)';
+  if (taskType === 'refactor' && (item.couplingScore ?? 0) >= 0.5)
+    return 'high coupling (refactor)';
   if (item.isTestFile) return 'test file';
   return 'top relevance';
 }
@@ -127,7 +128,7 @@ export class ContextBudgetOptimizer {
   private buildPlan(
     selection: SelectionResult,
     budget: number,
-    taskType?: TaskType
+    taskType?: TaskType,
   ): ContextBudgetPlan {
     const largeThreshold = budget * this.compressionHintFraction;
 
@@ -141,7 +142,7 @@ export class ContextBudgetOptimizer {
         // F33: per-file compression hint for files that dominate the budget.
         inclusionReason: large
           ? `${reason}; signature_only recommended (file alone exceeds ${Math.round(
-              this.compressionHintFraction * 100
+              this.compressionHintFraction * 100,
             )}% of budget)`
           : reason,
         compressionStrategy: large ? 'signature_only' : undefined,
@@ -159,7 +160,9 @@ export class ContextBudgetOptimizer {
       allocatedTokens: selection.totalTokens,
       files,
       excludedFiles,
-      compressionStrategy: ContextBudgetOptimizer.compressionStrategySelector(selection.totalTokens),
+      compressionStrategy: ContextBudgetOptimizer.compressionStrategySelector(
+        selection.totalTokens,
+      ),
       totalRelevance: selection.totalRelevance,
       selectedItems: selection.selectedItems,
       excludedItems: selection.excludedItems,

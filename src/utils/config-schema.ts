@@ -39,43 +39,51 @@ const ProjectMindRcSchema = z.object({
   databasePath: z.string().default('.projectmind/pm-knowledge.db'),
   embeddingsDir: z.string().default('.projectmind/embeddings'),
   maxDepth: z.number().int().positive().default(10),
-  ignorePatterns: z.array(z.string()).default([
-    'node_modules/**',
-    'dist/**',
-    'dist-tests/**',
-    '.git/**',
-    '.kilo/**',
-    '*.min.js',
-    '*.map',
-    'package-lock.json',
-    'yarn.lock',
-    'coverage/**',
-    '.turbo/**',
-  ]),
+  ignorePatterns: z
+    .array(z.string())
+    .default([
+      'node_modules/**',
+      'dist/**',
+      'dist-tests/**',
+      '.git/**',
+      '.kilo/**',
+      '*.min.js',
+      '*.map',
+      'package-lock.json',
+      'yarn.lock',
+      'coverage/**',
+      '.turbo/**',
+    ]),
   llm: LLMConfigSchema.optional(),
   embeddings: EmbeddingsConfigSchema.optional(),
   features: FeaturesConfigSchema.optional(),
   scanOnStartup: z.boolean().default(true),
-  contracts: z.array(z.object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-    description: z.string().optional(),
-    sourcePattern: z.string().min(1),
-    forbiddenImports: z.array(z.string()).optional(),
-    forbiddenKeywords: z.array(z.string()).optional(),
-    requiredImports: z.array(z.string()).optional(),
-    maxLines: z.number().int().positive().optional(),
-    severity: z.enum(['error', 'warning']).default('warning'),
-  })).optional(),
-  kiloIntegration: z.object({
-    autoScanOnSessionStart: z.boolean().default(true),
-    syncOnEdit: z.boolean().default(true),
-    coherenceCheckOnEdit: z.boolean().default(true),
-    preCommitGate: z.boolean().default(true),
-    genomeThreshold: z.number().min(0).max(100).default(60),
-    maxHighDebt: z.number().int().nonnegative().default(0),
-    maxMediumDebt: z.number().int().nonnegative().default(10),
-  }).optional(),
+  contracts: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        name: z.string().min(1),
+        description: z.string().optional(),
+        sourcePattern: z.string().min(1),
+        forbiddenImports: z.array(z.string()).optional(),
+        forbiddenKeywords: z.array(z.string()).optional(),
+        requiredImports: z.array(z.string()).optional(),
+        maxLines: z.number().int().positive().optional(),
+        severity: z.enum(['error', 'warning']).default('warning'),
+      }),
+    )
+    .optional(),
+  kiloIntegration: z
+    .object({
+      autoScanOnSessionStart: z.boolean().default(true),
+      syncOnEdit: z.boolean().default(true),
+      coherenceCheckOnEdit: z.boolean().default(true),
+      preCommitGate: z.boolean().default(true),
+      genomeThreshold: z.number().min(0).max(100).default(60),
+      maxHighDebt: z.number().int().nonnegative().default(0),
+      maxMediumDebt: z.number().int().nonnegative().default(10),
+    })
+    .optional(),
 });
 
 export type ProjectMindRc = z.infer<typeof ProjectMindRcSchema>;
@@ -83,7 +91,11 @@ export type ProjectMindRc = z.infer<typeof ProjectMindRcSchema>;
 /**
  * Get default config values
  */
-function getDefaults(): ProjectMindRc & { llm: NonNullable<ProjectMindRc['llm']>; embeddings: NonNullable<ProjectMindRc['embeddings']>; features: NonNullable<ProjectMindRc['features']> } {
+function getDefaults(): ProjectMindRc & {
+  llm: NonNullable<ProjectMindRc['llm']>;
+  embeddings: NonNullable<ProjectMindRc['embeddings']>;
+  features: NonNullable<ProjectMindRc['features']>;
+} {
   return {
     projectRoot: '.',
     databasePath: '.projectmind/pm-knowledge.db',
@@ -130,13 +142,19 @@ function getDefaults(): ProjectMindRc & { llm: NonNullable<ProjectMindRc['llm']>
 /**
  * Validate and parse .projectmindrc.json content
  */
-export function validateConfig(configJson: unknown): ProjectMindRc & { llm: NonNullable<ProjectMindRc['llm']>; embeddings: NonNullable<ProjectMindRc['embeddings']>; features: NonNullable<ProjectMindRc['features']> } {
+export function validateConfig(configJson: unknown): ProjectMindRc & {
+  llm: NonNullable<ProjectMindRc['llm']>;
+  embeddings: NonNullable<ProjectMindRc['embeddings']>;
+  features: NonNullable<ProjectMindRc['features']>;
+} {
   // Handle null/undefined input by converting to empty object
-  const input = (configJson === null || configJson === undefined) ? {} : configJson;
+  const input = configJson === null || configJson === undefined ? {} : configJson;
 
   const result = ProjectMindRcSchema.safeParse(input);
   if (!result.success) {
-    const errors = result.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+    const errors = result.error.issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
     logger.warn(`Invalid .projectmindrc.json:\n${errors}\nUsing defaults for invalid fields.`);
     return getDefaults();
   }

@@ -21,11 +21,15 @@ export function registerProjectTools(server: McpServer, deps: McpDependencies): 
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: true,
-                projects,
-                total: projects.length,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: true,
+                  projects,
+                  total: projects.length,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -34,15 +38,19 @@ export function registerProjectTools(server: McpServer, deps: McpDependencies): 
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 
   server.registerTool(
@@ -66,11 +74,15 @@ export function registerProjectTools(server: McpServer, deps: McpDependencies): 
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: true,
-                project,
-                message: `Project '${project.name}' created with ID ${project.id}`,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: true,
+                  project,
+                  message: `Project '${project.name}' created with ID ${project.id}`,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -79,15 +91,19 @@ export function registerProjectTools(server: McpServer, deps: McpDependencies): 
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 
   server.registerTool(
@@ -109,14 +125,18 @@ export function registerProjectTools(server: McpServer, deps: McpDependencies): 
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: result.success,
-                project: result.project,
-                error: result.error,
-                message: result.success
-                  ? `Switched to project '${result.project!.name}'`
-                  : result.error,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: result.success,
+                  project: result.project,
+                  error: result.error,
+                  message: result.success
+                    ? `Switched to project '${result.project!.name}'`
+                    : result.error,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -125,14 +145,18 @@ export function registerProjectTools(server: McpServer, deps: McpDependencies): 
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 }

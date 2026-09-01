@@ -9,7 +9,7 @@ const FALLBACK_ESTIMATE_SIZE = 100;
 
 /**
  * Handles cache eviction policies (LRU, TTL)
- * 
+ *
  * Performance: O(1) amortized for get/set/has/delete.
  * Expired entry cleanup is done lazily and periodically to avoid O(n) scans on every operation.
  */
@@ -105,7 +105,7 @@ export class CacheEviction<K, V> {
   }
 
   getValues(): V[] {
-    return Array.from(this.map.values()).map(e => e.value);
+    return Array.from(this.map.values()).map((e) => e.value);
   }
 
   getEntries(): [K, V][] {
@@ -167,7 +167,12 @@ export class CacheEviction<K, V> {
   /**
    * Get cache statistics for monitoring.
    */
-  getStats(): { size: number; maxSize: number; purgeInterval: number; operationsSincePurge: number } {
+  getStats(): {
+    size: number;
+    maxSize: number;
+    purgeInterval: number;
+    operationsSincePurge: number;
+  } {
     return {
       size: this.map.size,
       maxSize: this.options.maxSize,

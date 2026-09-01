@@ -33,158 +33,201 @@ export function createDepsFreshCommand(): Command {
     .option('--audit', 'Run security audit (CVE check)')
     .option('--license', 'Check license compliance')
     .option('--policy <file>', 'License policy file (allowed/denied licenses)')
-    .option('--fail-on <level>', 'Exit code 1 if findings >= level: low|medium|high|critical', 'high')
+    .option(
+      '--fail-on <level>',
+      'Exit code 1 if findings >= level: low|medium|high|critical',
+      'high',
+    )
     .option('--format <fmt>', 'Output: text|json|table|markdown', 'text')
     .option('-o, --output <file>', 'Write to file')
-    .action(asyncHandler(async (opts: { major: boolean; minor: string; patch: string; ecosystem: string; audit: boolean; license: boolean; policy: string; failOn: string; format: string; output: string }) => {
-      await withService(['scale'], async (_ctx, services) => {
-        services.scale!;
-        const config = loadConfig();
-        
-        output.section('Dependency Freshness Monitor');
-        output.kv('Ecosystem', opts.ecosystem);
-        output.kv('Check major', opts.major ? 'yes' : 'no');
-        output.kv('Check minor', opts.minor === 'true' ? 'yes' : 'no');
-        output.kv('Check patch', opts.patch === 'true' ? 'yes' : 'no');
-        output.kv('Security audit', opts.audit ? 'enabled' : 'disabled');
-        output.kv('License check', opts.license ? 'enabled' : 'disabled');
-        
-        const pkgPath = join(config.projectRoot, 'package.json');
-        if (!existsSync(pkgPath)) {
-          output.warn('No package.json found');
-          return;
-        }
-        
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-        const allDeps = {
-          ...pkg.dependencies,
-          ...pkg.devDependencies,
-          ...pkg.peerDependencies,
-          ...pkg.optionalDependencies,
-        };
-        
-        const depNames = Object.keys(allDeps);
-        output.kv('Total dependencies', depNames.length);
-        
-        // Real freshness data from the installed tree + `npm outdated --json`.
-        const installedLicenses = collectInstalledLicenses(config.projectRoot);
-        const npmOutdated = runNpmOutdated(config.projectRoot);
+    .action(
+      asyncHandler(
+        async (opts: {
+          major: boolean;
+          minor: string;
+          patch: string;
+          ecosystem: string;
+          audit: boolean;
+          license: boolean;
+          policy: string;
+          failOn: string;
+          format: string;
+          output: string;
+        }) => {
+          await withService(['scale'], async (_ctx, services) => {
+            services.scale!;
+            const config = loadConfig();
 
-        const depInfo: DependencyInfo[] = [];
+            output.section('Dependency Freshness Monitor');
+            output.kv('Ecosystem', opts.ecosystem);
+            output.kv('Check major', opts.major ? 'yes' : 'no');
+            output.kv('Check minor', opts.minor === 'true' ? 'yes' : 'no');
+            output.kv('Check patch', opts.patch === 'true' ? 'yes' : 'no');
+            output.kv('Security audit', opts.audit ? 'enabled' : 'disabled');
+            output.kv('License check', opts.license ? 'enabled' : 'disabled');
 
-        for (const name of depNames) {
-          const current = allDeps[name].replace(/^[\^~]/, '');
-          const od = npmOutdated.get(name);
-          const latest = od?.latest ?? current;
-          const currentParts = current.split('.').map(Number);
-          const latestParts = latest.split('.').map(Number);
-          const majorBehind = (latestParts[0] ?? 0) > (currentParts[0] ?? 0) && opts.major;
-          const minorBehind = !majorBehind && (latestParts[0] ?? 0) === (currentParts[0] ?? 0)
-            && (latestParts[1] ?? 0) > (currentParts[1] ?? 0) && opts.minor === 'true';
-          const patchBehind = !majorBehind && !minorBehind
-            && (latestParts[0] ?? 0) === (currentParts[0] ?? 0)
-            && (latestParts[1] ?? 0) === (currentParts[1] ?? 0)
-            && (latestParts[2] ?? 0) > (currentParts[2] ?? 0) && opts.patch === 'true';
+            const pkgPath = join(config.projectRoot, 'package.json');
+            if (!existsSync(pkgPath)) {
+              output.warn('No package.json found');
+              return;
+            }
 
-          depInfo.push({
-            name,
-            current,
-            latest,
-            type: pkg.dependencies?.[name] ? 'prod' : pkg.devDependencies?.[name] ? 'dev' : 'peer',
-            outdated: Boolean(od),
-            majorBehind,
-            minorBehind,
-            patchBehind,
-            license: installedLicenses.get(name) ?? '',
+            const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+            const allDeps = {
+              ...pkg.dependencies,
+              ...pkg.devDependencies,
+              ...pkg.peerDependencies,
+              ...pkg.optionalDependencies,
+            };
+
+            const depNames = Object.keys(allDeps);
+            output.kv('Total dependencies', depNames.length);
+
+            // Real freshness data from the installed tree + `npm outdated --json`.
+            const installedLicenses = collectInstalledLicenses(config.projectRoot);
+            const npmOutdated = runNpmOutdated(config.projectRoot);
+
+            const depInfo: DependencyInfo[] = [];
+
+            for (const name of depNames) {
+              const current = allDeps[name].replace(/^[\^~]/, '');
+              const od = npmOutdated.get(name);
+              const latest = od?.latest ?? current;
+              const currentParts = current.split('.').map(Number);
+              const latestParts = latest.split('.').map(Number);
+              const majorBehind = (latestParts[0] ?? 0) > (currentParts[0] ?? 0) && opts.major;
+              const minorBehind =
+                !majorBehind &&
+                (latestParts[0] ?? 0) === (currentParts[0] ?? 0) &&
+                (latestParts[1] ?? 0) > (currentParts[1] ?? 0) &&
+                opts.minor === 'true';
+              const patchBehind =
+                !majorBehind &&
+                !minorBehind &&
+                (latestParts[0] ?? 0) === (currentParts[0] ?? 0) &&
+                (latestParts[1] ?? 0) === (currentParts[1] ?? 0) &&
+                (latestParts[2] ?? 0) > (currentParts[2] ?? 0) &&
+                opts.patch === 'true';
+
+              depInfo.push({
+                name,
+                current,
+                latest,
+                type: pkg.dependencies?.[name]
+                  ? 'prod'
+                  : pkg.devDependencies?.[name]
+                    ? 'dev'
+                    : 'peer',
+                outdated: Boolean(od),
+                majorBehind,
+                minorBehind,
+                patchBehind,
+                license: installedLicenses.get(name) ?? '',
+              });
+            }
+
+            if (!npmOutdated.size && depNames.length > 0) {
+              output.info(
+                'npm outdated returned nothing — dependencies are current or registry unreachable',
+              );
+            }
+            const outdatedDeps = depInfo.filter((d) => d.outdated);
+
+            if (opts.format === 'json') {
+              const result = {
+                dependencies: depInfo,
+                outdated: outdatedDeps,
+                summary: {
+                  total: depInfo.length,
+                  outdated: outdatedDeps.length,
+                  prod: depInfo.filter((d) => d.type === 'prod').length,
+                  dev: depInfo.filter((d) => d.type === 'dev').length,
+                },
+              };
+              const content = JSON.stringify(result, null, 2);
+              if (opts.output) {
+                writeFileSync(opts.output, content);
+                output.success(`Written to ${opts.output}`);
+              } else {
+                console.log(content);
+              }
+              return;
+            }
+
+            if (opts.format === 'markdown') {
+              const content = generateMarkdownDeps(depInfo, outdatedDeps);
+              if (opts.output) {
+                writeFileSync(opts.output, content);
+                output.success(`Written to ${opts.output}`);
+              } else {
+                console.log(content);
+              }
+              return;
+            }
+
+            // Text format
+            output.section(`Dependency Summary`);
+            output.kv('Total', depInfo.length);
+            output.kv('Production', depInfo.filter((d) => d.type === 'prod').length);
+            output.kv('Development', depInfo.filter((d) => d.type === 'dev').length);
+            output.kv('Outdated', outdatedDeps.length);
+
+            if (outdatedDeps.length > 0) {
+              output.section(`Outdated Dependencies (${outdatedDeps.length})`);
+              for (const dep of outdatedDeps.slice(0, 30)) {
+                const behind = [];
+                if (dep.majorBehind) behind.push('major');
+                if (dep.minorBehind) behind.push('minor');
+                if (dep.patchBehind) behind.push('patch');
+                const behindStr = behind.length > 0 ? ` (${behind.join(', ')} behind)` : '';
+                output.kv(
+                  `  ${dep.name}`,
+                  `${dep.current} → ${dep.latest}${behindStr} [${dep.type}]`,
+                );
+              }
+            } else {
+              output.success('All dependencies are up to date!');
+            }
+
+            if (opts.audit) {
+              output.section('Security Audit');
+              const audit = runNpmAudit();
+              if (!audit) {
+                output.warn('npm audit could not be executed (offline or npm unavailable)');
+              } else if (audit.total === 0) {
+                output.success('No known vulnerabilities found');
+              } else {
+                output.kv('Vulnerabilities', audit.total);
+                if (audit.critical > 0) output.kv('  Critical', audit.critical);
+                if (audit.high > 0) output.kv('  High', audit.high);
+                if (audit.moderate > 0) output.kv('  Moderate', audit.moderate);
+                if (audit.low > 0) output.kv('  Low', audit.low);
+              }
+            }
+
+            if (opts.license) {
+              output.section('License Compliance');
+              const licenses = depInfo.map((d) => d.license).filter(Boolean);
+              const unknown = depInfo.filter((d) => !d.license).length;
+              const uniqueLicenses = [...new Set(licenses)];
+              output.kv('Packages with known license', licenses.length);
+              if (unknown > 0) output.kv('Unknown license', String(unknown));
+              for (const lic of uniqueLicenses.sort()) {
+                const count = licenses.filter((l) => l === lic).length;
+                output.kv(`  ${lic}`, `${count} pkg`);
+              }
+            }
+
+            if (opts.output) {
+              const result = { dependencies: depInfo, outdated: outdatedDeps };
+              writeFileSync(opts.output, JSON.stringify(result, null, 2));
+              output.success(`Written to ${opts.output}`);
+            }
           });
-        }
+        },
+      ),
+    );
 
-        if (!npmOutdated.size && depNames.length > 0) {
-          output.info('npm outdated returned nothing — dependencies are current or registry unreachable');
-        }
-        const outdatedDeps = depInfo.filter(d => d.outdated);
-        
-        if (opts.format === 'json') {
-          const result = { dependencies: depInfo, outdated: outdatedDeps, summary: { total: depInfo.length, outdated: outdatedDeps.length, prod: depInfo.filter(d => d.type === 'prod').length, dev: depInfo.filter(d => d.type === 'dev').length } };
-          const content = JSON.stringify(result, null, 2);
-          if (opts.output) {
-            writeFileSync(opts.output, content);
-            output.success(`Written to ${opts.output}`);
-          } else {
-            console.log(content);
-          }
-          return;
-        }
-        
-        if (opts.format === 'markdown') {
-          const content = generateMarkdownDeps(depInfo, outdatedDeps);
-          if (opts.output) {
-            writeFileSync(opts.output, content);
-            output.success(`Written to ${opts.output}`);
-          } else {
-            console.log(content);
-          }
-          return;
-        }
-        
-        // Text format
-        output.section(`Dependency Summary`);
-        output.kv('Total', depInfo.length);
-        output.kv('Production', depInfo.filter(d => d.type === 'prod').length);
-        output.kv('Development', depInfo.filter(d => d.type === 'dev').length);
-        output.kv('Outdated', outdatedDeps.length);
-        
-        if (outdatedDeps.length > 0) {
-          output.section(`Outdated Dependencies (${outdatedDeps.length})`);
-          for (const dep of outdatedDeps.slice(0, 30)) {
-            const behind = [];
-            if (dep.majorBehind) behind.push('major');
-            if (dep.minorBehind) behind.push('minor');
-            if (dep.patchBehind) behind.push('patch');
-            const behindStr = behind.length > 0 ? ` (${behind.join(', ')} behind)` : '';
-            output.kv(`  ${dep.name}`, `${dep.current} → ${dep.latest}${behindStr} [${dep.type}]`);
-          }
-        } else {
-          output.success('All dependencies are up to date!');
-        }
-        
-        if (opts.audit) {
-          output.section('Security Audit');
-          const audit = runNpmAudit();
-          if (!audit) {
-            output.warn('npm audit could not be executed (offline or npm unavailable)');
-          } else if (audit.total === 0) {
-            output.success('No known vulnerabilities found');
-          } else {
-            output.kv('Vulnerabilities', audit.total);
-            if (audit.critical > 0) output.kv('  Critical', audit.critical);
-            if (audit.high > 0) output.kv('  High', audit.high);
-            if (audit.moderate > 0) output.kv('  Moderate', audit.moderate);
-            if (audit.low > 0) output.kv('  Low', audit.low);
-          }
-        }
-        
-        if (opts.license) {
-          output.section('License Compliance');
-          const licenses = depInfo.map(d => d.license).filter(Boolean);
-          const unknown = depInfo.filter(d => !d.license).length;
-          const uniqueLicenses = [...new Set(licenses)];
-          output.kv('Packages with known license', licenses.length);
-          if (unknown > 0) output.kv('Unknown license', String(unknown));
-          for (const lic of uniqueLicenses.sort()) {
-            const count = licenses.filter((l) => l === lic).length;
-            output.kv(`  ${lic}`, `${count} pkg`);
-          }
-        }
-        
-        if (opts.output) {
-          const result = { dependencies: depInfo, outdated: outdatedDeps };
-          writeFileSync(opts.output, JSON.stringify(result, null, 2));
-          output.success(`Written to ${opts.output}`);
-        }
-      });
-    }));
-  
   return depsCmd;
 }
 
@@ -200,12 +243,12 @@ function generateMarkdownDeps(deps: DependencyInfo[], outdated: DependencyInfo[]
     '| Name | Current | Latest | Type | Status |',
     '|------|---------|--------|------|--------|',
   ];
-  
+
   for (const dep of deps) {
     const status = dep.outdated ? '🔴 Outdated' : '🟢 Current';
     lines.push(`| ${dep.name} | ${dep.current} | ${dep.latest} | ${dep.type} | ${status} |`);
   }
-  
+
   if (outdated.length > 0) {
     lines.push('', '## Outdated Details', '');
     for (const dep of outdated) {
@@ -219,10 +262,16 @@ function generateMarkdownDeps(deps: DependencyInfo[], outdated: DependencyInfo[]
       lines.push('');
     }
   }
-  
+
   return lines.join('\n');
 }
-interface AuditSummary { total: number; critical: number; high: number; moderate: number; low: number }
+interface AuditSummary {
+  total: number;
+  critical: number;
+  high: number;
+  moderate: number;
+  low: number;
+}
 
 /**
  * Run the real `npm audit --json` and summarize vulnerability severities.
@@ -241,11 +290,20 @@ function runNpmAudit(): AuditSummary | null {
     // npm audit exits non-zero when vulnerabilities exist; stdout still holds JSON.
     if (!result.stdout || !result.stdout.trim()) return null;
     const parsed = JSON.parse(result.stdout) as {
-      metadata?: { vulnerabilities?: { info?: number; low?: number; moderate?: number; high?: number; critical?: number } };
+      metadata?: {
+        vulnerabilities?: {
+          info?: number;
+          low?: number;
+          moderate?: number;
+          high?: number;
+          critical?: number;
+        };
+      };
     };
     const v = parsed.metadata?.vulnerabilities;
     if (!v) return null;
-    const total = (v.info ?? 0) + (v.low ?? 0) + (v.moderate ?? 0) + (v.high ?? 0) + (v.critical ?? 0);
+    const total =
+      (v.info ?? 0) + (v.low ?? 0) + (v.moderate ?? 0) + (v.high ?? 0) + (v.critical ?? 0);
     return {
       total,
       critical: v.critical ?? 0,
@@ -258,7 +316,11 @@ function runNpmAudit(): AuditSummary | null {
   }
 }
 
-interface OutdatedEntry { current?: string; wanted?: string; latest?: string }
+interface OutdatedEntry {
+  current?: string;
+  wanted?: string;
+  latest?: string;
+}
 
 /**
  * Real version data via `npm outdated --json`. Returns a map keyed by

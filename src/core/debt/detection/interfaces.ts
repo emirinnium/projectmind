@@ -7,7 +7,6 @@ import type { GenomeBreakdown } from './genome.ts';
 export { GenomeBreakdown };
 import type { CacheStats } from '../../cache/types.ts';
 
-
 /**
  * Interface for redundancy detection modules.
  * Extracted to reduce coupling and enable dependency injection.
@@ -18,7 +17,7 @@ export interface RedundancyDetector {
     target: FileInfo,
     targetEmbedding: number[],
     allFiles: FileInfo[],
-    embeddings: Map<number, number[]>
+    embeddings: Map<number, number[]>,
   ): Promise<FileInfo[]>;
   getCacheStats(): CacheStats | { error: string };
 }
@@ -67,14 +66,16 @@ export interface DebtPersistence {
 
   clearPatterns(): void;
 
-  batchInsertDebtItems(items: Array<{
-    type: DebtType;
-    description: string;
-    severity: Severity;
-    suggestion: string;
-    reasoningTrace: string[];
-    filePath: string | null;
-  }>): void;
+  batchInsertDebtItems(
+    items: Array<{
+      type: DebtType;
+      description: string;
+      severity: Severity;
+      suggestion: string;
+      reasoningTrace: string[];
+      filePath: string | null;
+    }>,
+  ): void;
 }
 
 /**

@@ -17,9 +17,17 @@ export function collectInstalledLicenses(projectRoot: string): Map<string, strin
     const pkgJsonPath = join(pkgDir, 'package.json');
     if (!existsSync(pkgJsonPath)) return;
     try {
-      const p = JSON.parse(readFileSync(pkgJsonPath, 'utf-8')) as { name?: string; license?: string | { type?: string } };
+      const p = JSON.parse(readFileSync(pkgJsonPath, 'utf-8')) as {
+        name?: string;
+        license?: string | { type?: string };
+      };
       if (!p.name) return;
-      const lic = typeof p.license === 'string' ? p.license : typeof p.license === 'object' ? p.license?.type ?? '' : '';
+      const lic =
+        typeof p.license === 'string'
+          ? p.license
+          : typeof p.license === 'object'
+            ? (p.license?.type ?? '')
+            : '';
       licenses.set(p.name, lic);
     } catch {
       // unreadable package.json: skip

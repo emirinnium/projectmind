@@ -1,9 +1,5 @@
 export type IntegrityViolationType =
-  | 'missing_file'
-  | 'moved_file'
-  | 'stale_import'
-  | 'stale_function'
-  | 'orphan_node';
+  'missing_file' | 'moved_file' | 'stale_import' | 'stale_function' | 'orphan_node';
 
 /** F23: machine-readable repair suggestion for a violation. */
 export type IntegritySuggestedAction = 'delete_node' | 'update_path' | 'relink';

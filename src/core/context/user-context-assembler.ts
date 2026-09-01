@@ -42,13 +42,20 @@ export function assembleUserContext(
     task?: string;
     maxTokens?: number;
     limit?: number;
-  }
+  },
 ): UserContextResult {
   const { fileId } = options;
 
   // ---- Candidate pools -------------------------------------------------
-  const scores = new Map<number, { info: import('../../storage/kg/types.js').FileInfo; score: number; reasons: Set<string> }>();
-  const consider = (info: import('../../storage/kg/types.js').FileInfo, points: number, reason: string): void => {
+  const scores = new Map<
+    number,
+    { info: import('../../storage/kg/types.js').FileInfo; score: number; reasons: Set<string> }
+  >();
+  const consider = (
+    info: import('../../storage/kg/types.js').FileInfo,
+    points: number,
+    reason: string,
+  ): void => {
     if (info.id === fileId) return; // the target itself is not a suggestion
     let entry = scores.get(info.id);
     if (!entry) {
@@ -88,11 +95,17 @@ export function assembleUserContext(
         agentTouchedBy: node.agentTouchedBy,
       } as import('../../storage/kg/types.js').FileInfo;
       const isDirect = directIds.has(String(node.id));
-      consider(pseudoInfo, isDirect ? 0.5 : 0.28, isDirect ? 'direct-dependent' : 'in-blast-radius');
+      consider(
+        pseudoInfo,
+        isDirect ? 0.5 : 0.28,
+        isDirect ? 'direct-dependent' : 'in-blast-radius',
+      );
     }
   } catch (err) {
     // graph engine unavailable → fall back to plain dependents list
-    logger.warn(`[user-context-assembler] Graph engine unavailable for impact radius computation on file ${fileId}, falling back to direct dependents. ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(
+      `[user-context-assembler] Graph engine unavailable for impact radius computation on file ${fileId}, falling back to direct dependents. ${err instanceof Error ? err.message : String(err)}`,
+    );
     for (const d of kg.getDependents(fileId)) {
       consider(d, 0.5, 'direct-dependent');
       considered++;
@@ -110,7 +123,9 @@ export function assembleUserContext(
     }
   } catch (err) {
     // embeddings unavailable → skip silently, structural signals remain
-    logger.warn(`[user-context-assembler] Embedding lookup failed for file ${fileId}, skipping semantic neighbors. ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(
+      `[user-context-assembler] Embedding lookup failed for file ${fileId}, skipping semantic neighbors. ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 
   // 4+5. Apply task-keyword boosts and test flags over the pooled set.
@@ -154,14 +169,15 @@ export function assembleUserContext(
     cap = Math.max(1, Math.min(cap, budgetItems));
   }
 
-  const items: UserContextItem[] = ranked.slice(0, cap).map(({ path, score, reasons }) => ({ path, score, reasons }));
+  const items: UserContextItem[] = ranked
+    .slice(0, cap)
+    .map(({ path, score, reasons }) => ({ path, score, reasons }));
 
   return {
     task: options.task?.trim() || null,
     items,
     consideredFiles: considered,
-    note:
-      'Heuristic ranking (no LLM): higher score = look at this file sooner. Reasons explain WHY each file is suggested.',
+    note: 'Heuristic ranking (no LLM): higher score = look at this file sooner. Reasons explain WHY each file is suggested.',
   };
 }
 
@@ -173,6 +189,6 @@ function tokenize(task: string): Set<string> {
     task
       .toLowerCase()
       .split(/[^a-z0-9_-]+/)
-      .filter((t) => t.length >= 3)
+      .filter((t) => t.length >= 3),
   );
 }

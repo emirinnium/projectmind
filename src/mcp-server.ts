@@ -6,7 +6,11 @@ import { pathToFileURL } from 'node:url';
 import { handleOauthRoute } from './auth/http.js';
 import { logger } from './cli/utils/logger.js';
 import { initializeDependencies, getDependencies, getMcpSessionId } from './mcp/dependencies.js';
-import { registerCoreResources, registerWorkflowPrompts, registerResourceSubscriptionTool } from './mcp/resources.js';
+import {
+  registerCoreResources,
+  registerWorkflowPrompts,
+  registerResourceSubscriptionTool,
+} from './mcp/resources.js';
 import { stopPeriodicCleanup } from './mcp/tools/locks.js';
 import { registerAllTools } from './mcp/tools/registry/index.js';
 import { closeAllLiveWatchers } from './mcp/tools/sync.js';
@@ -68,12 +72,16 @@ async function sendListChangedNotification(): Promise<void> {
   try {
     _server.sendToolListChanged();
   } catch (e) {
-    logger.warn('Failed to send tools/listChanged notification', { error: e instanceof Error ? e.message : String(e) });
+    logger.warn('Failed to send tools/listChanged notification', {
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
   try {
     _server.sendResourceListChanged();
   } catch (e) {
-    logger.warn('Failed to send resources/listChanged notification', { error: e instanceof Error ? e.message : String(e) });
+    logger.warn('Failed to send resources/listChanged notification', {
+      error: e instanceof Error ? e.message : String(e),
+    });
   }
 }
 
@@ -109,7 +117,9 @@ export async function initMcpServer(): Promise<void> {
     };
     try {
       await registerContextualSurface();
-      logger.info('ProjectMind resources (pm://schema, pm://config, pm://stats) and workflow prompts registered.');
+      logger.info(
+        'ProjectMind resources (pm://schema, pm://config, pm://stats) and workflow prompts registered.',
+      );
       await sendListChangedNotification();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -120,7 +130,9 @@ export async function initMcpServer(): Promise<void> {
         logger.info('ProjectMind resources and workflow prompts registered (after retry).');
       } catch (e2) {
         const msg2 = e2 instanceof Error ? e2.message : String(e2);
-        logger.error(`Resource/prompt registration failed after retry: ${msg2} — continuing without them.`);
+        logger.error(
+          `Resource/prompt registration failed after retry: ${msg2} — continuing without them.`,
+        );
       }
     }
 
@@ -130,11 +142,17 @@ export async function initMcpServer(): Promise<void> {
     // deployments: PROJECTMIND_HTTP_PORT=8787 pm mcp  → POST http://127.0.0.1:8787/mcp
     const httpPort = parseInt(process.env.PROJECTMIND_HTTP_PORT ?? '', 10);
     if (Number.isFinite(httpPort) && httpPort > 0) {
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      });
       await server.connect(transport);
       try {
         const deps = getDependencies();
-        deps.agentName = process.env.PROJECTMIND_AGENT_NAME || server.server.getClientVersion?.()?.name || 'mcp-client';
+        deps.agentName =
+          process.env.PROJECTMIND_AGENT_NAME ||
+          server.server.getClientVersion?.()?.name ||
+          'mcp-client';
       } catch {
         // client info unavailable — keep fallback
       }
@@ -149,7 +167,9 @@ export async function initMcpServer(): Promise<void> {
               jsonError(
                 res,
                 405,
-                { error: 'Stateless MCP endpoint: POST /mcp, /oauth/register or /oauth/token only.' },
+                {
+                  error: 'Stateless MCP endpoint: POST /mcp, /oauth/register or /oauth/token only.',
+                },
                 { Allow: 'POST' },
               );
               return;
@@ -159,7 +179,12 @@ export async function initMcpServer(): Promise<void> {
             const ip = req.socket.remoteAddress || 'unknown';
             const rl = httpRateLimiter.check(ip);
             if (!rl.ok) {
-              jsonError(res, 429, { error: `Rate limit exceeded (${HTTP_RATE_LIMIT_PER_MIN} req/min).` }, { 'Retry-After': String(rl.retryAfterSec) });
+              jsonError(
+                res,
+                429,
+                { error: `Rate limit exceeded (${HTTP_RATE_LIMIT_PER_MIN} req/min).` },
+                { 'Retry-After': String(rl.retryAfterSec) },
+              );
               return;
             }
 
@@ -179,7 +204,9 @@ export async function initMcpServer(): Promise<void> {
             // OAuth 2.0 DCR (RFC 7591) + client-credentials token endpoint.
             if (req.url === '/oauth/register' || req.url === '/oauth/token') {
               if (!OAUTH_ENABLED) {
-                jsonError(res, 404, { error: 'OAuth endpoints are disabled (set PROJECTMIND_OAUTH_ENABLED=1).' });
+                jsonError(res, 404, {
+                  error: 'OAuth endpoints are disabled (set PROJECTMIND_OAUTH_ENABLED=1).',
+                });
                 return;
               }
               // /oauth/register is itself a protected resource (RFC 7591 §2.1):
@@ -189,29 +216,45 @@ export async function initMcpServer(): Promise<void> {
                 jsonError(
                   res,
                   401,
-                  { error: 'Unauthorized: /oauth/register requires the static PROJECTMIND_HTTP_TOKEN.' },
+                  {
+                    error:
+                      'Unauthorized: /oauth/register requires the static PROJECTMIND_HTTP_TOKEN.',
+                  },
                   { 'WWW-Authenticate': 'Bearer' },
                 );
                 return;
               }
-              const result = handleOauthRoute(req.url, bodyText, req.headers['content-type'] ?? '', {
-                registry: getOauthRegistry(),
-                tokens: getOauthTokens(),
-                authorization: req.headers['authorization'],
-                allowedScopes: [MCP_ACCESS_SCOPE],
-              });
+              const result = handleOauthRoute(
+                req.url,
+                bodyText,
+                req.headers['content-type'] ?? '',
+                {
+                  registry: getOauthRegistry(),
+                  tokens: getOauthTokens(),
+                  authorization: req.headers['authorization'],
+                  allowedScopes: [MCP_ACCESS_SCOPE],
+                },
+              );
               if (!result.handled) {
                 jsonError(res, 500, { error: 'OAuth route failed' });
                 return;
               }
-              res.writeHead(result.status, { 'Content-Type': 'application/json', ...result.headers });
+              res.writeHead(result.status, {
+                'Content-Type': 'application/json',
+                ...result.headers,
+              });
               res.end(JSON.stringify(result.payload));
               return;
             }
 
             // /mcp — auth (static token and/or OAuth bearer), then transport.
             if (!isHttpAuthorized(req)) {
-              jsonError(res, 401, { error: 'Unauthorized: missing or invalid token.' }, { 'WWW-Authenticate': 'Bearer' });
+              jsonError(
+                res,
+                401,
+                { error: 'Unauthorized: missing or invalid token.' },
+                { 'WWW-Authenticate': 'Bearer' },
+              );
               return;
             }
 
@@ -235,7 +278,9 @@ export async function initMcpServer(): Promise<void> {
             }
             await transport.handleRequest(req, res, body);
           } catch (e) {
-            logger.error('HTTP transport error', { error: e instanceof Error ? e.message : String(e) });
+            logger.error('HTTP transport error', {
+              error: e instanceof Error ? e.message : String(e),
+            });
             if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Internal error' }));
           }
@@ -254,7 +299,9 @@ export async function initMcpServer(): Promise<void> {
         );
       }
       if (!HTTP_AUTH_TOKEN && !OAUTH_ENABLED) {
-        logger.warn('PROJECTMIND_HTTP_TOKEN is NOT set — the endpoint is unauthenticated. It is bound to 127.0.0.1 only; set a token before exposing it beyond loopback.');
+        logger.warn(
+          'PROJECTMIND_HTTP_TOKEN is NOT set — the endpoint is unauthenticated. It is bound to 127.0.0.1 only; set a token before exposing it beyond loopback.',
+        );
       }
       return; // HTTP mode keeps the process alive via the http server.
     }
@@ -264,13 +311,18 @@ export async function initMcpServer(): Promise<void> {
     await server.connect(transport);
     try {
       const deps = getDependencies();
-      deps.agentName = process.env.PROJECTMIND_AGENT_NAME || server.server.getClientVersion?.()?.name || 'mcp-client';
+      deps.agentName =
+        process.env.PROJECTMIND_AGENT_NAME ||
+        server.server.getClientVersion?.()?.name ||
+        'mcp-client';
     } catch {
       // client info unavailable — keep fallback
     }
     logger.info('ProjectMind MCP Server ready.');
   } catch (e) {
-    logger.error('Failed to initialize MCP server:', { error: e instanceof Error ? e.message : String(e) });
+    logger.error('Failed to initialize MCP server:', {
+      error: e instanceof Error ? e.message : String(e),
+    });
     throw e;
   }
 }
@@ -296,18 +348,24 @@ export async function shutdownMcpServer(): Promise<void> {
         deps.kg.endAgentSession(ownSessionId);
         logger.info(`MCP agent session ended: ${ownSessionId}`);
       } catch (e) {
-        logger.warn('Failed to end MCP agent session:', { error: e instanceof Error ? e.message : String(e) });
+        logger.warn('Failed to end MCP agent session:', {
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
     }
     try {
       stopPeriodicCleanup();
     } catch (e) {
-      logger.warn('Failed to stop periodic cleanup:', { error: e instanceof Error ? e.message : String(e) });
+      logger.warn('Failed to stop periodic cleanup:', {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
     try {
       closeAllLiveWatchers();
     } catch (e) {
-      logger.warn('Failed to close live watchers:', { error: e instanceof Error ? e.message : String(e) });
+      logger.warn('Failed to close live watchers:', {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
     closeDatabase();
     _initialized = false;
@@ -333,7 +391,9 @@ if (isMainModule) {
       await initMcpServer();
       process.stdin.resume();
     } catch (e) {
-      logger.error('Failed to start MCP server:', { error: e instanceof Error ? e.message : String(e) });
+      logger.error('Failed to start MCP server:', {
+        error: e instanceof Error ? e.message : String(e),
+      });
       process.exitCode = 1;
     }
   })();

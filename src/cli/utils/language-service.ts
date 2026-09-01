@@ -1,4 +1,3 @@
-
 import { existsSync, readFileSync } from 'node:fs';
 
 import { join } from 'node:path';
@@ -19,7 +18,7 @@ export interface ProjectLanguageService {
 
 export function createProjectLanguageService(
   projectRoot: string,
-  includeFiles: string[] = []
+  includeFiles: string[] = [],
 ): ProjectLanguageService | null {
   const tsconfigPath = join(projectRoot, 'tsconfig.json');
   if (!existsSync(tsconfigPath)) return null;
@@ -64,7 +63,10 @@ export function createProjectLanguageService(
 }
 
 /** Read a file's text through the same normalized layer. */
-export function readSourceNormalized(projectRoot: string, filePath: string): { abs: string; text: string } | null {
+export function readSourceNormalized(
+  projectRoot: string,
+  filePath: string,
+): { abs: string; text: string } | null {
   const abs = join(projectRoot, filePath);
   try {
     return { abs, text: readFileSync(abs, 'utf-8') };

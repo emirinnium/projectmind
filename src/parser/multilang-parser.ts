@@ -82,8 +82,18 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
 
     // Functions - different node types per language
     const functionTypes: Record<string, string[]> = {
-      typescript: ['function_declaration', 'method_definition', 'arrow_function', 'function_expression'],
-      javascript: ['function_declaration', 'method_definition', 'arrow_function', 'function_expression'],
+      typescript: [
+        'function_declaration',
+        'method_definition',
+        'arrow_function',
+        'function_expression',
+      ],
+      javascript: [
+        'function_declaration',
+        'method_definition',
+        'arrow_function',
+        'function_expression',
+      ],
       python: ['function_definition'],
       go: ['function_declaration', 'method_declaration'],
       rust: ['function_item', 'closure_expression'],
@@ -96,7 +106,8 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
     if (functionTypes[lang]?.includes(nodeType)) {
       const nameNode = node.childForFieldName('name');
       const name = nameNode?.text ?? 'anonymous';
-      const paramsNode = node.childForFieldName('parameters') || node.childForFieldName('parameters_node');
+      const paramsNode =
+        node.childForFieldName('parameters') || node.childForFieldName('parameters_node');
       const params = paramsNode?.text ?? '()';
 
       // Return type when the grammar exposes one (TS/Python/Rust/Java/Go);
@@ -110,12 +121,25 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
       const complexity =
         1 +
         node.descendantsOfType([
-          'if_statement', 'if_expression', 'elif_clause', 'else_clause',
-          'switch_statement', 'switch_case', 'case_statement', 'match_arm',
-          'for_statement', 'for_in_statement', 'for_each_statement',
-          'while_statement', 'do_statement', 'do_while_statement',
-          'catch_clause', 'except_clause', 'handler',
-          'conditional_expression', 'ternary_expression',
+          'if_statement',
+          'if_expression',
+          'elif_clause',
+          'else_clause',
+          'switch_statement',
+          'switch_case',
+          'case_statement',
+          'match_arm',
+          'for_statement',
+          'for_in_statement',
+          'for_each_statement',
+          'while_statement',
+          'do_statement',
+          'do_while_statement',
+          'catch_clause',
+          'except_clause',
+          'handler',
+          'conditional_expression',
+          'ternary_expression',
         ]).length;
 
       functions.push({
@@ -125,7 +149,12 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
         startLine: node.startPosition.row + 1,
         endLine: node.endPosition.row + 1,
         complexity,
-        kind: nodeType === 'method_definition' || nodeType === 'method_declaration' || nodeType === 'method' ? 'method' : 'function',
+        kind:
+          nodeType === 'method_definition' ||
+          nodeType === 'method_declaration' ||
+          nodeType === 'method'
+            ? 'method'
+            : 'function',
         parameters: [],
         isExported: false,
         isAsync: false,

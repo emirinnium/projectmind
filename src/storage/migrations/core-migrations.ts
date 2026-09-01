@@ -9,8 +9,12 @@ export const coreMigrations: Migration[] = [
   {
     version: 1,
     name: 'initial_schema',
-    up: () => { /* Initial schema is applied via SCHEMA_SQL */ },
-    down: () => { /* Cannot rollback initial schema */ },
+    up: () => {
+      /* Initial schema is applied via SCHEMA_SQL */
+    },
+    down: () => {
+      /* Cannot rollback initial schema */
+    },
   },
   {
     version: 2,
@@ -54,8 +58,8 @@ export const coreMigrations: Migration[] = [
         );
       `);
 
-      const filesColumns = db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>;
-      const hasProjectId = filesColumns.some(c => c.name === 'project_id');
+      const filesColumns = db.prepare('PRAGMA table_info(files)').all() as Array<{ name: string }>;
+      const hasProjectId = filesColumns.some((c) => c.name === 'project_id');
 
       if (!hasProjectId) {
         db.exec('ALTER TABLE files ADD COLUMN project_id INTEGER DEFAULT 1');
@@ -91,8 +95,10 @@ export const coreMigrations: Migration[] = [
         );
       `);
 
-      const dataFlowsColumns = db.prepare("PRAGMA table_info(data_flows)").all() as Array<{ name: string }>;
-      const hasProjectIdDataFlows = dataFlowsColumns.some(c => c.name === 'project_id');
+      const dataFlowsColumns = db.prepare('PRAGMA table_info(data_flows)').all() as Array<{
+        name: string;
+      }>;
+      const hasProjectIdDataFlows = dataFlowsColumns.some((c) => c.name === 'project_id');
 
       if (!hasProjectIdDataFlows) {
         db.exec('ALTER TABLE data_flows ADD COLUMN project_id INTEGER DEFAULT 1');
@@ -195,8 +201,8 @@ export const coreMigrations: Migration[] = [
     name: 'add_last_synced_and_expand_debt_types',
     up: (db: DatabaseSync) => {
       // 1. Add last_synced column to files table if missing.
-      const filesColumns = db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>;
-      const hasLastSynced = filesColumns.some(c => c.name === 'last_synced');
+      const filesColumns = db.prepare('PRAGMA table_info(files)').all() as Array<{ name: string }>;
+      const hasLastSynced = filesColumns.some((c) => c.name === 'last_synced');
       if (!hasLastSynced) {
         db.exec('ALTER TABLE files ADD COLUMN last_synced TIMESTAMP');
       }
@@ -260,7 +266,9 @@ export const coreMigrations: Migration[] = [
       // 3-way merge support for team memories: base_value records the value
       // that was current BEFORE the stored one, enabling Git-style
       // base/local/remote merges instead of last-write-wins.
-      const columns = db.prepare('PRAGMA table_info(team_memories)').all() as Array<{ name: string }>;
+      const columns = db.prepare('PRAGMA table_info(team_memories)').all() as Array<{
+        name: string;
+      }>;
       const hasBaseValue = columns.some((c) => c.name === 'base_value');
       if (!hasBaseValue) {
         db.exec('ALTER TABLE team_memories ADD COLUMN base_value TEXT');
@@ -328,7 +336,9 @@ export const coreMigrations: Migration[] = [
       // silently duplicated cycle rows forever. Dedupe (keep the earliest
       // row per cycle_path), then enforce uniqueness at the DB level.
       const hasTable = db
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'circular_dependencies'")
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'circular_dependencies'",
+        )
         .get();
       if (!hasTable) return; // pre-schema DB — SCHEMA_SQL creates the table fresh.
       db.exec(`

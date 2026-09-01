@@ -61,7 +61,11 @@ export function predictMergeRisk(kg: KnowledgeGraph, input: ConflictRiskInput): 
     }
     try {
       const radius = g.getImpactRadius(info.id);
-      for (let i = 0; i < radius.affected.length && myClosure.size < RISK_ANALYSIS_CLOSURE_LIMIT; i++) {
+      for (
+        let i = 0;
+        i < radius.affected.length && myClosure.size < RISK_ANALYSIS_CLOSURE_LIMIT;
+        i++
+      ) {
         const n = radius.affected[i];
         const p = normalize(n.relativePath || n.path);
         if (!myClosure.has(p)) myClosure.set(p, f);
@@ -77,7 +81,9 @@ export function predictMergeRisk(kg: KnowledgeGraph, input: ConflictRiskInput): 
     const cause = myClosure.get(held);
     if (cause) {
       closureHits++;
-      reasons.push(`Blast-radius overlap: ${held} (locked by another agent) depends on your ${cause}.`);
+      reasons.push(
+        `Blast-radius overlap: ${held} (locked by another agent) depends on your ${cause}.`,
+      );
     }
   }
 
@@ -92,7 +98,9 @@ export function predictMergeRisk(kg: KnowledgeGraph, input: ConflictRiskInput): 
       for (const dep of oneHopImports.visited) {
         if (heldSet.has(normalize(dep.relativePath || dep.path))) {
           reverseHits++;
-          reasons.push(`Shared dependency: your ${mine} imports ${[...heldSet].find((h) => h === normalize(dep.relativePath || dep.path))}.`);
+          reasons.push(
+            `Shared dependency: your ${mine} imports ${[...heldSet].find((h) => h === normalize(dep.relativePath || dep.path))}.`,
+          );
           break;
         }
       }
@@ -111,7 +119,9 @@ export function predictMergeRisk(kg: KnowledgeGraph, input: ConflictRiskInput): 
     note:
       'v1 structural heuristic: blast-radius + dependency-direction analysis over the knowledge graph. ' +
       'No content-level merge simulation yet.' +
-      (unresolvedMine > 0 ? ` ${unresolvedMine} of your files were not in the knowledge graph (unscanned).` : ''),
+      (unresolvedMine > 0
+        ? ` ${unresolvedMine} of your files were not in the knowledge graph (unscanned).`
+        : ''),
   };
 }
 

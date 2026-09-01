@@ -2,15 +2,15 @@
 // Re-exports all storage modules for convenient importing
 
 // Database
-export { 
-  initDatabase, 
-  getDatabase, 
-  setDatabase, 
-  closeDatabase, 
-  runInTransaction, 
+export {
+  initDatabase,
+  getDatabase,
+  setDatabase,
+  closeDatabase,
+  runInTransaction,
   getStatement,
   runWithRetry,
-  type RetryOptions as DatabaseRetryOptions 
+  type RetryOptions as DatabaseRetryOptions,
 } from './database.js';
 
 // Schema

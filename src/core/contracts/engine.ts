@@ -43,7 +43,8 @@ export class ContractEngine {
       {
         id: 'no-eval',
         name: 'No Dynamic Execution (eval)',
-        description: 'Dynamic code execution (eval/Function constructor) is strictly prohibited for security',
+        description:
+          'Dynamic code execution (eval/Function constructor) is strictly prohibited for security',
         sourcePattern: '**/*.ts',
         forbiddenKeywords: ['eval\\s*\\(', 'new\\s+Function\\s*\\('],
         severity: 'error',
@@ -61,7 +62,8 @@ export class ContractEngine {
       {
         id: 'no-direct-db-in-mcp-tools',
         name: 'No Direct DB Schema Modification in Tools',
-        description: 'MCP tools must use KnowledgeGraph or abstraction layer rather than direct SQL DDL',
+        description:
+          'MCP tools must use KnowledgeGraph or abstraction layer rather than direct SQL DDL',
         sourcePattern: 'src/mcp/tools/**/*.ts',
         forbiddenKeywords: ['CREATE TABLE', 'DROP TABLE', 'ALTER TABLE'],
         severity: 'warning',
@@ -78,7 +80,8 @@ export class ContractEngine {
       {
         id: 'no-hardcoded-paths-in-tools',
         name: 'No Hardcoded File Paths in Tools',
-        description: 'MCP tools should use KnowledgeGraph path resolution rather than hardcoded paths',
+        description:
+          'MCP tools should use KnowledgeGraph path resolution rather than hardcoded paths',
         sourcePattern: 'src/mcp/tools/**/*.ts',
         forbiddenKeywords: ['\\.\\./\\.\\./src/storage'],
         severity: 'warning',
@@ -143,7 +146,10 @@ export class ContractEngine {
         while ((match = importRegex.exec(code)) !== null) {
           const importedSource = match[1];
           for (const forbidden of contract.forbiddenImports) {
-            if (importedSource.includes(forbidden) || this.matchesPattern(importedSource, forbidden)) {
+            if (
+              importedSource.includes(forbidden) ||
+              this.matchesPattern(importedSource, forbidden)
+            ) {
               violations.push({
                 contractId: contract.id,
                 contractName: contract.name,
@@ -189,23 +195,26 @@ export class ContractEngine {
   private matchesPattern(path: string, pattern: string): boolean {
     // Exact match
     if (path === pattern) return true;
-    
+
     // Wildcard - matches everything
     if (pattern === '*' || pattern === '**/*.ts') return true;
-    
+
     // Convert glob pattern to regex
     // Handle patterns like "src/core/**/*.ts" or "src/cli/commands/**/*.ts"
     const regexPattern = pattern
       .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape special regex chars except * and ?
-      .replace(/\*\*/g, '.*')               // ** matches any path segments (including none)
-      .replace(/\*/g, '[^/]*');             // * matches anything except path separator
-    
+      .replace(/\*\*/g, '.*') // ** matches any path segments (including none)
+      .replace(/\*/g, '[^/]*'); // * matches anything except path separator
+
     try {
       const regex = new RegExp(`^${regexPattern}$`, 'i');
       return regex.test(path);
     } catch {
       // Fallback to simple includes if regex fails
-      const cleanPattern = pattern.replace(/^\*\*\//, '').replace(/\/\*\*\/\*$/, '').replace(/\*$/, '');
+      const cleanPattern = pattern
+        .replace(/^\*\*\//, '')
+        .replace(/\/\*\*\/\*$/, '')
+        .replace(/\*$/, '');
       return path.includes(cleanPattern);
     }
   }

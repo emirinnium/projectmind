@@ -4,7 +4,13 @@ import type { SQLOutputValue } from 'node:sqlite';
 import { getStatement } from '../../../storage/database.js';
 import { KnowledgeGraph, FileInfo } from '../../../storage/knowledge-graph.js';
 import { loadConfig } from '../../../utils/config.js';
-import { round2, countMatches, classifyErrorHandling, dominantNaming, computeFingerprint } from './utils.js';
+import {
+  round2,
+  countMatches,
+  classifyErrorHandling,
+  dominantNaming,
+  computeFingerprint,
+} from './utils.js';
 import type { ModuleInfo, ScaleReport, AgentProfile, ScanProfile } from './types.js';
 
 /**
@@ -96,7 +102,7 @@ export class ScaleReporter {
   storeScanProfile(profile: ScanProfile): void {
     getStatement(
       `INSERT INTO scan_profiles (total_files, scanned_files, error_files, duration_ms, files_per_second, memory_used_mb, errors)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       profile.totalFiles,
       profile.scannedFiles,
@@ -104,17 +110,17 @@ export class ScaleReporter {
       profile.durationMs,
       profile.filesPerSecond,
       profile.memoryUsedMB,
-      profile.errors.length > 0 ? JSON.stringify(profile.errors) : null
+      profile.errors.length > 0 ? JSON.stringify(profile.errors) : null,
     );
   }
 
   getLastScanProfile(): ScanProfile | null {
     const row = getStatement(
-      `SELECT * FROM scan_profiles ORDER BY created_at DESC LIMIT 1`
+      `SELECT * FROM scan_profiles ORDER BY created_at DESC LIMIT 1`,
     ).get() as Record<string, SQLOutputValue> | undefined;
-    
+
     if (!row) return null;
-    
+
     return {
       totalFiles: row.total_files as number,
       scannedFiles: row.scanned_files as number,
@@ -163,7 +169,7 @@ export class ScaleReporter {
     }
 
     const agentFiles = getStatement(
-      'SELECT agent_touched_by, COUNT(*) as cnt FROM files WHERE agent_touched_by IS NOT NULL GROUP BY agent_touched_by'
+      'SELECT agent_touched_by, COUNT(*) as cnt FROM files WHERE agent_touched_by IS NOT NULL GROUP BY agent_touched_by',
     ).all() as { agent_touched_by: string; cnt: number }[];
 
     for (const row of agentFiles) {
@@ -176,7 +182,7 @@ export class ScaleReporter {
     // Real fingerprints are computed from the actual content of agent-touched
     // files (capped). Agents without readable touched files keep -1/'unknown'.
     const touchedRows = getStatement(
-      'SELECT agent_touched_by, relative_path FROM files WHERE agent_touched_by IS NOT NULL LIMIT 500'
+      'SELECT agent_touched_by, relative_path FROM files WHERE agent_touched_by IS NOT NULL LIMIT 500',
     ).all() as { agent_touched_by: string; relative_path: string }[];
 
     const pathsByAgent = new Map<string, string[]>();

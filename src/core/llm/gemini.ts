@@ -1,4 +1,10 @@
-import { LLMProvider, LLMResponse, LLMConfig, DEFAULT_TIMEOUT_MS, DEFAULT_MAX_TOKENS } from './types.js';
+import {
+  LLMProvider,
+  LLMResponse,
+  LLMConfig,
+  DEFAULT_TIMEOUT_MS,
+  DEFAULT_MAX_TOKENS,
+} from './types.js';
 import { validateApiUrl } from './url-validator.js';
 
 interface GeminiCandidate {
@@ -28,7 +34,10 @@ export class GeminiProvider implements LLMProvider {
   constructor(config: LLMConfig) {
     this.model = config.model;
     this.apiKey = config.apiKey || '';
-    this.apiUrl = validateApiUrl(config.apiUrl || 'https://generativelanguage.googleapis.com/v1beta', 'gemini');
+    this.apiUrl = validateApiUrl(
+      config.apiUrl || 'https://generativelanguage.googleapis.com/v1beta',
+      'gemini',
+    );
     this.timeoutMs = config.timeoutMs || DEFAULT_TIMEOUT_MS;
     this.maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS;
   }
@@ -40,7 +49,7 @@ export class GeminiProvider implements LLMProvider {
   async analyze(
     prompt: string,
     systemPrompt?: string,
-    temperature: number = 0.3
+    temperature: number = 0.3,
   ): Promise<LLMResponse> {
     if (!this.isAvailable()) {
       throw new Error('Gemini API key not configured');
@@ -58,7 +67,7 @@ export class GeminiProvider implements LLMProvider {
       }
       const requestBody: GeminiRequestBody = {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature, maxOutputTokens: this.maxTokens }
+        generationConfig: { temperature, maxOutputTokens: this.maxTokens },
       };
 
       // Gemini API expects systemInstruction as a separate field
@@ -66,19 +75,22 @@ export class GeminiProvider implements LLMProvider {
         requestBody.systemInstruction = { parts: [{ text: systemPrompt }] };
       }
 
-      const response = await fetch(`${this.apiUrl}/models/${this.model}:generateContent?key=${this.apiKey}`, {
-        method: 'POST',
-        signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
+      const response = await fetch(
+        `${this.apiUrl}/models/${this.model}:generateContent?key=${this.apiKey}`,
+        {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        },
+      );
 
       if (!response.ok) {
         const err = await response.text();
         throw new Error(`Gemini API error: ${response.status} ${err}`);
       }
 
-      const data = await response.json() as GeminiResponse;
+      const data = (await response.json()) as GeminiResponse;
       const content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
       // Extract reasoning trace (numbered steps)
@@ -88,10 +100,12 @@ export class GeminiProvider implements LLMProvider {
         .map((l: string) => l.trim());
 
       // Extract token usage if available
-      const usage = data.usageMetadata ? {
-        inputTokens: data.usageMetadata.promptTokenCount || 0,
-        outputTokens: data.usageMetadata.candidatesTokenCount || 0
-      } : undefined;
+      const usage = data.usageMetadata
+        ? {
+            inputTokens: data.usageMetadata.promptTokenCount || 0,
+            outputTokens: data.usageMetadata.candidatesTokenCount || 0,
+          }
+        : undefined;
 
       return {
         content,

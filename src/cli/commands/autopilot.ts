@@ -6,7 +6,11 @@ import { execSync } from 'node:child_process';
 import { getStatement } from '../../storage/database.js';
 import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
 import { DEFAULT_PREDICTOR_CONFIG } from '../../core/predictive/config.js';
-import { isRiskAtOrAbove, isValidRiskLevel, VALID_RISK_LEVELS } from '../../core/predictive/risk-levels.js';
+import {
+  isRiskAtOrAbove,
+  isValidRiskLevel,
+  VALID_RISK_LEVELS,
+} from '../../core/predictive/risk-levels.js';
 import type { RiskLevel } from '../../core/predictive/risk-levels.js';
 
 /**
@@ -25,24 +29,26 @@ interface GateResult {
   detail: string;
 }
 
-
-
 async function runGates(
   minGenome: number,
   impactRiskThreshold: RiskLevel = 'high',
   skipImpactCheck: boolean = false,
-  allowBreakingApi: boolean = false
+  allowBreakingApi: boolean = false,
 ): Promise<GateResult[]> {
   const gates: GateResult[] = [];
 
   // Gate 1: no high-severity debt items open.
   let highDebt = -1;
   try {
-    const row = getStatement(`SELECT COUNT(*) AS c FROM debt_items WHERE severity='high' AND resolved=0`).get() as { c: number } | undefined;
+    const row = getStatement(
+      `SELECT COUNT(*) AS c FROM debt_items WHERE severity='high' AND resolved=0`,
+    ).get() as { c: number } | undefined;
     highDebt = row?.c ?? 0;
   } catch {
     try {
-      const row = getStatement(`SELECT COUNT(*) AS c FROM debt_items WHERE severity='high'`).get() as { c: number } | undefined;
+      const row = getStatement(
+        `SELECT COUNT(*) AS c FROM debt_items WHERE severity='high'`,
+      ).get() as { c: number } | undefined;
       highDebt = row?.c ?? 0;
     } catch {
       highDebt = -1;
@@ -57,7 +63,9 @@ async function runGates(
   // Gate 2: no architectural drift cycles recorded.
   let cycles = -1;
   try {
-    const row = getStatement(`SELECT COUNT(*) AS c FROM debt_items WHERE type='architectural_drift'`).get() as { c: number } | undefined;
+    const row = getStatement(
+      `SELECT COUNT(*) AS c FROM debt_items WHERE type='architectural_drift'`,
+    ).get() as { c: number } | undefined;
     cycles = row?.c ?? 0;
   } catch {
     cycles = -1;
@@ -71,7 +79,9 @@ async function runGates(
   // Gate 3: latest genome score above threshold.
   let genomeScore: number | null = null;
   try {
-    const row = getStatement('SELECT coherence_score FROM project_genome ORDER BY computed_at DESC, id DESC LIMIT 1').get() as { coherence_score: number } | undefined;
+    const row = getStatement(
+      'SELECT coherence_score FROM project_genome ORDER BY computed_at DESC, id DESC LIMIT 1',
+    ).get() as { coherence_score: number } | undefined;
     genomeScore = row ? Number(row.coherence_score) : null;
   } catch {
     genomeScore = null;
@@ -79,9 +89,10 @@ async function runGates(
   gates.push({
     name: `Genome ≥ ${minGenome}%`,
     passed: genomeScore !== null && genomeScore >= minGenome / 100,
-    detail: genomeScore === null
-      ? 'no genome snapshot yet (run "pm genome")'
-      : `${Math.round(genomeScore * 100)}%`,
+    detail:
+      genomeScore === null
+        ? 'no genome snapshot yet (run "pm genome")'
+        : `${Math.round(genomeScore * 100)}%`,
   });
 
   // Gate 4: Impact risk check with configurable threshold.
@@ -103,11 +114,11 @@ async function runGates(
       })
         .trim()
         .split('\n')
-        .filter(f => f.length > 0);
+        .filter((f) => f.length > 0);
 
       // Filter to TypeScript/JavaScript files to reduce overhead
-      const codeFiles = staged.filter(f =>
-        f.endsWith('.ts') || f.endsWith('.js') || f.endsWith('.tsx') || f.endsWith('.jsx')
+      const codeFiles = staged.filter(
+        (f) => f.endsWith('.ts') || f.endsWith('.js') || f.endsWith('.tsx') || f.endsWith('.jsx'),
       );
 
       if (codeFiles.length > 0) {
@@ -116,22 +127,31 @@ async function runGates(
         // Track failures per file for detailed reporting
         const fileFailures: Array<{
           filePath: string;
-          failures: Array<{ functionName: string; riskLevel: RiskLevel; confidence: number; reason: string }>;
+          failures: Array<{
+            functionName: string;
+            riskLevel: RiskLevel;
+            confidence: number;
+            reason: string;
+          }>;
         }> = [];
 
         for (const file of codeFiles) {
           try {
             const failures = predictor.predictTestBreaks({
               filePath: file,
-              moduleName: file.split('/').pop()?.replace(/\.[^.]+$/, '') || file,
+              moduleName:
+                file
+                  .split('/')
+                  .pop()
+                  ?.replace(/\.[^.]+$/, '') || file,
               changeType: 'modify',
               crossModule: true,
             });
 
             // Filter failures at or above threshold
             const significantFailures = failures
-              .filter(f => f.riskLevel && isRiskAtOrAbove(f.riskLevel, impactRiskThreshold))
-              .map(f => ({
+              .filter((f) => f.riskLevel && isRiskAtOrAbove(f.riskLevel, impactRiskThreshold))
+              .map((f) => ({
                 functionName: f.functionName,
                 riskLevel: (f.riskLevel || 'low') as RiskLevel,
                 confidence: f.confidence,
@@ -151,12 +171,16 @@ async function runGates(
           impactRiskPassed = false;
           // Build detailed message
           const lines: string[] = [];
-          lines.push(`❌ Impact Risk Gate Failed (${filesAtRisk}/${codeFiles.length} files at risk)`);
+          lines.push(
+            `❌ Impact Risk Gate Failed (${filesAtRisk}/${codeFiles.length} files at risk)`,
+          );
           for (const { filePath, failures } of fileFailures) {
             const riskLevel = failures[0].riskLevel;
             lines.push(`- ${filePath}: ${failures.length} ${riskLevel}-risk failure(s)`);
             for (const f of failures) {
-              lines.push(`  - ${f.functionName}: ${f.reason} (confidence: ${f.confidence.toFixed(2)})`);
+              lines.push(
+                `  - ${f.functionName}: ${f.reason} (confidence: ${f.confidence.toFixed(2)})`,
+              );
             }
           }
           lines.push('');
@@ -165,7 +189,9 @@ async function runGates(
             lines.push(`- Review changes with \`pm impact --file ${filePath}\``);
           }
           lines.push('- Update mocks or tests as needed.');
-          lines.push('- Consider lowering the threshold with --impact-risk-threshold low if appropriate.');
+          lines.push(
+            '- Consider lowering the threshold with --impact-risk-threshold low if appropriate.',
+          );
           impactRiskDetail = lines.join('\n');
         } else {
           impactRiskDetail = `no ≥${impactRiskThreshold} risk in ${codeFiles.length} staged file(s)`;
@@ -205,18 +231,19 @@ async function runGates(
       })
         .trim()
         .split('\n')
-        .filter(f => f.length > 0);
+        .filter((f) => f.length > 0);
 
-      const codeFiles = staged.filter(f =>
-        f.endsWith('.ts') || f.endsWith('.js') || f.endsWith('.tsx') || f.endsWith('.jsx')
+      const codeFiles = staged.filter(
+        (f) => f.endsWith('.ts') || f.endsWith('.js') || f.endsWith('.tsx') || f.endsWith('.jsx'),
       );
 
       if (codeFiles.length > 0) {
-        const { extractApiSurface, getApiAtRef, computeDiff } = await import('./api-surface-utils.js');
+        const { extractApiSurface, getApiAtRef, computeDiff } =
+          await import('./api-surface-utils.js');
 
-        const stagedFiles = codeFiles.map(f => ({
+        const stagedFiles = codeFiles.map((f) => ({
           path: join(projectRoot, f),
-          relativePath: f.replace(/\\/g, '/')
+          relativePath: f.replace(/\\/g, '/'),
         }));
 
         const currentApi = await extractApiSurface(stagedFiles, projectRoot);
@@ -266,8 +293,9 @@ async function runGates(
 }
 
 export function createAutopilotCommand(): Command {
-  const cmd = new Command('autopilot')
-    .description('Agent workflow enforcement: pre-commit quality gates and git hook installation');
+  const cmd = new Command('autopilot').description(
+    'Agent workflow enforcement: pre-commit quality gates and git hook installation',
+  );
 
   cmd
     .command('pre-commit')
@@ -277,108 +305,113 @@ export function createAutopilotCommand(): Command {
     .option(
       '--impact-risk-threshold <level>',
       'Risk level to block (low|medium|high|critical)',
-      'high'
+      'high',
     )
-    .option(
-      '--skip-impact-check',
-      'Skip impact risk gate (useful for performance)',
-      false
-    )
-    .option(
-      '--allow-breaking-api',
-      'Allow breaking API surface changes (bypasses Gate 5)',
-      false
-    )
-    .action(asyncHandler(async (opts: {
-      minGenome: string;
-      format: string;
-      impactRiskThreshold?: string;
-      skipImpactCheck?: boolean;
-      allowBreakingApi?: boolean;
-    }) => {
-      // Validate --impact-risk-threshold value before proceeding.
-      const rawThreshold = opts.impactRiskThreshold || 'high';
-      if (!isValidRiskLevel(rawThreshold)) {
-        output.error(
-          `Invalid --impact-risk-threshold value: "${rawThreshold}". ` +
-          `Must be one of: ${VALID_RISK_LEVELS.join(', ')}.`
-        );
-        process.exit(1);
-        return;
-      }
-      const threshold: RiskLevel = rawThreshold;
-
-      // withService initializes the DB layer that runGates' statements need.
-      await withService(['debt'], async () => {
-        const gates = await runGates(
-          parseInt(opts.minGenome, 10),
-          threshold,
-          opts.skipImpactCheck || false,
-          opts.allowBreakingApi || false
-        );
-        const failed = gates.filter((g) => !g.passed);
-        const allPassed = failed.length === 0;
-
-        if (opts.format === 'json') {
-          output.info(JSON.stringify({ ok: allPassed, gates }, null, 2));
-        } else {
-          output.section('🤖 ProjectMind Pre-Commit Gate');
-          for (const g of gates) {
-            output.kv(`${g.passed ? '✅' : '❌'} ${g.name}`, g.detail);
+    .option('--skip-impact-check', 'Skip impact risk gate (useful for performance)', false)
+    .option('--allow-breaking-api', 'Allow breaking API surface changes (bypasses Gate 5)', false)
+    .action(
+      asyncHandler(
+        async (opts: {
+          minGenome: string;
+          format: string;
+          impactRiskThreshold?: string;
+          skipImpactCheck?: boolean;
+          allowBreakingApi?: boolean;
+        }) => {
+          // Validate --impact-risk-threshold value before proceeding.
+          const rawThreshold = opts.impactRiskThreshold || 'high';
+          if (!isValidRiskLevel(rawThreshold)) {
+            output.error(
+              `Invalid --impact-risk-threshold value: "${rawThreshold}". ` +
+                `Must be one of: ${VALID_RISK_LEVELS.join(', ')}.`,
+            );
+            process.exit(1);
+            return;
           }
-          if (!allPassed) {
-            output.error(`Gate FAILED — ${failed.length} check(s) must pass before committing.`);
-          } else {
-            output.success('All gates passed.');
-          }
-        }
+          const threshold: RiskLevel = rawThreshold;
 
-        if (!allPassed) process.exit(1);
-      });
-    }));
+          // withService initializes the DB layer that runGates' statements need.
+          await withService(['debt'], async () => {
+            const gates = await runGates(
+              parseInt(opts.minGenome, 10),
+              threshold,
+              opts.skipImpactCheck || false,
+              opts.allowBreakingApi || false,
+            );
+            const failed = gates.filter((g) => !g.passed);
+            const allPassed = failed.length === 0;
+
+            if (opts.format === 'json') {
+              output.info(JSON.stringify({ ok: allPassed, gates }, null, 2));
+            } else {
+              output.section('🤖 ProjectMind Pre-Commit Gate');
+              for (const g of gates) {
+                output.kv(`${g.passed ? '✅' : '❌'} ${g.name}`, g.detail);
+              }
+              if (!allPassed) {
+                output.error(
+                  `Gate FAILED — ${failed.length} check(s) must pass before committing.`,
+                );
+              } else {
+                output.success('All gates passed.');
+              }
+            }
+
+            if (!allPassed) process.exit(1);
+          });
+        },
+      ),
+    );
 
   cmd
     .command('install-hooks')
     .description('Install a git pre-commit hook that enforces "pm autopilot pre-commit"')
     .option('--uninstall', 'Remove the ProjectMind hook instead')
-    .action(asyncHandler(async (opts: { uninstall?: boolean }) => {
-      const root = loadConfig().projectRoot;
-      const hooksDir = join(root, '.git', 'hooks');
-      const hookPath = join(hooksDir, 'pre-commit');
+    .action(
+      asyncHandler(async (opts: { uninstall?: boolean }) => {
+        const root = loadConfig().projectRoot;
+        const hooksDir = join(root, '.git', 'hooks');
+        const hookPath = join(hooksDir, 'pre-commit');
 
-      if (opts.uninstall) {
-        if (existsSync(hookPath)) {
-          const content = readFileSync(hookPath, 'utf-8');
-          if (content.includes(HOOK_MARKER)) {
-            rmSync(hookPath);
-            output.success('ProjectMind pre-commit hook removed.');
+        if (opts.uninstall) {
+          if (existsSync(hookPath)) {
+            const content = readFileSync(hookPath, 'utf-8');
+            if (content.includes(HOOK_MARKER)) {
+              rmSync(hookPath);
+              output.success('ProjectMind pre-commit hook removed.');
+            } else {
+              output.warn(
+                'Existing pre-commit hook is not managed by ProjectMind — leaving it untouched.',
+              );
+            }
           } else {
-            output.warn('Existing pre-commit hook is not managed by ProjectMind — leaving it untouched.');
+            output.info('No pre-commit hook present.');
           }
-        } else {
-          output.info('No pre-commit hook present.');
+          return;
         }
-        return;
-      }
 
-      const cliEntry = join(root, 'dist', 'cli.js').replace(/\\/g, '/');
-      const script = [
-        '#!/bin/sh',
-        `# ${HOOK_MARKER} — auto-generated by "pm autopilot install-hooks"`,
-        'exec node "' + cliEntry + '" autopilot pre-commit',
-        '',
-      ].join('\n');
+        const cliEntry = join(root, 'dist', 'cli.js').replace(/\\/g, '/');
+        const script = [
+          '#!/bin/sh',
+          `# ${HOOK_MARKER} — auto-generated by "pm autopilot install-hooks"`,
+          'exec node "' + cliEntry + '" autopilot pre-commit',
+          '',
+        ].join('\n');
 
-      writeFileSync(hookPath, script);
-      try {
-        chmodSync(hookPath, 0o755);
-      } catch {
-        // Windows filesystems may ignore chmod — git still executes the hook.
-      }
-      output.success(`✓ Pre-commit hook installed at ${hookPath}`);
-      output.kv('Gate', 'pm autopilot pre-commit (high-debt, cycles, genome threshold, API surface)');
-      output.info('Use --uninstall to remove.');
-    }));
+        writeFileSync(hookPath, script);
+        try {
+          chmodSync(hookPath, 0o755);
+        } catch {
+          // Windows filesystems may ignore chmod — git still executes the hook.
+        }
+        output.success(`✓ Pre-commit hook installed at ${hookPath}`);
+        output.kv(
+          'Gate',
+          'pm autopilot pre-commit (high-debt, cycles, genome threshold, API surface)',
+        );
+        output.info('Use --uninstall to remove.');
+      }),
+    );
 
   return cmd;
 }

@@ -25,7 +25,10 @@ import { logger } from '../../utils/logger.js';
  */
 const BLOCKED = new Set(['mcp']);
 
-export async function registerCliParityTools(server: McpServer, deps: McpDependencies): Promise<number> {
+export async function registerCliParityTools(
+  server: McpServer,
+  deps: McpDependencies,
+): Promise<number> {
   let registered = 0;
 
   const walk = (cmd: import('commander').Command, prefix: string[]): void => {
@@ -42,9 +45,16 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
         `[CLI parity] projectmind ${path.join(' ')}`,
         cmd.description(),
         positional.length ? `Positional: ${positional.join(', ')}` : '',
-        longFlags.length ? `Flags(--${longFlags.join(' --')}): ${cmd.options.map(o => o.description).filter(Boolean).join(' | ')}` : '',
-        "Call with options:{\"flag\":value} and args:[...].",
-      ].filter(Boolean).join(' — ');
+        longFlags.length
+          ? `Flags(--${longFlags.join(' --')}): ${cmd.options
+              .map((o) => o.description)
+              .filter(Boolean)
+              .join(' | ')}`
+          : '',
+        'Call with options:{"flag":value} and args:[...].',
+      ]
+        .filter(Boolean)
+        .join(' — ');
 
       server.registerTool(
         toolName,
@@ -53,9 +63,18 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
           description,
           annotations: parityAnnotations(path),
           inputSchema: {
-            options: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional()
-              .describe(`Long-flag map. Valid keys: ${longFlags.length ? longFlags.map(f=>`--${f}`).join(', ') : '(none)'}`),
-            args: z.array(z.string()).optional().describe(positional.length ? `Positional: ${positional.join(', ')}` : 'Positional arguments'),
+            options: z
+              .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+              .optional()
+              .describe(
+                `Long-flag map. Valid keys: ${longFlags.length ? longFlags.map((f) => `--${f}`).join(', ') : '(none)'}`,
+              ),
+            args: z
+              .array(z.string())
+              .optional()
+              .describe(
+                positional.length ? `Positional: ${positional.join(', ')}` : 'Positional arguments',
+              ),
           },
         },
         async (a: { options?: Record<string, string | number | boolean>; args?: string[] }) => {
@@ -75,15 +94,21 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
             } catch (e) {
               if (e instanceof PathEscapesProjectError) {
                 return {
-                  content: [{
-                    type: 'text',
-                    text: JSON.stringify({
-                      cliCommand: `projectmind ${path.join(' ')}`,
-                      ok: false,
-                      exitCode: 1,
-                      error: `[blocked by ProjectMind guard] ${e.message}`,
-                    }, null, 2),
-                  }],
+                  content: [
+                    {
+                      type: 'text',
+                      text: JSON.stringify(
+                        {
+                          cliCommand: `projectmind ${path.join(' ')}`,
+                          ok: false,
+                          exitCode: 1,
+                          error: `[blocked by ProjectMind guard] ${e.message}`,
+                        },
+                        null,
+                        2,
+                      ),
+                    },
+                  ],
                 };
               }
               throw e;
@@ -97,39 +122,59 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
           // e.g. pm_debt {args:["clear"]} must never reach `debt clear`.
           if (isBlockedCliInvocation(argv)) {
             return {
-              content: [{
-                type: 'text',
-                text: JSON.stringify({
-                  cliCommand: `projectmind ${path.join(' ')}`,
-                  ok: false,
-                  exitCode: 1,
-                  error: 'Blocked by guard: destructive command is not allowed through the MCP surface.',
-                }, null, 2),
-              }],
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      cliCommand: `projectmind ${path.join(' ')}`,
+                      ok: false,
+                      exitCode: 1,
+                      error:
+                        'Blocked by guard: destructive command is not allowed through the MCP surface.',
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
             };
           }
 
           if (deps.agentName) {
             deps.kg
-              .markAgentTouched(argv.filter(x => !x.startsWith('-')).join(' '), deps.agentName)
-              .catch((e) => logger.debug(`markAgentTouched failed for CLI parity invocation: ${e instanceof Error ? e.message : String(e)}`));
+              .markAgentTouched(argv.filter((x) => !x.startsWith('-')).join(' '), deps.agentName)
+              .catch((e) =>
+                logger.debug(
+                  `markAgentTouched failed for CLI parity invocation: ${e instanceof Error ? e.message : String(e)}`,
+                ),
+              );
           }
 
-          const res = await runCliCapture(argv, { timeoutMs: 180_000, projectRoot: deps.projectRoot });
+          const res = await runCliCapture(argv, {
+            timeoutMs: 180_000,
+            projectRoot: deps.projectRoot,
+          });
           return {
-            content: [{
-              type: 'text',
-              text: JSON.stringify({
-                cliCommand: `projectmind ${path.join(' ')}`,
-                ok: res.ok,
-                exitCode: res.exitCode,
-                durationMs: res.durationMs,
-                stdout: res.stdout,
-                stderr: res.stderr,
-              }, null, 2),
-            }],
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    cliCommand: `projectmind ${path.join(' ')}`,
+                    ok: res.ok,
+                    exitCode: res.exitCode,
+                    durationMs: res.durationMs,
+                    stdout: res.stdout,
+                    stderr: res.stderr,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
           };
-        }
+        },
       );
       registered++;
     }
@@ -143,6 +188,6 @@ export async function registerCliParityTools(server: McpServer, deps: McpDepende
   for (const top of program.commands ?? []) walk(top, []);
 
   logger.info(`[mcp] CLI-parity tools registered: ${registered}`);
-  
+
   return registered;
 }

@@ -55,12 +55,12 @@ export class AdvancedCache<K, V> {
    *   is not found or the entry has expired (and been removed).
    *
    * @example
- * ```typescript
- * const value = cache.get('some-key');
- * if (value === undefined) {
- *   // key not found or expired
- * }
- * ```
+   * ```typescript
+   * const value = cache.get('some-key');
+   * if (value === undefined) {
+   *   // key not found or expired
+   * }
+   * ```
    */
   get(key: K): V | undefined {
     const entry = this.eviction.getMap().get(key);
@@ -156,16 +156,11 @@ export class AdvancedCache<K, V> {
       maxSize: this.eviction['options'].maxSize,
       hitCount: this.hitCount,
       missCount: this.missCount,
-      hitRate: this.hitCount + this.missCount > 0
-        ? this.hitCount / (this.hitCount + this.missCount)
-        : 0,
+      hitRate:
+        this.hitCount + this.missCount > 0 ? this.hitCount / (this.hitCount + this.missCount) : 0,
       memoryUsage: this.eviction.estimateMemoryUsage(),
-      oldestEntry: entries.length > 0
-        ? Math.min(...entries.map(e => e.createdAt))
-        : now,
-      newestEntry: entries.length > 0
-        ? Math.max(...entries.map(e => e.createdAt))
-        : now,
+      oldestEntry: entries.length > 0 ? Math.min(...entries.map((e) => e.createdAt)) : now,
+      newestEntry: entries.length > 0 ? Math.max(...entries.map((e) => e.createdAt)) : now,
     };
   }
 
@@ -208,7 +203,7 @@ export class AdvancedCache<K, V> {
   }
 
   // Warm cache with a function that generates values
-/**
+  /**
    * Asynchronously preloads multiple cache entries using a generator function.
    *
    * For each key in the provided list, if the key is not already present in
@@ -238,7 +233,7 @@ export class AdvancedCache<K, V> {
           const value = await generator(key);
           this.set(key, value);
         }
-      })
+      }),
     );
   }
 

@@ -4,9 +4,8 @@ import { join } from '@/cli/utils/shared.js';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 
 export function createInitCommand(): Command {
-  return new Command('init')
-    .description('Initialize ProjectMind on this project')
-    .action(asyncHandler(async () => {
+  return new Command('init').description('Initialize ProjectMind on this project').action(
+    asyncHandler(async () => {
       await withContext(async (ctx) => {
         const config = ctx.config;
         output.info(`Initializing ProjectMind in: ${process.cwd()}`);
@@ -30,5 +29,6 @@ export function createInitCommand(): Command {
         output.success('ProjectMind initialized successfully.');
         output.info('Run "projectmind scan" to build the knowledge graph.');
       });
-    }));
+    }),
+  );
 }

@@ -32,7 +32,11 @@ export class VectorIndex {
   /**
    * Add a vector to the index.
    */
-  addVector(id: string, vector: number[], metadata: Record<string, string | number | boolean | null> = {}): void {
+  addVector(
+    id: string,
+    vector: number[],
+    metadata: Record<string, string | number | boolean | null> = {},
+  ): void {
     this.vectors.set(id, vector);
     this.metadata.set(id, metadata);
   }
@@ -40,7 +44,10 @@ export class VectorIndex {
   /**
    * Find similar vectors.
    */
-  findSimilar(queryVector: number[], limit: number = 5): Array<{
+  findSimilar(
+    queryVector: number[],
+    limit: number = 5,
+  ): Array<{
     id: string;
     score: number;
     metadata: Record<string, string | number | boolean | null>;
@@ -150,13 +157,13 @@ export class VecIndex {
     try {
       const vec = new Float32Array(embedding);
       const bigId = BigInt(id);
-      const upd = this.db.prepare(
-        `UPDATE ${VEC_TABLE_NAME} SET embedding = ? WHERE rowid = ?`,
-      ).run(vec, bigId) as { changes: number };
+      const upd = this.db
+        .prepare(`UPDATE ${VEC_TABLE_NAME} SET embedding = ? WHERE rowid = ?`)
+        .run(vec, bigId) as { changes: number };
       if (upd.changes === 0) {
-        this.db.prepare(
-          `INSERT INTO ${VEC_TABLE_NAME}(rowid, embedding) VALUES (?, ?)`,
-        ).run(bigId, vec);
+        this.db
+          .prepare(`INSERT INTO ${VEC_TABLE_NAME}(rowid, embedding) VALUES (?, ?)`)
+          .run(bigId, vec);
       }
     } catch (e) {
       // Non-fatal – caller falls back to brute-force.
@@ -190,7 +197,9 @@ export class VecIndex {
     if (!this._available) return;
     try {
       this.db
-        .prepare(`DELETE FROM ${VEC_TABLE_NAME} WHERE rowid IN (SELECT id FROM files WHERE project_id = ?)`)
+        .prepare(
+          `DELETE FROM ${VEC_TABLE_NAME} WHERE rowid IN (SELECT id FROM files WHERE project_id = ?)`,
+        )
         .run(projectId);
     } catch (e) {
       // Non-fatal.
@@ -213,7 +222,11 @@ export class VecIndex {
    * files (`rowid IN (SELECT id FROM files WHERE project_id = ?)`) so search
    * never leaks vectors from other projects.
    */
-  findSimilar(queryEmbedding: number[], limit: number = 10, projectId?: number): Array<{ id: number; distance: number }> {
+  findSimilar(
+    queryEmbedding: number[],
+    limit: number = 10,
+    projectId?: number,
+  ): Array<{ id: number; distance: number }> {
     if (!this._available || queryEmbedding.length !== this.dim) return [];
     try {
       const vec = new Float32Array(queryEmbedding);
@@ -224,7 +237,10 @@ export class VecIndex {
       const rows =
         projectId === undefined
           ? (this.db.prepare(sql).all(vec, limit) as Array<{ rowid: bigint; distance: number }>)
-          : (this.db.prepare(sql).all(vec, projectId, limit) as Array<{ rowid: bigint; distance: number }>);
+          : (this.db.prepare(sql).all(vec, projectId, limit) as Array<{
+              rowid: bigint;
+              distance: number;
+            }>);
       return rows.map((r) => ({ id: Number(r.rowid), distance: r.distance }));
     } catch (e) {
       // Non-fatal — caller falls back to brute-force scan.
@@ -251,13 +267,11 @@ export class VecIndex {
         `CREATE VIRTUAL TABLE ${VEC_TABLE_NAME} USING vec0(embedding float[${this.dim}])`,
       );
 
-      const rows = this.db.prepare(
-        'SELECT id, embedding FROM files WHERE embedding IS NOT NULL',
-      ).all() as Array<{ id: number; embedding: Buffer | null }>;
+      const rows = this.db
+        .prepare('SELECT id, embedding FROM files WHERE embedding IS NOT NULL')
+        .all() as Array<{ id: number; embedding: Buffer | null }>;
 
-      const ins = this.db.prepare(
-        `INSERT INTO ${VEC_TABLE_NAME}(rowid, embedding) VALUES (?, ?)`,
-      );
+      const ins = this.db.prepare(`INSERT INTO ${VEC_TABLE_NAME}(rowid, embedding) VALUES (?, ?)`);
 
       let count = 0;
       for (const row of rows) {
@@ -309,7 +323,7 @@ export class VecIndex {
       if (!vecLoadWarned) {
         vecLoadWarned = true;
         logger.warn(
-          `sqlite-vec unavailable — vector search falls back to brute-force: ${e instanceof Error ? e.message : String(e)}`
+          `sqlite-vec unavailable — vector search falls back to brute-force: ${e instanceof Error ? e.message : String(e)}`,
         );
       }
       return false;

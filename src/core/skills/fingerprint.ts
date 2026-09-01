@@ -6,13 +6,21 @@
  */
 
 import ts from 'typescript';
-import type { AgentFingerprint, FingerprintMeasured, ErrorHandlingStyle, NamingConvention, TestPattern } from '../../storage/kg/types.js';
+import type {
+  AgentFingerprint,
+  FingerprintMeasured,
+  ErrorHandlingStyle,
+  NamingConvention,
+  TestPattern,
+} from '../../storage/kg/types.js';
 
 /**
  * Extract the name identifier string from a variable, function, or class declaration.
  * Returns undefined if the declaration has no name (e.g., anonymous function exports).
  */
-function getDeclarationName(node: ts.VariableDeclaration | ts.FunctionDeclaration | ts.ClassDeclaration): string | undefined {
+function getDeclarationName(
+  node: ts.VariableDeclaration | ts.FunctionDeclaration | ts.ClassDeclaration,
+): string | undefined {
   const name = (node as ts.VariableDeclaration | ts.FunctionDeclaration | ts.ClassDeclaration).name;
   return name && ts.isIdentifier(name) ? name.text : undefined;
 }
@@ -34,7 +42,7 @@ export class AgentFingerprintExtractor {
       fileContent,
       ts.ScriptTarget.Latest,
       true,
-      ts.ScriptKind.TS
+      ts.ScriptKind.TS,
     );
 
     let awaitHits = 0;
@@ -99,7 +107,11 @@ export class AgentFingerprintExtractor {
       }
 
       // Naming conventions from declarations
-      if (ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) {
+      if (
+        ts.isVariableDeclaration(node) ||
+        ts.isFunctionDeclaration(node) ||
+        ts.isClassDeclaration(node)
+      ) {
         const name = getDeclarationName(node);
         if (name) {
           if (/^[A-Z]+(?:_[A-Z0-9]+)+$/.test(name)) screamingSnake++;
@@ -133,15 +145,24 @@ export class AgentFingerprintExtractor {
 
     // Async preference: await vs then-chain
     const styleDenominator = awaitHits + thenHits;
-    const asyncPreference = styleDenominator > 0 ? Math.round((awaitHits / styleDenominator) * 100) / 100 : 0.5;
+    const asyncPreference =
+      styleDenominator > 0 ? Math.round((awaitHits / styleDenominator) * 100) / 100 : 0.5;
 
     // Type strictness: assertions per 10 lines, capped at 1.0, plus interface/type density
     const assertionRate = assertionCount / (totalLines / 10 || 1);
     const abstractionDensity = Math.min(1, (interfaceCount + typeAliasCount + genericCount) / 10);
-    const typeStrictness = Math.min(1, Math.round(Math.min(1, assertionRate) * 100) / 100 + abstractionDensity * 0.3);
+    const typeStrictness = Math.min(
+      1,
+      Math.round(Math.min(1, assertionRate) * 100) / 100 + abstractionDensity * 0.3,
+    );
 
     // Error handling style
-    const errorHandlingStyle = this.classifyErrorHandling(tryBlocks, dotCatch, throws, resultObjects);
+    const errorHandlingStyle = this.classifyErrorHandling(
+      tryBlocks,
+      dotCatch,
+      throws,
+      resultObjects,
+    );
 
     // Naming convention
     const namingConvention = this.dominantNaming(camel, snake, pascal, screamingSnake);
@@ -150,13 +171,18 @@ export class AgentFingerprintExtractor {
     const testPattern = this.classifyTestPattern(describeHits, itHits, testHits);
 
     // Favorite abstractions
-    const favoriteAbstractions = this.extractFavoriteAbstractions(interfaceCount, typeAliasCount, genericCount, classCount);
+    const favoriteAbstractions = this.extractFavoriteAbstractions(
+      interfaceCount,
+      typeAliasCount,
+      genericCount,
+      classCount,
+    );
 
     // Measured metadata: track which dimensions were actually measured
     const measured: FingerprintMeasured = {
       asyncPreference: styleDenominator > 0,
-      namingConvention: (camel + snake + pascal + screamingSnake) > 0,
-      errorHandlingStyle: (tryBlocks + dotCatch + throws + resultObjects) > 0,
+      namingConvention: camel + snake + pascal + screamingSnake > 0,
+      errorHandlingStyle: tryBlocks + dotCatch + throws + resultObjects > 0,
     };
 
     return {
@@ -181,19 +207,29 @@ export class AgentFingerprintExtractor {
     return full;
   }
 
-  private classifyErrorHandling(tryBlocks: number, dotCatch: number, throws: number, resultObjects: number): ErrorHandlingStyle {
+  private classifyErrorHandling(
+    tryBlocks: number,
+    dotCatch: number,
+    throws: number,
+    resultObjects: number,
+  ): ErrorHandlingStyle {
     const styles: Array<[ErrorHandlingStyle, number]> = [
-      ["try-catch", tryBlocks],
-      ["result-type", dotCatch],
-      ["throw", throws],
-      ["result-type", resultObjects],
+      ['try-catch', tryBlocks],
+      ['result-type', dotCatch],
+      ['throw', throws],
+      ['result-type', resultObjects],
     ];
     const active = styles.filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
     if (active.length === 0) return 'try-catch';
     if (active.length === 1) return active[0][0];
     return active[0][1] >= active[1][1] * 2 ? active[0][0] : 'mixed';
   }
-  private dominantNaming(camel: number, snake: number, pascal: number, screamingSnake: number): NamingConvention {
+  private dominantNaming(
+    camel: number,
+    snake: number,
+    pascal: number,
+    screamingSnake: number,
+  ): NamingConvention {
     const total = camel + snake + pascal + screamingSnake;
     if (total === 0) return 'unknown';
     const entries: Array<[NamingConvention, number]> = [
@@ -215,7 +251,12 @@ export class AgentFingerprintExtractor {
     return 'mixed';
   }
 
-  private extractFavoriteAbstractions(interfaceCount: number, typeAliasCount: number, genericCount: number, classCount: number): string[] {
+  private extractFavoriteAbstractions(
+    interfaceCount: number,
+    typeAliasCount: number,
+    genericCount: number,
+    classCount: number,
+  ): string[] {
     const abstractions: string[] = [];
     if (interfaceCount > 0) abstractions.push('interface');
     if (typeAliasCount > 0) abstractions.push('type-alias');

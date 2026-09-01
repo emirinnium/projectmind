@@ -26,9 +26,16 @@ export class ScaleManager {
     return this.kg;
   }
 
-  async scanProject(rootPath?: string, full?: boolean): Promise<{ scanned: number; errors: number; totalFiles: number }> {
+  async scanProject(
+    rootPath?: string,
+    full?: boolean,
+  ): Promise<{ scanned: number; errors: number; totalFiles: number }> {
     const profile = await this.scanner.scanProjectWithProfile(rootPath, full);
-    return { scanned: profile.scannedFiles, errors: profile.errorFiles, totalFiles: profile.totalFiles };
+    return {
+      scanned: profile.scannedFiles,
+      errors: profile.errorFiles,
+      totalFiles: profile.totalFiles,
+    };
   }
 
   async scanProjectWithProfile(rootPath?: string, full?: boolean): Promise<ScanProfile> {

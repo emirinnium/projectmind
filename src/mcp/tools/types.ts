@@ -28,7 +28,9 @@ export interface McpDependencies {
  */
 export function trackAgentAccess(kg: KnowledgeGraph, agentName: string, filePath: string): void {
   kg.markAgentTouched(filePath, agentName).catch((e) =>
-    logger.warn(`trackAgentAccess failed for ${filePath}: ${e instanceof Error ? e.message : String(e)}`)
+    logger.warn(
+      `trackAgentAccess failed for ${filePath}: ${e instanceof Error ? e.message : String(e)}`,
+    ),
   );
 }
 

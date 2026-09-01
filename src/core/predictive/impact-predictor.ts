@@ -1,5 +1,11 @@
 import { DatabaseSync } from 'node:sqlite';
-import type { CodeChange, ImpactReport, ActualImpact, PredictorConfig, PredictedFailure } from './types.js';
+import type {
+  CodeChange,
+  ImpactReport,
+  ActualImpact,
+  PredictorConfig,
+  PredictedFailure,
+} from './types.js';
 import ts from 'typescript';
 import fs from 'fs';
 import path from 'path';
@@ -60,18 +66,23 @@ export class ImpactPredictor {
   private findNodeByName<T extends ts.Node>(
     source: ts.SourceFile,
     name: string,
-    predicate: (n: ts.Node) => n is T
+    predicate: (n: ts.Node) => n is T,
   ): T | undefined {
     let result: T | undefined;
     const visit = (node: ts.Node) => {
       if (result) return;
-        if (predicate(node)) {
-          const n = node as T;
-          if ('name' in n && n.name && ts.isIdentifier(n.name as ts.Node) && (n.name as ts.Identifier).text === name) {
-            result = n;
-            return;
-          }
+      if (predicate(node)) {
+        const n = node as T;
+        if (
+          'name' in n &&
+          n.name &&
+          ts.isIdentifier(n.name as ts.Node) &&
+          (n.name as ts.Identifier).text === name
+        ) {
+          result = n;
+          return;
         }
+      }
       ts.forEachChild(node, visit);
     };
     visit(source);
@@ -95,9 +106,15 @@ export class ImpactPredictor {
       currentContent = '';
     }
 
-    const prevContent = change.previousContent ?? change.diffText ?? this.generatePreviousContent(change, currentContent);
+    const prevContent =
+      change.previousContent ??
+      change.diffText ??
+      this.generatePreviousContent(change, currentContent);
     const tmpDir = os.tmpdir();
-    const prevPath = path.join(tmpDir, `prev-${Date.now()}-${Math.random().toString(36).slice(2)}.ts`);
+    const prevPath = path.join(
+      tmpDir,
+      `prev-${Date.now()}-${Math.random().toString(36).slice(2)}.ts`,
+    );
     fs.writeFileSync(prevPath, prevContent, 'utf-8');
 
     try {
@@ -121,7 +138,7 @@ export class ImpactPredictor {
             const oldNode = this.findNodeByName(
               prevSource,
               name,
-              (n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n)
+              (n): n is ts.FunctionDeclaration => ts.isFunctionDeclaration(n),
             );
             const newSig = this.signatureFromNode(node, source);
             const oldSig = oldNode ? this.signatureFromNode(oldNode, prevSource) : newSig;
@@ -135,7 +152,7 @@ export class ImpactPredictor {
               prevSource,
               name,
               (n): n is ts.InterfaceDeclaration | ts.TypeAliasDeclaration =>
-                ts.isInterfaceDeclaration(n) || ts.isTypeAliasDeclaration(n)
+                ts.isInterfaceDeclaration(n) || ts.isTypeAliasDeclaration(n),
             );
             const newDef = node.getText(source);
             const oldDef = oldNode ? oldNode.getText(prevSource) : newDef;
@@ -160,7 +177,10 @@ export class ImpactPredictor {
     }
   }
 
-  getCallGraph(filePath: string, db?: DatabaseSync): Array<{ functionName: string; callSites: string[] }> {
+  getCallGraph(
+    filePath: string,
+    db?: DatabaseSync,
+  ): Array<{ functionName: string; callSites: string[] }> {
     const database = db ?? this.db;
     if (!database) return [];
     try {
@@ -189,12 +209,20 @@ export class ImpactPredictor {
     }
   }
 
-  correlateHistoricalFailures(filePath: string, db?: DatabaseSync): { avgFailureRate: number; commonBrokenTests: string[] } {
+  correlateHistoricalFailures(
+    filePath: string,
+    db?: DatabaseSync,
+  ): { avgFailureRate: number; commonBrokenTests: string[] } {
     const database = db ?? this.db;
     if (!database) return { avgFailureRate: 0, commonBrokenTests: [] };
     try {
-      const stmt = database.prepare(`SELECT failure_occurred, module_name FROM test_failure_log WHERE file_path = ?`);
-      const rows = stmt.all(filePath) as Array<{ failure_occurred: number; module_name: string | null }>;
+      const stmt = database.prepare(
+        `SELECT failure_occurred, module_name FROM test_failure_log WHERE file_path = ?`,
+      );
+      const rows = stmt.all(filePath) as Array<{
+        failure_occurred: number;
+        module_name: string | null;
+      }>;
       if (rows.length === 0) return { avgFailureRate: 0, commonBrokenTests: [] };
       const total = rows.length;
       const failures = rows.reduce((sum, r) => sum + (r.failure_occurred ? 1 : 0), 0);
@@ -258,7 +286,9 @@ export class ImpactPredictor {
         affectedModules = [change.moduleName];
       }
     } catch {
-      affectedModules = change.crossModule ? [change.moduleName, path.basename(path.dirname(change.filePath)) || change.moduleName] : [change.moduleName];
+      affectedModules = change.crossModule
+        ? [change.moduleName, path.basename(path.dirname(change.filePath)) || change.moduleName]
+        : [change.moduleName];
     }
 
     let historical = { avgFailureRate: 0, commonBrokenTests: [] as string[] };
@@ -268,7 +298,10 @@ export class ImpactPredictor {
       // ignore
     }
 
-    const predictedImpact = Math.min(1, (rawCross + rawPrior) / 2 + historical.avgFailureRate * 0.2);
+    const predictedImpact = Math.min(
+      1,
+      (rawCross + rawPrior) / 2 + historical.avgFailureRate * 0.2,
+    );
 
     return {
       predictionId,
@@ -285,17 +318,28 @@ export class ImpactPredictor {
     this.outcomes.push(actual);
     const error = actual.failureOccurred ? 0.2 : -0.05;
     const currentCross = this.modelWeights.get('crossModule') ?? this.config.crossModuleWeight;
-    this.modelWeights.set('crossModule', Math.max(0.1, Math.min(1, currentCross + error * this.config.modelUpdateRate)));
+    this.modelWeights.set(
+      'crossModule',
+      Math.max(0.1, Math.min(1, currentCross + error * this.config.modelUpdateRate)),
+    );
 
     if (this.db) {
       try {
-        this.db.exec(`CREATE TABLE IF NOT EXISTS test_failure_log (id INTEGER PRIMARY KEY AUTOINCREMENT, prediction_id TEXT NOT NULL, file_path TEXT, module_name TEXT, failure_occurred BOOLEAN DEFAULT 0, severity TEXT DEFAULT 'medium', logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+        this.db.exec(
+          `CREATE TABLE IF NOT EXISTS test_failure_log (id INTEGER PRIMARY KEY AUTOINCREMENT, prediction_id TEXT NOT NULL, file_path TEXT, module_name TEXT, failure_occurred BOOLEAN DEFAULT 0, severity TEXT DEFAULT 'medium', logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+        );
         const stmt = this.db.prepare(`
           INSERT INTO test_failure_log (prediction_id, file_path, module_name, failure_occurred, severity, logged_at)
           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `);
         const moduleName = actual.actualAffectedModules?.[0] ?? 'unknown';
-        stmt.run(predictionId, actual.filePath ?? null, moduleName, actual.failureOccurred ? 1 : 0, actual.severity);
+        stmt.run(
+          predictionId,
+          actual.filePath ?? null,
+          moduleName,
+          actual.failureOccurred ? 1 : 0,
+          actual.severity,
+        );
       } catch {
         // ignore persistence errors
       }
@@ -313,7 +357,7 @@ export class ImpactPredictor {
 
     for (const fn of diff.changedFunctions) {
       if (fn.oldSig !== fn.newSig) {
-        const callers = callGraph.filter(c => c.functionName === fn.name);
+        const callers = callGraph.filter((c) => c.functionName === fn.name);
         const hasCallEdges = callers.length > 0;
         const arityOld = (fn.oldSig.match(/,/g) || []).length + 1;
         const arityNew = (fn.newSig.match(/,/g) || []).length + 1;
@@ -327,10 +371,13 @@ export class ImpactPredictor {
             if (site.includes('.test.') || site.includes('.spec.')) {
               try {
                 const content = fs.readFileSync(site, 'utf-8');
-                const mockRegex = new RegExp('\\b' + fn.name + '\\b.*\\(' + (fn.name.length > 2 ? '.{0,40}' : '') + '\\)');
+                const mockRegex = new RegExp(
+                  '\\b' + fn.name + '\\b.*\\(' + (fn.name.length > 2 ? '.{0,40}' : '') + '\\)',
+                );
                 if (mockRegex.test(content)) {
                   // Check if mock references old arity (approximate by counting commas in mock call)
-                  const mockCalls = content.match(new RegExp('\\b' + fn.name + '\\b\\([^)]*\\)', 'g')) || [];
+                  const mockCalls =
+                    content.match(new RegExp('\\b' + fn.name + '\\b\\([^)]*\\)', 'g')) || [];
                   for (const mc of mockCalls) {
                     const commas = (mc.match(/,/g) || []).length;
                     if (commas + 1 !== arityNew) {

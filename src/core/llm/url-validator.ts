@@ -34,7 +34,7 @@ export function validateApiUrl(url: string, provider: string): string {
   // Must use HTTPS (except for local Ollama)
   if (parsed.protocol !== 'https:' && provider !== 'ollama') {
     throw new ApiUrlValidationError(
-      `API URL must use HTTPS for ${provider}. Got: ${parsed.protocol}`
+      `API URL must use HTTPS for ${provider}. Got: ${parsed.protocol}`,
     );
   }
 
@@ -43,7 +43,7 @@ export function validateApiUrl(url: string, provider: string): string {
   if (provider === 'ollama') {
     if (!isLocalOrPrivateHost(hostname)) {
       throw new ApiUrlValidationError(
-        `Ollama URL must point to localhost or private network. Got: ${hostname}`
+        `Ollama URL must point to localhost or private network. Got: ${hostname}`,
       );
     }
     return url;
@@ -55,7 +55,7 @@ export function validateApiUrl(url: string, provider: string): string {
     if (!allowedHostnames.includes(hostname)) {
       throw new ApiUrlValidationError(
         `API URL for ${provider} must point to official endpoint (${allowedHostnames.join(', ')}). Got: ${hostname}. ` +
-        `Custom endpoints are disabled for security.`
+          `Custom endpoints are disabled for security.`,
       );
     }
   }
@@ -74,12 +74,12 @@ function isLocalOrPrivateHost(hostname: string): boolean {
 
   // Private IP ranges
   const privateRanges = [
-    /^10\./,                              // 10.0.0.0/8
-    /^172\.(1[6-9]|2[0-9]|3[01])\./,     // 172.16.0.0/12
-    /^192\.168\./,                        // 192.168.0.0/16
-    /^169\.254\./,                        // Link-local
-    /^fd[0-9a-f]{2}:/i,                   // IPv6 unique local
-    /^fe80:/i,                            // IPv6 link-local
+    /^10\./, // 10.0.0.0/8
+    /^172\.(1[6-9]|2[0-9]|3[01])\./, // 172.16.0.0/12
+    /^192\.168\./, // 192.168.0.0/16
+    /^169\.254\./, // Link-local
+    /^fd[0-9a-f]{2}:/i, // IPv6 unique local
+    /^fe80:/i, // IPv6 link-local
   ];
 
   return privateRanges.some((range) => range.test(hostname));

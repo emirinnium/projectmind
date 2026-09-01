@@ -69,7 +69,7 @@ export interface FindSymbolDefinitionResult {
  */
 export function findSymbolDefinitionForTool(
   deps: McpDependencies,
-  args: FindSymbolDefinitionArgs
+  args: FindSymbolDefinitionArgs,
 ): FindSymbolDefinitionResult {
   let absPath: string;
   try {
@@ -102,12 +102,7 @@ export function findSymbolDefinitionForTool(
   try {
     const targetFile = ls.norm(absPath);
     const sourceText = ts.sys.readFile(targetFile) ?? '';
-    const sourceFile = ts.createSourceFile(
-      targetFile,
-      sourceText,
-      ts.ScriptTarget.Latest,
-      true
-    );
+    const sourceFile = ts.createSourceFile(targetFile, sourceText, ts.ScriptTarget.Latest, true);
 
     // Find all occurrences of the symbol in the source file
     const escapedSymbol = args.symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -165,7 +160,10 @@ function guessSymbolKind(sourceText: string, charOffset: number): string {
 }
 
 /** Resolve a character offset to 1-based line/column plus a trimmed snippet. */
-function defineDescribeSpan(text: string, start: number): { line: number; column: number; snippet: string } {
+function defineDescribeSpan(
+  text: string,
+  start: number,
+): { line: number; column: number; snippet: string } {
   const before = text.slice(0, start);
   const line = before.split(/\r?\n/).length;
   const lastNewline = before.lastIndexOf('\n');
@@ -190,8 +188,16 @@ export function registerFindSymbolDefinitionTool(server: McpServer, deps: McpDep
         'by clicking on its name or navigating to its source location.\n' +
         'Resolves through the project tsconfig so imports, aliases and type positions count.',
       inputSchema: {
-        file: z.string().describe('Path of the file containing the symbol (relative to project root or absolute in-project)'),
-        symbol: z.string().describe('Symbol name to locate definition for (e.g. a function, class, const or type name)'),
+        file: z
+          .string()
+          .describe(
+            'Path of the file containing the symbol (relative to project root or absolute in-project)',
+          ),
+        symbol: z
+          .string()
+          .describe(
+            'Symbol name to locate definition for (e.g. a function, class, const or type name)',
+          ),
       },
     },
     async (args) => {
@@ -209,6 +215,6 @@ export function registerFindSymbolDefinitionTool(server: McpServer, deps: McpDep
           content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
         };
       }
-    }
+    },
   );
 }

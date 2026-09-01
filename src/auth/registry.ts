@@ -56,8 +56,12 @@ export const clientRegistrationSchema = z
     client_name: z.string().max(200).optional(),
     client_uri: z.string().url().optional(),
     redirect_uris: z.array(z.string()).optional(),
-    grant_types: z.array(z.enum(['authorization_code', 'client_credentials', 'refresh_token', 'implicit'])).optional(),
-    token_endpoint_auth_method: z.enum(['client_secret_basic', 'client_secret_post', 'none']).optional(),
+    grant_types: z
+      .array(z.enum(['authorization_code', 'client_credentials', 'refresh_token', 'implicit']))
+      .optional(),
+    token_endpoint_auth_method: z
+      .enum(['client_secret_basic', 'client_secret_post', 'none'])
+      .optional(),
     scope: z.string().optional(),
     contacts: z.array(z.string()).optional(),
     client_info: mcpClientInfoSchema,
@@ -136,11 +140,14 @@ export class ClientRegistry {
     }
 
     const grantTypes: GrantType[] = input.grant_types ?? ['authorization_code'];
-    const authMethod: TokenEndpointAuthMethod = input.token_endpoint_auth_method ?? 'client_secret_basic';
+    const authMethod: TokenEndpointAuthMethod =
+      input.token_endpoint_auth_method ?? 'client_secret_basic';
     const applicationType: ApplicationType = input.application_type ?? 'web';
 
     if (authMethod === 'none' && grantTypes.includes('client_credentials')) {
-      throw new AuthError('grant_type "client_credentials" requires token_endpoint_auth_method other than "none"');
+      throw new AuthError(
+        'grant_type "client_credentials" requires token_endpoint_auth_method other than "none"',
+      );
     }
     if (grantTypes.includes('implicit') && redirectUris.length === 0) {
       throw new AuthError('grant_type "implicit" requires at least one redirect_uri');
@@ -171,23 +178,32 @@ export class ClientRegistry {
       this.db.exec('BEGIN');
 
       // RFC 7591 §2.2: identical metadata again → return the established client.
-      const rows = this.db.prepare('SELECT client_id, secret_hash, metadata FROM oauth_clients').all() as Array<{
+      const rows = this.db
+        .prepare('SELECT client_id, secret_hash, metadata FROM oauth_clients')
+        .all() as Array<{
         client_id: string;
         secret_hash: string | null;
         metadata: string;
       }>;
       for (const row of rows) {
         const existing = JSON.parse(row.metadata) as ClientMetadata;
-        if ((existing.client_name ?? '') === (input.client_name ?? '') && sameUriSet(existing.redirect_uris, redirectUris)) {
+        if (
+          (existing.client_name ?? '') === (input.client_name ?? '') &&
+          sameUriSet(existing.redirect_uris, redirectUris)
+        ) {
           const stored: StoredClient =
-            row.secret_hash !== null ? { ...existing, client_secret_hash: row.secret_hash } : existing;
+            row.secret_hash !== null
+              ? { ...existing, client_secret_hash: row.secret_hash }
+              : existing;
           this.db.exec('COMMIT');
           return this.toResponse(stored);
         }
       }
 
       this.db
-        .prepare('INSERT INTO oauth_clients (client_id, secret_hash, metadata, created_at) VALUES (?, ?, ?, ?)')
+        .prepare(
+          'INSERT INTO oauth_clients (client_id, secret_hash, metadata, created_at) VALUES (?, ?, ?, ?)',
+        )
         .run(clientId, secretHash ?? null, JSON.stringify(metadata), now);
       this.db.exec('COMMIT');
     } catch (error) {
@@ -199,7 +215,8 @@ export class ClientRegistry {
       throw error;
     }
 
-    const stored: StoredClient = secretHash !== undefined ? { ...metadata, client_secret_hash: secretHash } : metadata;
+    const stored: StoredClient =
+      secretHash !== undefined ? { ...metadata, client_secret_hash: secretHash } : metadata;
     const response = this.toResponse(stored);
     return clientSecret !== undefined ? { ...response, client_secret: clientSecret } : response;
   }
@@ -207,7 +224,8 @@ export class ClientRegistry {
   get(clientId: string): StoredClient | undefined {
     const row = this.db
       .prepare('SELECT client_id, secret_hash, metadata FROM oauth_clients WHERE client_id = ?')
-      .get(clientId) as { client_id: string; secret_hash: string | null; metadata: string } | undefined;
+      .get(clientId) as
+      { client_id: string; secret_hash: string | null; metadata: string } | undefined;
     if (row === undefined) return undefined;
     const meta = JSON.parse(row.metadata) as ClientMetadata;
     return row.secret_hash !== null ? { ...meta, client_secret_hash: row.secret_hash } : meta;
@@ -217,7 +235,9 @@ export class ClientRegistry {
   authenticate(clientId: string, clientSecret: string): StoredClient | undefined {
     const stored = this.get(clientId);
     if (stored === undefined || stored.client_secret_hash === undefined) return undefined;
-    return safeDigestEqual(stored.client_secret_hash, hashSecret(clientSecret)) ? stored : undefined;
+    return safeDigestEqual(stored.client_secret_hash, hashSecret(clientSecret))
+      ? stored
+      : undefined;
   }
 
   get size(): number {

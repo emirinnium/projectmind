@@ -31,7 +31,15 @@ export interface StatementCacheStats {
 }
 
 function emptyStats(): StatementCacheStats {
-  return { size: 0, capacity: STATEMENT_CACHE_CAPACITY, hits: 0, misses: 0, prepares: 0, evictions: 0, hitRate: 0 };
+  return {
+    size: 0,
+    capacity: STATEMENT_CACHE_CAPACITY,
+    hits: 0,
+    misses: 0,
+    prepares: 0,
+    evictions: 0,
+    hitRate: 0,
+  };
 }
 
 /** LRU statement cache bound to ONE database instance. */
@@ -130,7 +138,9 @@ export function clearStatementCache(db?: DatabaseSync): void {
  * Cache statistics for one database, or for every live database keyed by
  * open state when omitted (databases hold no usable identity string here).
  */
-export function getStatementCacheStats(db?: DatabaseSync): StatementCacheStats | Record<string, StatementCacheStats> {
+export function getStatementCacheStats(
+  db?: DatabaseSync,
+): StatementCacheStats | Record<string, StatementCacheStats> {
   if (db) {
     const c = cachesByDb.get(db);
     return c ? c.stats() : emptyStats();
@@ -138,7 +148,7 @@ export function getStatementCacheStats(db?: DatabaseSync): StatementCacheStats |
   const all: Record<string, StatementCacheStats> = {};
   for (const [i, live] of [...trackedDatabases].entries()) {
     const c = cachesByDb.get(live);
-    if (c)     all[`db-${i}-${live.isOpen ? 'open' : 'closed'}`] = c.stats();
+    if (c) all[`db-${i}-${live.isOpen ? 'open' : 'closed'}`] = c.stats();
   }
   return all;
 }

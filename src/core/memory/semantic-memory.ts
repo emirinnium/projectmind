@@ -58,8 +58,14 @@ function getSharedCache(): EmbeddingCache {
 
 export async function searchTeamMemoriesSemantic(
   rowsProvider: () => MemoryRowLike[],
-  options: SemanticMemoryOptions
-): Promise<{ query: string; scanned: number; returned: number; hits: SemanticMemoryHit[]; note: string }> {
+  options: SemanticMemoryOptions,
+): Promise<{
+  query: string;
+  scanned: number;
+  returned: number;
+  hits: SemanticMemoryHit[];
+  note: string;
+}> {
   const limit = Math.max(1, Math.min(50, options.limit ?? 5));
   const threshold = options.threshold ?? 0.05;
   const maxRows = Math.max(1, Math.min(DEFAULT_MAX_SEMANTIC_ROWS, options.maxRows ?? 500));
@@ -70,11 +76,19 @@ export async function searchTeamMemoriesSemantic(
   if (options.agentName) rows = rows.filter((r) => r.agentName === options.agentName);
 
   if (rows.length === 0) {
-    return { query: options.query, scanned: 0, returned: 0, hits: [], note: 'no team memories matched the scope/agent filters' };
+    return {
+      query: options.query,
+      scanned: 0,
+      returned: 0,
+      hits: [],
+      note: 'no team memories matched the scope/agent filters',
+    };
   }
 
   const cache = getSharedCache();
-  const queryVec = await cache.getOrCompute(options.query, dim, () => generateEmbedding(options.query, dim));
+  const queryVec = await cache.getOrCompute(options.query, dim, () =>
+    generateEmbedding(options.query, dim),
+  );
 
   // Embed in small concurrent batches to keep latency sane without
   // hammering external providers.
@@ -83,7 +97,11 @@ export async function searchTeamMemoriesSemantic(
   for (let i = 0; i < rows.length; i += BATCH) {
     const chunk = rows.slice(i, i + BATCH);
     const vecs = await Promise.all(
-      chunk.map((r) => cache.getOrCompute(`${r.key}\n${r.value}`, dim, () => generateEmbedding(`${r.key}\n${r.value}`, dim)))
+      chunk.map((r) =>
+        cache.getOrCompute(`${r.key}\n${r.value}`, dim, () =>
+          generateEmbedding(`${r.key}\n${r.value}`, dim),
+        ),
+      ),
     );
     vectors.push(...vecs);
   }

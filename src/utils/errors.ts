@@ -1,12 +1,12 @@
 /**
  * Centralized error handling utilities for ProjectMind.
- * 
+ *
  * Provides type-safe error handling patterns:
  * - {@link Result} type for explicit error propagation
  * - {@link tryCatch} / {@link tryCatchAsync} for converting exceptions to values
  * - {@link safeExecute} / {@link safeExecuteAsync} for logging swallowed errors
  * - {@link assert} / {@link require} for invariants
- * 
+ *
  * @example
  * ```typescript
  * const result = tryCatch(() => JSON.parse(maybeJson));
@@ -16,7 +16,7 @@
  *   useValue(result.value);
  * }
  * ```
- * 
+ *
  * @module utils/errors
  */
 
@@ -25,21 +25,19 @@ import { logger } from './logger.js';
 /**
  * Result type for operations that can fail.
  * Forces explicit error handling instead of try/catch swallowing.
- * 
+ *
  * @typeParam T - The success value type
  * @typeParam E - The error type (defaults to Error)
  */
-export type Result<T, E = Error> = 
-  | { success: true; value: T }
-  | { success: false; error: E };
+export type Result<T, E = Error> = { success: true; value: T } | { success: false; error: E };
 
 /**
  * Wrap a synchronous function to return a Result instead of throwing.
- * 
+ *
  * @param fn - Function that might throw
  * @param context - Optional context name for debug logging
  * @returns Result with value or error
- * 
+ *
  * @example
  * ```typescript
  * const result = tryCatch(() => fs.readFileSync(path, 'utf-8'));

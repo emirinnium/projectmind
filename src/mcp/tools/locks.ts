@@ -18,10 +18,12 @@ async function cleanupStaleLocks(kg: McpDependencies['kg']): Promise<void> {
   try {
     const purgedCount = kg.purgeExpiredLocks();
     if (purgedCount === 0) return;
-    
+
     logger.info(`Cleaned up ${purgedCount} stale locks.`);
   } catch (error) {
-    logger.warn('Failed to clean up stale locks:', { error: error instanceof Error ? error.message : String(error) });
+    logger.warn('Failed to clean up stale locks:', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -31,13 +33,15 @@ async function cleanupStaleLocks(kg: McpDependencies['kg']): Promise<void> {
 function startStaleLockCleanup(kg: McpDependencies['kg'], db?: DatabaseSync): void {
   if (cleanupTimer) return;
   cleanupTimer = setInterval(() => {
-    cleanupStaleLocks(kg).catch(error => {
+    cleanupStaleLocks(kg).catch((error) => {
       logger.error('Stale lock cleanup failed:', { error });
     });
     try {
       getSharedBroadcastService(db).expireIntents();
     } catch (error) {
-      logger.warn('Intent expiry failed:', { error: error instanceof Error ? error.message : String(error) });
+      logger.warn('Intent expiry failed:', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }, CLEANUP_INTERVAL_MS);
 }
@@ -65,8 +69,15 @@ export function stopPeriodicCleanup(): void {
  */
 
 const inputSchema = {
-  action: z.enum(['acquire', 'release', 'list', 'check']).describe('acquire=lock a file, release=unlock (owner only), list=all live locks, check=batch conflict check before editing'),
-  filePath: z.string().optional().describe('File path to lock/release (required for acquire/release)'),
+  action: z
+    .enum(['acquire', 'release', 'list', 'check'])
+    .describe(
+      'acquire=lock a file, release=unlock (owner only), list=all live locks, check=batch conflict check before editing',
+    ),
+  filePath: z
+    .string()
+    .optional()
+    .describe('File path to lock/release (required for acquire/release)'),
   files: z.array(z.string()).optional().describe('File paths to check (required for check)'),
   agentName: z.string().describe('Your agent name (e.g. "cursor-agent", "claude-code")'),
   ttlMinutes: z.number().default(30).describe('Lock TTL in minutes for acquire (1-1440)'),
@@ -97,15 +108,20 @@ export function registerAgentLocksTool(server: McpServer, deps: McpDependencies)
 
         switch (args.action) {
           case 'acquire': {
-            if (!args.filePath) return json({ success: false, error: "action='acquire' requires filePath." });
-            const result = kg.acquireFileLock(args.filePath, args.agentName, { ttlMinutes: args.ttlMinutes, reason: args.reason });
+            if (!args.filePath)
+              return json({ success: false, error: "action='acquire' requires filePath." });
+            const result = kg.acquireFileLock(args.filePath, args.agentName, {
+              ttlMinutes: args.ttlMinutes,
+              reason: args.reason,
+            });
             if (result.status === 'held') {
               return json({
                 success: false,
                 status: 'held',
                 message: `File is locked by ANOTHER agent — do not edit it now.`,
                 heldBy: result.heldBy,
-                suggestion: 'Wait until expiresAt, pick a different file/approach, or coordinate out-of-band.',
+                suggestion:
+                  'Wait until expiresAt, pick a different file/approach, or coordinate out-of-band.',
               });
             }
             return json({
@@ -117,7 +133,8 @@ export function registerAgentLocksTool(server: McpServer, deps: McpDependencies)
           }
 
           case 'release': {
-            if (!args.filePath) return json({ success: false, error: "action='release' requires filePath." });
+            if (!args.filePath)
+              return json({ success: false, error: "action='release' requires filePath." });
             const result = kg.releaseFileLock(args.filePath, args.agentName);
             return json({ success: result.status === 'released', ...result });
           }
@@ -126,14 +143,18 @@ export function registerAgentLocksTool(server: McpServer, deps: McpDependencies)
             const locks = kg.getActiveLocks(args.agentName === '*' ? undefined : args.agentName);
             return json({
               success: true,
-              note: args.agentName === '*' ? undefined : 'Filtered to your locks. Pass agentName="*" to see every agent.',
+              note:
+                args.agentName === '*'
+                  ? undefined
+                  : 'Filtered to your locks. Pass agentName="*" to see every agent.',
               count: locks.length,
               locks,
             });
           }
 
           case 'check': {
-            if (!args.files || args.files.length === 0) return json({ success: false, error: "action='check' requires files (array)." });
+            if (!args.files || args.files.length === 0)
+              return json({ success: false, error: "action='check' requires files (array)." });
             const report = kg.checkFileConflicts(args.files.slice(0, 100), args.agentName);
             // Merge-risk prediction: even with zero lock conflicts, my edits
             // can collide with another agent's territory through the
@@ -154,8 +175,11 @@ export function registerAgentLocksTool(server: McpServer, deps: McpDependencies)
           }
         }
       } catch (error) {
-        return json({ success: false, error: error instanceof Error ? error.message : String(error) });
+        return json({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-    }
+    },
   );
 }

@@ -11,7 +11,8 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
     'analyze_taint',
     {
       title: 'Analyze Taint',
-      description: 'Analyze a file for taint flows from sources to sinks (TypeScript, JavaScript, Python, Go, Rust, Java) using AST patterns.',
+      description:
+        'Analyze a file for taint flows from sources to sinks (TypeScript, JavaScript, Python, Go, Rust, Java) using AST patterns.',
       inputSchema: {
         filePath: z.string().describe('Path to the file to analyze'),
       },
@@ -31,7 +32,16 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
 
         if (!existsSync(absPath)) {
           return {
-            content: [{ type: 'text', text: JSON.stringify({ success: false, error: `File not found: ${args.filePath}` }, null, 2) }],
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  { success: false, error: `File not found: ${args.filePath}` },
+                  null,
+                  2,
+                ),
+              },
+            ],
           };
         }
 
@@ -43,17 +53,21 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: true,
-                filePath: args.filePath,
-                flows: flows.map((f) => ({
-                  source: f.source.qualifiedName,
-                  sink: f.sink.qualifiedName,
-                  kind: f.source.kind,
-                  viaFunction: f.viaFunction,
-                })),
-                count: flows.length,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: true,
+                  filePath: args.filePath,
+                  flows: flows.map((f) => ({
+                    source: f.source.qualifiedName,
+                    sink: f.sink.qualifiedName,
+                    kind: f.source.kind,
+                    viaFunction: f.viaFunction,
+                  })),
+                  count: flows.length,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -62,22 +76,27 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 
   server.registerTool(
     'record_taint',
     {
       title: 'Record Taint',
-      description: 'Analyze a file and record detected taint flows to the knowledge graph (TypeScript, JavaScript, Python, Go, Rust, Java).',
+      description:
+        'Analyze a file and record detected taint flows to the knowledge graph (TypeScript, JavaScript, Python, Go, Rust, Java).',
       inputSchema: {
         filePath: z.string().describe('Path to the file to analyze'),
       },
@@ -96,7 +115,16 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
 
         if (!existsSync(absPath)) {
           return {
-            content: [{ type: 'text', text: JSON.stringify({ success: false, error: `File not found: ${args.filePath}` }, null, 2) }],
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  { success: false, error: `File not found: ${args.filePath}` },
+                  null,
+                  2,
+                ),
+              },
+            ],
           };
         }
 
@@ -108,11 +136,15 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: true,
-                filePath: args.filePath,
-                recorded,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: true,
+                  filePath: args.filePath,
+                  recorded,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -121,14 +153,18 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 }

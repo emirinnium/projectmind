@@ -74,7 +74,13 @@ const FONT5X7: Readonly<Record<string, readonly number[]>> = {
   Z: [0x61, 0x51, 0x49, 0x45, 0x43],
 };
 
-function setPixel(buf: Uint8Array, width: number, x: number, y: number, color: readonly [number, number, number]): void {
+function setPixel(
+  buf: Uint8Array,
+  width: number,
+  x: number,
+  y: number,
+  color: readonly [number, number, number],
+): void {
   const idx = (y * width + x) * 4;
   if (idx < 0 || idx + 2 >= buf.length) return;
   buf[idx] = color[0];
@@ -83,7 +89,16 @@ function setPixel(buf: Uint8Array, width: number, x: number, y: number, color: r
   buf[idx + 3] = 0xff;
 }
 
-function fillRect(buf: Uint8Array, width: number, height: number, x0: number, y0: number, w: number, h: number, color: readonly [number, number, number]): void {
+function fillRect(
+  buf: Uint8Array,
+  width: number,
+  height: number,
+  x0: number,
+  y0: number,
+  w: number,
+  h: number,
+  color: readonly [number, number, number],
+): void {
   for (let y = y0; y < y0 + h; y++) {
     if (y < 0 || y >= height) break;
     for (let x = x0; x < x0 + w; x++) {
@@ -93,7 +108,14 @@ function fillRect(buf: Uint8Array, width: number, height: number, x0: number, y0
   }
 }
 
-function drawText(buf: Uint8Array, width: number, x: number, y: number, text: string, color: readonly [number, number, number]): void {
+function drawText(
+  buf: Uint8Array,
+  width: number,
+  x: number,
+  y: number,
+  text: string,
+  color: readonly [number, number, number],
+): void {
   let cx = x;
   for (const raw of text.toUpperCase()) {
     const glyph = FONT5X7[raw] ?? FONT5X7[' '];
@@ -111,7 +133,7 @@ function drawText(buf: Uint8Array, width: number, x: number, y: number, text: st
 
 /** Length of the longest label that fits the 5x7 font on one line. */
 function truncateLabel(label: string, maxWidth: number): string {
-  const chars=Math.max(3, Math.floor(maxWidth / 6));
+  const chars = Math.max(3, Math.floor(maxWidth / 6));
   return label.length > chars ? label.slice(0, chars - 1) + '~' : label;
 }
 
@@ -124,7 +146,14 @@ export function renderModulePng(report: ScaleReport, width = 640): Buffer {
   const height = padTop + top.length * rowH + padBottom;
   const buf = new Uint8Array(width * height * 4);
   fillRect(buf, width, height, 0, 0, width, height, BACKGROUND);
-  drawText(buf, width, 12, 14, `ProjectMind - Module File Counts (${report.totalFiles} files)`, TITLE_COLOR);
+  drawText(
+    buf,
+    width,
+    12,
+    14,
+    `ProjectMind - Module File Counts (${report.totalFiles} files)`,
+    TITLE_COLOR,
+  );
   const maxFiles = Math.max(1, ...top.map((m) => m.fileCount));
   const barX = 150;
   const barMaxW = width - barX - 90;
@@ -141,7 +170,11 @@ export function renderModulePng(report: ScaleReport, width = 640): Buffer {
 
 /** XML-escape attribute/text content. */
 function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 /** Render an interactive module diagram (boxes + file chips + tooltips) as SVG. */
@@ -163,9 +196,13 @@ export function renderModuleSvg(report: ScaleReport): string {
   const totalH = rows * 120; // generous row stride so boxes never overlap
 
   const parts: string[] = [];
-  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${totalW + pad * 2}" height="${totalH + pad + legendH}" viewBox="0 0 ${totalW + pad * 2} ${totalH + pad + legendH}">`);
+  parts.push(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW + pad * 2}" height="${totalH + pad + legendH}" viewBox="0 0 ${totalW + pad * 2} ${totalH + pad + legendH}">`,
+  );
   parts.push(`<rect width="100%" height="100%" fill="#ffffff"/>`);
-  parts.push(`<text x="${pad}" y="${pad - 6}" font-family="monospace" font-size="14" font-weight="bold" fill="#111827">ProjectMind - Module Diagram (${report.totalFiles} files, ${report.modules.length} modules)</text>`);
+  parts.push(
+    `<text x="${pad}" y="${pad - 6}" font-family="monospace" font-size="14" font-weight="bold" fill="#111827">ProjectMind - Module Diagram (${report.totalFiles} files, ${report.modules.length} modules)</text>`,
+  );
 
   const groups: string[] = [];
   byFiles.forEach((m, i) => {
@@ -178,26 +215,40 @@ export function renderModuleSvg(report: ScaleReport): string {
     const boxH = headerH + Math.ceil(files.length / chipPerRow) * chipRowH + 10;
 
     const elems: string[] = [];
-    elems.push(`<rect x="${x}" y="${y}" width="${boxW}" height="${boxH}" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>`);
+    elems.push(
+      `<rect x="${x}" y="${y}" width="${boxW}" height="${boxH}" rx="6" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>`,
+    );
     const name = m.name || m.path || '.';
-    elems.push(`<text x="${x + 10}" y="${y + 22}" font-family="monospace" font-size="13" font-weight="bold" fill="#1e293b">${esc(name)}</text>`);
-    elems.push(`<text x="${x + 10}" y="${y + 38}" font-family="monospace" font-size="11" fill="#64748b">${m.fileCount} files | ${m.cognitiveLoad.toFixed(2)} cog | ${Math.round(m.agentCoverage * 100)}% covered</text>`);
+    elems.push(
+      `<text x="${x + 10}" y="${y + 22}" font-family="monospace" font-size="13" font-weight="bold" fill="#1e293b">${esc(name)}</text>`,
+    );
+    elems.push(
+      `<text x="${x + 10}" y="${y + 38}" font-family="monospace" font-size="11" fill="#64748b">${m.fileCount} files | ${m.cognitiveLoad.toFixed(2)} cog | ${Math.round(m.agentCoverage * 100)}% covered</text>`,
+    );
     files.forEach((f, fi) => {
       const chipX = x + 10 + (fi % chipPerRow) * ((boxW - 30) / chipPerRow);
       const chipY = y + headerH + Math.floor(fi / chipPerRow) * chipRowH;
       const fname = f.relativePath.split('/').pop() || f.path;
-      elems.push(`<rect x="${chipX}" y="${chipY}" width="${(boxW - 30) / chipPerRow - 6}" height="15" rx="3" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1"/>`);
-      elems.push(`<text x="${chipX + 4}" y="${chipY + 11}" font-family="monospace" font-size="10" fill="#4338ca">${esc(fname.slice(0, 28))}</text>`);
+      elems.push(
+        `<rect x="${chipX}" y="${chipY}" width="${(boxW - 30) / chipPerRow - 6}" height="15" rx="3" fill="#eef2ff" stroke="#c7d2fe" stroke-width="1"/>`,
+      );
+      elems.push(
+        `<text x="${chipX + 4}" y="${chipY + 11}" font-family="monospace" font-size="10" fill="#4338ca">${esc(fname.slice(0, 28))}</text>`,
+      );
       elems.push(`<title>${esc(f.relativePath)}</title>`);
     });
     if (extraFiles > 0) {
-      elems.push(`<text x="${x + 10}" y="${y + boxH - 2}" font-family="monospace" font-size="10" fill="#64748b">+${extraFiles} more files</text>`);
+      elems.push(
+        `<text x="${x + 10}" y="${y + boxH - 2}" font-family="monospace" font-size="10" fill="#64748b">+${extraFiles} more files</text>`,
+      );
     }
     groups.push(`<g>${elems.join('')}</g>`);
   });
 
   parts.push(groups.join(''));
-  parts.push(`<text x="${pad}" y="${totalH + pad + 18}" font-family="monospace" font-size="11" fill="#64748b">Tip: hover a chip for the full file path. Uncovered/hotspot modules appear first.</text>`);
+  parts.push(
+    `<text x="${pad}" y="${totalH + pad + 18}" font-family="monospace" font-size="11" fill="#64748b">Tip: hover a chip for the full file path. Uncovered/hotspot modules appear first.</text>`,
+  );
   parts.push('</svg>');
   return parts.join('\n');
 }

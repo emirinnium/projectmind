@@ -4,9 +4,7 @@ import type { AppComponent } from './types.js';
 
 /** Bar chart of the biggest modules by file count (max 10 for readability). */
 export function buildModuleSizeChart(report: ScaleReport): AppComponent {
-  const top = [...report.modules]
-    .sort((a, b) => b.fileCount - a.fileCount)
-    .slice(0, 10);
+  const top = [...report.modules].sort((a, b) => b.fileCount - a.fileCount).slice(0, 10);
   return {
     kind: 'chart',
     chartType: 'bar',
@@ -38,7 +36,12 @@ export function buildDebtChart(report: DebtReport): AppComponent {
     title: `Debt by Severity (${report.totalItems} items)`,
     options: {
       labels: ['high', 'medium', 'low'],
-      series: [{ name: 'items', data: [report.bySeverity.high, report.bySeverity.medium, report.bySeverity.low] }],
+      series: [
+        {
+          name: 'items',
+          data: [report.bySeverity.high, report.bySeverity.medium, report.bySeverity.low],
+        },
+      ],
     },
   };
 }
@@ -50,8 +53,19 @@ export function buildScanForm(defaults: { root?: string; full?: boolean } = {}):
     title: 'Rescan Project',
     submitLabel: 'Scan',
     fields: [
-      { name: 'root', label: 'Root', type: 'text', placeholder: defaults.root ?? '.', default: defaults.root ?? '.' },
-      { name: 'full', label: 'Force full scan (ignore cache)', type: 'boolean', default: defaults.full ?? false },
+      {
+        name: 'root',
+        label: 'Root',
+        type: 'text',
+        placeholder: defaults.root ?? '.',
+        default: defaults.root ?? '.',
+      },
+      {
+        name: 'full',
+        label: 'Force full scan (ignore cache)',
+        type: 'boolean',
+        default: defaults.full ?? false,
+      },
     ],
   };
 }

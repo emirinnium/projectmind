@@ -78,7 +78,8 @@ function resolveProjectId(db: DatabaseSync, projectRoot: string): number | null 
     if (setting) {
       const parsed = parseInt(setting.value, 10);
       if (!Number.isNaN(parsed) && parsed > 0) {
-        const exists = db.prepare('SELECT id FROM projects WHERE id = ?').get(parsed) as { id: number } | undefined;
+        const exists = db.prepare('SELECT id FROM projects WHERE id = ?').get(parsed) as
+          { id: number } | undefined;
         if (exists) return parsed;
       }
     }
@@ -86,7 +87,8 @@ function resolveProjectId(db: DatabaseSync, projectRoot: string): number | null 
     // settings table may not exist yet in older databases — fall through.
   }
 
-  const defaultProject = db.prepare('SELECT id FROM projects WHERE id = 1').get() as { id: number } | undefined;
+  const defaultProject = db.prepare('SELECT id FROM projects WHERE id = 1').get() as
+    { id: number } | undefined;
   return defaultProject ? defaultProject.id : null;
 }
 
@@ -100,8 +102,14 @@ function loadFileEmbeddings(db: DatabaseSync, projectRoot: string): Map<string, 
   if (projectId === null) return new Map();
 
   const rows = db
-    .prepare('SELECT path, relative_path, embedding FROM files WHERE project_id = ? AND embedding IS NOT NULL')
-    .all(projectId) as Array<{ path: string; relative_path: string | null; embedding: SQLOutputValue | null }>;
+    .prepare(
+      'SELECT path, relative_path, embedding FROM files WHERE project_id = ? AND embedding IS NOT NULL',
+    )
+    .all(projectId) as Array<{
+    path: string;
+    relative_path: string | null;
+    embedding: SQLOutputValue | null;
+  }>;
 
   const map = new Map<string, number[]>();
   for (const row of rows) {
@@ -126,7 +134,7 @@ function loadFileEmbeddings(db: DatabaseSync, projectRoot: string): Map<string, 
 export async function semanticSearchForTool(
   deps: McpDependencies,
   args: SemanticSearchArgs,
-  embeddingGenerator: (text: string) => Promise<number[]> = generateEmbedding
+  embeddingGenerator: (text: string) => Promise<number[]> = generateEmbedding,
 ): Promise<SemanticSearchResult> {
   if (!deps.db) {
     throw new Error('semantic_search requires the project database, which is not initialized.');
@@ -137,7 +145,7 @@ export async function semanticSearchForTool(
     embeddingGenerator,
     cosineSimilarity,
     fileEmbeddings,
-    { limit: args.limit, threshold: args.threshold }
+    { limit: args.limit, threshold: args.threshold },
   );
   return { results };
 }
@@ -148,14 +156,19 @@ export function registerSemanticSearchTool(server: McpServer, deps: McpDependenc
     {
       title: 'Semantic File Search',
       description:
-        'Pure natural-language semantic file search over the project\'s stored embeddings.\n' +
+        "Pure natural-language semantic file search over the project's stored embeddings.\n" +
         'WHEN to call: when you want files ranked purely by embedding similarity to a free-text query ' +
         '("rate limiting", "oauth token refresh") rather than a task intent or literal string.\n' +
         'Returns files whose cosine similarity to the query meets `threshold`, capped at `limit`.',
       inputSchema: {
         query: z.string().describe('Natural-language query to match against file embeddings'),
         limit: z.number().int().min(1).max(50).default(5).describe('Maximum number of results'),
-        threshold: z.number().min(0).max(1).default(0.7).describe('Minimum cosine similarity (0..1) for a file to be returned'),
+        threshold: z
+          .number()
+          .min(0)
+          .max(1)
+          .default(0.7)
+          .describe('Minimum cosine similarity (0..1) for a file to be returned'),
       },
     },
     async (args) => {
@@ -174,6 +187,6 @@ export function registerSemanticSearchTool(server: McpServer, deps: McpDependenc
           content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
         };
       }
-    }
+    },
   );
 }

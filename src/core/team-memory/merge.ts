@@ -192,11 +192,7 @@ function linesEqual(a: string[], b: string[]): boolean {
  * Merge `local` and `remote` against the common ancestor `base`.
  * Returns merged lines with git-style conflict markers when regions clash.
  */
-export function threeWayMerge(
-  base: string[],
-  local: string[],
-  remote: string[]
-): MergeResult {
+export function threeWayMerge(base: string[], local: string[], remote: string[]): MergeResult {
   const localHunks = diffHunks(base, local);
   const remoteHunks = diffHunks(base, remote);
 
@@ -237,7 +233,12 @@ export function threeWayMerge(
         if (linesEqual(insL.lines, insR.lines)) {
           out.push(...insL.lines);
         } else {
-          conflicts.push({ baseStart: i, baseEnd: i, localLines: insL.lines, remoteLines: insR.lines });
+          conflicts.push({
+            baseStart: i,
+            baseEnd: i,
+            localLines: insL.lines,
+            remoteLines: insR.lines,
+          });
           out.push(CONFLICT_START, ...insL.lines, CONFLICT_MIDDLE, ...insR.lines, CONFLICT_END);
         }
         usedL.add(insL);
@@ -302,7 +303,9 @@ export function threeWayMerge(
     }
 
     if (rh !== null) {
-      const localOverlap = localHunks.filter((h) => h.baseStart < rh.baseEnd && h.baseEnd > i && !usedL.has(h));
+      const localOverlap = localHunks.filter(
+        (h) => h.baseStart < rh.baseEnd && h.baseEnd > i && !usedL.has(h),
+      );
       if (localOverlap.length === 0) {
         out.push(...rh.lines);
         usedR.add(rh);
@@ -360,7 +363,11 @@ export interface MergeSuggestion {
 
 export interface MergeSuggestionProvider {
   isAvailable(): boolean;
-  analyze(prompt: string, systemPrompt?: string, temperature?: number): Promise<{ content: string }>;
+  analyze(
+    prompt: string,
+    systemPrompt?: string,
+    temperature?: number,
+  ): Promise<{ content: string }>;
 }
 
 /**
@@ -377,7 +384,7 @@ export async function buildMergeSuggestion(
   local: string,
   remote: string,
   conflicts: MergeConflict[],
-  provider?: MergeSuggestionProvider | null
+  provider?: MergeSuggestionProvider | null,
 ): Promise<MergeSuggestion> {
   if (conflicts.length > 0 && provider && provider.isAvailable()) {
     try {
@@ -425,7 +432,10 @@ export async function buildMergeSuggestion(
 
   const keptLocal = local.length > 0 ? local : base;
   const remoteOmitted = conflicts
-    .map((c, idx) => `[conflict ${idx + 1} remote@${c.baseStart}-${c.baseEnd}]\n${c.remoteLines.join('\n')}`)
+    .map(
+      (c, idx) =>
+        `[conflict ${idx + 1} remote@${c.baseStart}-${c.baseEnd}]\n${c.remoteLines.join('\n')}`,
+    )
     .join('\n');
   return {
     resolution: `${keptLocal}\n\n<!-- UNMERGED REMOTE (resolve via retain/merge) -->\n${remoteOmitted}`,
@@ -506,7 +516,7 @@ export interface TeamMemoryStoreComputation {
  */
 export function computeTeamMemoryStore(
   existing: ExistingTeamMemoryRow | null,
-  incoming: string
+  incoming: string,
 ): TeamMemoryStoreComputation {
   if (existing === null) {
     return {

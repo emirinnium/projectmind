@@ -63,10 +63,11 @@ export class DeepCoherenceAnalyzer {
       this.allowCloudLLM = true;
     }
 
-    const contextSummary = options.contextFiles
-      ?.slice(0, 5)
-      .map((f) => `File: ${f.relativePath} (language: ${f.language}, load: ${f.cognitiveLoad})`)
-      .join('\n') ?? 'No additional context';
+    const contextSummary =
+      options.contextFiles
+        ?.slice(0, 5)
+        .map((f) => `File: ${f.relativePath} (language: ${f.language}, load: ${f.cognitiveLoad})`)
+        .join('\n') ?? 'No additional context';
 
     const systemPrompt = `You are ProjectMind's Coherence Engine. 
 Analyze this code change for semantic coherence, architectural consistency, and best practices. Think step-by-step.
@@ -97,8 +98,18 @@ SUGGESTIONS: (one per line, or "none")`;
         maxAttempts: 3,
         baseDelayMs: BASE_DELAY_MS,
         maxDelayMs: MAX_DELAY_MS,
-        retryableErrors: ['timeout', 'network', 'ECONNREFUSED', 'ETIMEDOUT', 'rate limit', '429', '500', '502', '503'],
-      }
+        retryableErrors: [
+          'timeout',
+          'network',
+          'ECONNREFUSED',
+          'ETIMEDOUT',
+          'rate limit',
+          '429',
+          '500',
+          '502',
+          '503',
+        ],
+      },
     );
     const result = this.parseLLMResponse(response, startTime);
 
@@ -114,22 +125,22 @@ SUGGESTIONS: (one per line, or "none")`;
   private parseStructuredData<T>(content: string, key: string, parser: (text: string) => T): T {
     const startIndex = content.indexOf(`${key}:`);
     if (startIndex === -1) throw new Error(`Missing key: ${key}`);
-    
+
     const endIndex = content.indexOf('\n\n', startIndex);
-    const section = endIndex === -1 ? content.substring(startIndex) : content.substring(startIndex, endIndex);
-    
+    const section =
+      endIndex === -1 ? content.substring(startIndex) : content.substring(startIndex, endIndex);
+
     try {
       return parser(section.substring(key.length + 1).trim());
     } catch (err) {
-      logger.debug(`[deep-coherence] Failed to parse structured data for key "${key}": ${err instanceof Error ? err.message : String(err)}`);
+      logger.debug(
+        `[deep-coherence] Failed to parse structured data for key "${key}": ${err instanceof Error ? err.message : String(err)}`,
+      );
       throw new Error(`Failed to parse key: ${key}`);
     }
   }
 
-  private parseLLMResponse(
-    response: LLMResponse,
-    startTime: number
-  ): CoherenceResult {
+  private parseLLMResponse(response: LLMResponse, startTime: number): CoherenceResult {
     const content = response.content;
     let verdict: 'pass' | 'warn' | 'fail' = 'warn';
     let confidence = 0.5;
@@ -141,10 +152,12 @@ SUGGESTIONS: (one per line, or "none")`;
     try {
       verdictText = this.parseStructuredData(content, 'VERDICT', (text) => {
         const match = text.match(/(pass|warn|fail)/i);
-        return match ? match[1].toLowerCase() as 'pass' | 'warn' | 'fail' : 'warn';
+        return match ? (match[1].toLowerCase() as 'pass' | 'warn' | 'fail') : 'warn';
       });
     } catch (err) {
-      logger.debug(`[deep-coherence] Failed to parse VERDICT from LLM response, defaulting to 'warn'. ${err instanceof Error ? err.message : String(err)}`);
+      logger.debug(
+        `[deep-coherence] Failed to parse VERDICT from LLM response, defaulting to 'warn'. ${err instanceof Error ? err.message : String(err)}`,
+      );
       verdictText = undefined;
     }
     if (verdictText) {
@@ -160,7 +173,9 @@ SUGGESTIONS: (one per line, or "none")`;
         return isNaN(num) ? 0.5 : Math.min(1.0, Math.max(0.0, num));
       });
     } catch (err) {
-      logger.debug(`[deep-coherence] Failed to parse CONFIDENCE from LLM response, defaulting to 0.5. ${err instanceof Error ? err.message : String(err)}`);
+      logger.debug(
+        `[deep-coherence] Failed to parse CONFIDENCE from LLM response, defaulting to 0.5. ${err instanceof Error ? err.message : String(err)}`,
+      );
       confidenceText = undefined;
     }
     if (typeof confidenceText === 'number') {
@@ -173,10 +188,15 @@ SUGGESTIONS: (one per line, or "none")`;
     let reasoningText: string[] | undefined;
     try {
       reasoningText = this.parseStructuredData(content, 'REASONING_TRACE', (text) => {
-        return text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+        return text
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
       });
     } catch (err) {
-      logger.debug(`[deep-coherence] Failed to parse REASONING_TRACE from LLM response, using provider trace. ${err instanceof Error ? err.message : String(err)}`);
+      logger.debug(
+        `[deep-coherence] Failed to parse REASONING_TRACE from LLM response, using provider trace. ${err instanceof Error ? err.message : String(err)}`,
+      );
       reasoningText = undefined;
     }
     if (reasoningText) reasoningTrace = reasoningText;
@@ -185,10 +205,15 @@ SUGGESTIONS: (one per line, or "none")`;
     let suggestionsText: string[] | undefined;
     try {
       suggestionsText = this.parseStructuredData(content, 'SUGGESTIONS', (text) => {
-        return text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0 && !line.startsWith('- '));
+        return text
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0 && !line.startsWith('- '));
       });
     } catch (err) {
-      logger.debug(`[deep-coherence] Failed to parse SUGGESTIONS from LLM response, leaving empty. ${err instanceof Error ? err.message : String(err)}`);
+      logger.debug(
+        `[deep-coherence] Failed to parse SUGGESTIONS from LLM response, leaving empty. ${err instanceof Error ? err.message : String(err)}`,
+      );
       suggestionsText = undefined;
     }
     if (suggestionsText) suggestions = suggestionsText.slice(0, 5);
@@ -197,14 +222,18 @@ SUGGESTIONS: (one per line, or "none")`;
     if (!verdictText || !confidenceText) {
       const verdictMatch = content.match(/VERDICT:\s*(pass|warn|fail)/i);
       const confidenceMatch = content.match(/CONFIDENCE:\s*([\d.]+)/i);
-      
+
       if (verdictMatch) verdict = verdictMatch[1].toLowerCase() as 'pass' | 'warn' | 'fail';
       if (confidenceMatch) confidence = parseFloat(confidenceMatch[1]);
-      
+
       const suggestionsStart = content.indexOf('SUGGESTIONS:');
       if (suggestionsStart >= 0) {
         const st = content.substring(suggestionsStart + 'SUGGESTIONS:'.length);
-        suggestions = st.split(/\r?\n/).map((s) => s.trim()).filter(Boolean).slice(0, 5);
+        suggestions = st
+          .split(/\r?\n/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .slice(0, 5);
       }
     }
 
@@ -219,25 +248,36 @@ SUGGESTIONS: (one per line, or "none")`;
   }
 
   private storeDecision(codeHash: string, result: CoherenceResult, filePath: string): void {
-    const fileRow = this.db.prepare('SELECT id FROM files WHERE path = ?').get(filePath) as { id: number } | undefined;
+    const fileRow = this.db.prepare('SELECT id FROM files WHERE path = ?').get(filePath) as
+      { id: number } | undefined;
     const reasoningJson = JSON.stringify(result.reasoningTrace);
     const suggestionsJson = JSON.stringify(result.suggestions);
 
-    const existing = this.db.prepare('SELECT id FROM coherence_decisions WHERE code_hash = ?').get(codeHash) as { id: number } | undefined;
+    const existing = this.db
+      .prepare('SELECT id FROM coherence_decisions WHERE code_hash = ?')
+      .get(codeHash) as { id: number } | undefined;
 
     if (existing) {
       this.db
         .prepare(
           `UPDATE coherence_decisions SET verdict = ?, confidence = ?, reasoning_trace = ?, suggestions = ?, 
-           llm_provider = ?, response_time_ms = ?, analyzed_at = CURRENT_TIMESTAMP WHERE id = ?`
+           llm_provider = ?, response_time_ms = ?, analyzed_at = CURRENT_TIMESTAMP WHERE id = ?`,
         )
-        .run(result.verdict, result.confidence, reasoningJson, suggestionsJson, result.llmProvider, result.responseTimeMs, existing.id);
+        .run(
+          result.verdict,
+          result.confidence,
+          reasoningJson,
+          suggestionsJson,
+          result.llmProvider,
+          result.responseTimeMs,
+          existing.id,
+        );
     } else {
       this.db
         .prepare(
           `INSERT INTO coherence_decisions 
            (file_id, code_hash, verdict, confidence, reasoning_trace, suggestions, llm_provider, response_time_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           fileRow?.id ?? null,
@@ -247,7 +287,7 @@ SUGGESTIONS: (one per line, or "none")`;
           reasoningJson,
           suggestionsJson,
           result.llmProvider,
-          result.responseTimeMs
+          result.responseTimeMs,
         );
     }
   }

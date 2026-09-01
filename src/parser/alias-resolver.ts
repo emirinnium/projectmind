@@ -162,7 +162,18 @@ export class AliasResolver {
    */
   resolveAliasToPath(
     source: string,
-    extensions: string[] = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '/index.ts', '/index.tsx', '/index.js', '/index.jsx']
+    extensions: string[] = [
+      '.ts',
+      '.tsx',
+      '.js',
+      '.jsx',
+      '.mjs',
+      '.cjs',
+      '/index.ts',
+      '/index.tsx',
+      '/index.js',
+      '/index.jsx',
+    ],
   ): string | null {
     const result = this.resolveAlias(source);
     if (!result.matched) return null;

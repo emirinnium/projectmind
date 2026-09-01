@@ -8,7 +8,17 @@
  * re-exports them for backwards compatibility.
  */
 
-export type Language = 'typescript' | 'javascript' | 'python' | 'go' | 'rust' | 'java' | 'csharp' | 'cpp' | 'ruby' | 'unknown';
+export type Language =
+  | 'typescript'
+  | 'javascript'
+  | 'python'
+  | 'go'
+  | 'rust'
+  | 'java'
+  | 'csharp'
+  | 'cpp'
+  | 'ruby'
+  | 'unknown';
 
 export interface ParameterInfo {
   name: string;

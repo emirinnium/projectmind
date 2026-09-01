@@ -30,12 +30,7 @@ import { join } from 'node:path';
 export const CLAUDE_SKILL_NAME = 'projectmind-codebase-intelligence';
 
 /** Relative path (from the project root) of the generated skill file. */
-export const CLAUDE_SKILL_RELATIVE_PATH = join(
-  '.claude',
-  'skills',
-  CLAUDE_SKILL_NAME,
-  'SKILL.md'
-);
+export const CLAUDE_SKILL_RELATIVE_PATH = join('.claude', 'skills', CLAUDE_SKILL_NAME, 'SKILL.md');
 
 const SKILL_BODY = `# ProjectMind Codebase Intelligence
 

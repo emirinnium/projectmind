@@ -2,7 +2,14 @@ import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SKILL_CATALOG, analyzeSkillGaps, estimateAllProficiencies, extractCodebaseSkills, generateSkillDoc, type SkillGap } from '@/core/skills/engine.js';
+import {
+  SKILL_CATALOG,
+  analyzeSkillGaps,
+  estimateAllProficiencies,
+  extractCodebaseSkills,
+  generateSkillDoc,
+  type SkillGap,
+} from '@/core/skills/engine.js';
 
 /**
  * B5 — Agent skill generation from interaction history.
@@ -23,147 +30,187 @@ export function createSkillRecommendCommand(): Command {
     .option('--format <fmt>', 'Output: text|json|html', 'text')
     .option('--write', 'Generate skills/<agent>/SKILL.md for each analyzed agent')
     .option('-o, --output <file>', 'Write report to file')
-    .action(asyncHandler(async (opts: { agent: string; all: boolean; gapThreshold: string; top: string; format: string; write: boolean; output: string }) => {
-      await withService(['scale', 'coherence'], async (ctx, services) => {
-        const scale = services.scale!;
-        const kg = ctx.kg;
+    .action(
+      asyncHandler(
+        async (opts: {
+          agent: string;
+          all: boolean;
+          gapThreshold: string;
+          top: string;
+          format: string;
+          write: boolean;
+          output: string;
+        }) => {
+          await withService(['scale', 'coherence'], async (ctx, services) => {
+            const scale = services.scale!;
+            const kg = ctx.kg;
 
-        output.section('Agent Skill Gap Analysis (evidence-based)');
-        output.kv('Gap threshold', opts.gapThreshold);
-        output.kv('Top N', opts.top);
+            output.section('Agent Skill Gap Analysis (evidence-based)');
+            output.kv('Gap threshold', opts.gapThreshold);
+            output.kv('Top N', opts.top);
 
-        const report = scale.getScaleReport();
-        const codebaseSkills = extractCodebaseSkills(report.modules);
-        const catalogCoverage = Object.keys(codebaseSkills).length;
-        output.kv('Repo skill evidence', `${catalogCoverage}/${SKILL_CATALOG.length} skills in evidence`);
-
-        let agentsToAnalyze = scale.getAgentProfiles();
-        if (opts.agent) {
-          agentsToAnalyze = agentsToAnalyze.filter((p) => p.name === opts.agent);
-        }
-
-        if (agentsToAnalyze.length === 0) {
-          output.warn('No agents found. Run a scan and use the tools to generate agent sessions first.');
-          return;
-        }
-
-        output.kv('Agents to analyze', agentsToAnalyze.length);
-
-        const sessions = kg.getAgentSessions();
-        const allFiles = kg.getAllFiles();
-        const touchedByAgent = new Map<string, string[]>();
-        for (const f of allFiles) {
-          if (f.agentTouchedBy === null) continue;
-          const list = touchedByAgent.get(f.agentTouchedBy) ?? [];
-          list.push(f.relativePath);
-          touchedByAgent.set(f.agentTouchedBy, list);
-        }
-
-        const allGaps: { agent: string; gaps: SkillGap[] }[] = [];
-
-        for (const profile of agentsToAnalyze) {
-          const touchedPaths = (touchedByAgent.get(profile.name) ?? []).map((p) => p.replace(/\\/g, '/'));
-          const agentSessions = sessions.filter((s) => s.agentName === profile.name);
-          const decisionsText = agentSessions
-            .map((s) => JSON.stringify(s.decisions ?? null))
-            .filter((t) => t !== 'null')
-            .join(' ');
-
-          const proficiencies = estimateAllProficiencies({
-            sessionCount: profile.sessions,
-            touchedPaths,
-            decisionsText,
-            asyncPreference: profile.fingerprint?.asyncPreference ?? -1,
-          });
-          const gaps = analyzeSkillGaps(proficiencies, codebaseSkills, parseFloat(opts.gapThreshold));
-          allGaps.push({ agent: profile.name, gaps });
-
-          output.info(`Agent '${profile.name}': ${profile.sessions} sessions, ${profile.filesTouched} files touched, ${gaps.length} skill gaps.`);
-          if (opts.write) {
-            const doc = generateSkillDoc({
-              agentName: profile.name,
-              sessionCount: profile.sessions,
-              filesTouchedCount: profile.filesTouched,
-              fingerprint: profile.fingerprint,
-              touchedPaths,
-              gaps,
-              generatedAt: new Date().toISOString(),
-            });
-            writeSkillDoc(profile.name, doc);
-          }
-        }
-
-        if (opts.format === 'json') {
-          const result = { agents: allGaps, codebaseSkills, catalogVersion: 2 };
-          const content = JSON.stringify(result, null, 2);
-          if (opts.output) {
-            writeFileSync(opts.output, content);
-            output.success(`Written to ${opts.output}`);
-          } else {
-            console.log(content);
-          }
-          return;
-        }
-
-        if (opts.format === 'html') {
-          const content = generateHtmlSkillReport(allGaps);
-          if (opts.output) {
-            writeFileSync(opts.output, content);
-            output.success(`Written to ${opts.output}`);
-          } else {
-            console.log(content);
-          }
-          return;
-        }
-
-        // Text format
-        for (const { agent, gaps } of allGaps) {
-          output.section(`Agent: ${agent} (${gaps.length} gaps)`);
-
-          if (gaps.length === 0) {
-            output.success('No significant skill gaps detected');
-            continue;
-          }
-
-          for (const [i, gap] of gaps.slice(0, parseInt(opts.top, 10)).entries()) {
-            const priorityIcon = gap.priority === 'critical' ? '🔴' : gap.priority === 'high' ? '🟠' : gap.priority === 'medium' ? '🟡' : '🟢';
+            const report = scale.getScaleReport();
+            const codebaseSkills = extractCodebaseSkills(report.modules);
+            const catalogCoverage = Object.keys(codebaseSkills).length;
             output.kv(
-              `${i + 1}. ${priorityIcon} ${gap.label}`,
-              `Gap: ${(gap.gap * 100).toFixed(0)}% (${(gap.currentLevel * 100).toFixed(0)} → ${(gap.targetLevel * 100).toFixed(0)}) | Effort: ${gap.estimatedHours}h`,
+              'Repo skill evidence',
+              `${catalogCoverage}/${SKILL_CATALOG.length} skills in evidence`,
             );
-            output.kv('  Why it helps', gap.whyItHelps);
-            output.kv('  Commands', gap.suggestedCommands.join(', '));
-            if (gap.relatedFiles.length > 0) {
-              output.kv('  Files', gap.relatedFiles.slice(0, 3).join(', '));
+
+            let agentsToAnalyze = scale.getAgentProfiles();
+            if (opts.agent) {
+              agentsToAnalyze = agentsToAnalyze.filter((p) => p.name === opts.agent);
             }
-          }
 
-          const criticalCount = gaps.filter((g) => g.priority === 'critical').length;
-          const highCount = gaps.filter((g) => g.priority === 'high').length;
-          output.kv('Total gaps', gaps.length);
-          output.kv('Critical', criticalCount);
-          output.kv('High', highCount);
-        }
+            if (agentsToAnalyze.length === 0) {
+              output.warn(
+                'No agents found. Run a scan and use the tools to generate agent sessions first.',
+              );
+              return;
+            }
 
-        // Overall recommendations
-        output.section('Top Recommendations');
-        const topOverall = allGaps
-          .flatMap((a) => a.gaps.map((g) => ({ ...g, agent: a.agent })))
-          .sort((a, b) => b.gap - a.gap)
-          .slice(0, 5);
-        for (const [i, gap] of topOverall.entries()) {
-          output.kv(`${i + 1}. ${gap.label} (${gap.agent})`, `Gap: ${(gap.gap * 100).toFixed(0)}% — ${gap.whyItHelps}`);
-        }
+            output.kv('Agents to analyze', agentsToAnalyze.length);
 
-        if (opts.output) {
-          writeFileSync(opts.output, JSON.stringify({ agents: allGaps, codebaseSkills }, null, 2));
-          output.success(`Written to ${opts.output}`);
-        }
-        if (opts.write) {
-          output.success(`SKILL.md files written under skills/<agent>/ (${agentsToAnalyze.length} agent(s)).`);
-        }
-      });
-    }));
+            const sessions = kg.getAgentSessions();
+            const allFiles = kg.getAllFiles();
+            const touchedByAgent = new Map<string, string[]>();
+            for (const f of allFiles) {
+              if (f.agentTouchedBy === null) continue;
+              const list = touchedByAgent.get(f.agentTouchedBy) ?? [];
+              list.push(f.relativePath);
+              touchedByAgent.set(f.agentTouchedBy, list);
+            }
+
+            const allGaps: { agent: string; gaps: SkillGap[] }[] = [];
+
+            for (const profile of agentsToAnalyze) {
+              const touchedPaths = (touchedByAgent.get(profile.name) ?? []).map((p) =>
+                p.replace(/\\/g, '/'),
+              );
+              const agentSessions = sessions.filter((s) => s.agentName === profile.name);
+              const decisionsText = agentSessions
+                .map((s) => JSON.stringify(s.decisions ?? null))
+                .filter((t) => t !== 'null')
+                .join(' ');
+
+              const proficiencies = estimateAllProficiencies({
+                sessionCount: profile.sessions,
+                touchedPaths,
+                decisionsText,
+                asyncPreference: profile.fingerprint?.asyncPreference ?? -1,
+              });
+              const gaps = analyzeSkillGaps(
+                proficiencies,
+                codebaseSkills,
+                parseFloat(opts.gapThreshold),
+              );
+              allGaps.push({ agent: profile.name, gaps });
+
+              output.info(
+                `Agent '${profile.name}': ${profile.sessions} sessions, ${profile.filesTouched} files touched, ${gaps.length} skill gaps.`,
+              );
+              if (opts.write) {
+                const doc = generateSkillDoc({
+                  agentName: profile.name,
+                  sessionCount: profile.sessions,
+                  filesTouchedCount: profile.filesTouched,
+                  fingerprint: profile.fingerprint,
+                  touchedPaths,
+                  gaps,
+                  generatedAt: new Date().toISOString(),
+                });
+                writeSkillDoc(profile.name, doc);
+              }
+            }
+
+            if (opts.format === 'json') {
+              const result = { agents: allGaps, codebaseSkills, catalogVersion: 2 };
+              const content = JSON.stringify(result, null, 2);
+              if (opts.output) {
+                writeFileSync(opts.output, content);
+                output.success(`Written to ${opts.output}`);
+              } else {
+                console.log(content);
+              }
+              return;
+            }
+
+            if (opts.format === 'html') {
+              const content = generateHtmlSkillReport(allGaps);
+              if (opts.output) {
+                writeFileSync(opts.output, content);
+                output.success(`Written to ${opts.output}`);
+              } else {
+                console.log(content);
+              }
+              return;
+            }
+
+            // Text format
+            for (const { agent, gaps } of allGaps) {
+              output.section(`Agent: ${agent} (${gaps.length} gaps)`);
+
+              if (gaps.length === 0) {
+                output.success('No significant skill gaps detected');
+                continue;
+              }
+
+              for (const [i, gap] of gaps.slice(0, parseInt(opts.top, 10)).entries()) {
+                const priorityIcon =
+                  gap.priority === 'critical'
+                    ? '🔴'
+                    : gap.priority === 'high'
+                      ? '🟠'
+                      : gap.priority === 'medium'
+                        ? '🟡'
+                        : '🟢';
+                output.kv(
+                  `${i + 1}. ${priorityIcon} ${gap.label}`,
+                  `Gap: ${(gap.gap * 100).toFixed(0)}% (${(gap.currentLevel * 100).toFixed(0)} → ${(gap.targetLevel * 100).toFixed(0)}) | Effort: ${gap.estimatedHours}h`,
+                );
+                output.kv('  Why it helps', gap.whyItHelps);
+                output.kv('  Commands', gap.suggestedCommands.join(', '));
+                if (gap.relatedFiles.length > 0) {
+                  output.kv('  Files', gap.relatedFiles.slice(0, 3).join(', '));
+                }
+              }
+
+              const criticalCount = gaps.filter((g) => g.priority === 'critical').length;
+              const highCount = gaps.filter((g) => g.priority === 'high').length;
+              output.kv('Total gaps', gaps.length);
+              output.kv('Critical', criticalCount);
+              output.kv('High', highCount);
+            }
+
+            // Overall recommendations
+            output.section('Top Recommendations');
+            const topOverall = allGaps
+              .flatMap((a) => a.gaps.map((g) => ({ ...g, agent: a.agent })))
+              .sort((a, b) => b.gap - a.gap)
+              .slice(0, 5);
+            for (const [i, gap] of topOverall.entries()) {
+              output.kv(
+                `${i + 1}. ${gap.label} (${gap.agent})`,
+                `Gap: ${(gap.gap * 100).toFixed(0)}% — ${gap.whyItHelps}`,
+              );
+            }
+
+            if (opts.output) {
+              writeFileSync(
+                opts.output,
+                JSON.stringify({ agents: allGaps, codebaseSkills }, null, 2),
+              );
+              output.success(`Written to ${opts.output}`);
+            }
+            if (opts.write) {
+              output.success(
+                `SKILL.md files written under skills/<agent>/ (${agentsToAnalyze.length} agent(s)).`,
+              );
+            }
+          });
+        },
+      ),
+    );
 
   return skillCmd;
 }
@@ -233,5 +280,8 @@ function generateHtmlSkillReport(allGaps: { agent: string; gaps: SkillGap[] }[])
 }
 
 function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
+  return s.replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
+  );
 }

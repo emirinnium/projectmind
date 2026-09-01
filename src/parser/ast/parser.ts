@@ -14,7 +14,8 @@ function getModifiers(node: ts.Node): ts.Modifier[] {
     }
   }
   // Fallback for nodes that may store modifiers directly (older TS versions)
-  const modifierLike = 'modifiers' in node ? (node as { modifiers?: readonly ts.Modifier[] }).modifiers : undefined;
+  const modifierLike =
+    'modifiers' in node ? (node as { modifiers?: readonly ts.Modifier[] }).modifiers : undefined;
   if (modifierLike && Array.isArray(modifierLike)) {
     return Array.from(modifierLike);
   }
@@ -38,21 +39,25 @@ function calculateCyclomaticComplexity(node: ts.Node): number {
     if (ts.isCaseClause(n) && !ts.isDefaultClause(n)) complexity++;
     if (ts.isForStatement(n) || ts.isForInStatement(n) || ts.isForOfStatement(n)) complexity++;
     if (ts.isWhileStatement(n) || ts.isDoStatement(n)) complexity++;
-    if (ts.isBinaryExpression(n) && (n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken || n.operatorToken.kind === ts.SyntaxKind.BarBarToken)) complexity++;
+    if (
+      ts.isBinaryExpression(n) &&
+      (n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+        n.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+    )
+      complexity++;
     ts.forEachChild(n, visit);
   }
   visit(node);
   return complexity;
 }
 
-export function parseTypeScriptFile(filePath: string, content?: string, language?: Language): FileStructure {
+export function parseTypeScriptFile(
+  filePath: string,
+  content?: string,
+  language?: Language,
+): FileStructure {
   const sourceText = content ?? readFileSync(filePath, 'utf-8');
-  const sourceFile = ts.createSourceFile(
-    filePath,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    true
-  );
+  const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true);
 
   const functions: FunctionInfo[] = [];
   const classes: ClassInfo[] = [];
@@ -89,9 +94,7 @@ export function parseTypeScriptFile(filePath: string, content?: string, language
 
     if (ts.isClassDeclaration(node)) {
       const name = node.name?.getText() ?? 'AnonymousClass';
-      const extended = node.heritageClauses?.some(
-        (h) => h.token === ts.SyntaxKind.ExtendsKeyword
-      )
+      const extended = node.heritageClauses?.some((h) => h.token === ts.SyntaxKind.ExtendsKeyword)
         ? node.heritageClauses
             .filter((h) => h.token === ts.SyntaxKind.ExtendsKeyword)
             .map((h) => h.types[0]?.getText())
@@ -104,17 +107,21 @@ export function parseTypeScriptFile(filePath: string, content?: string, language
         name: m.name?.getText() ?? 'anonymous',
         kind: 'method' as const,
         isStatic: m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.StaticKeyword) ?? false,
-        accessModifier: m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.PrivateKeyword) ? 'private'
-          : m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ProtectedKeyword) ? 'protected'
-          : 'public' as 'public' | 'private' | 'protected',
+        accessModifier: m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.PrivateKeyword)
+          ? 'private'
+          : m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ProtectedKeyword)
+            ? 'protected'
+            : ('public' as 'public' | 'private' | 'protected'),
       }));
       const properties = propertyMembers.map((m) => ({
         name: m.name?.getText() ?? 'anonymous',
         kind: 'property' as const,
         isStatic: m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.StaticKeyword) ?? false,
-        accessModifier: m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.PrivateKeyword) ? 'private'
-          : m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ProtectedKeyword) ? 'protected'
-          : 'public' as 'public' | 'private' | 'protected',
+        accessModifier: m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.PrivateKeyword)
+          ? 'private'
+          : m.modifiers?.some((mod) => mod.kind === ts.SyntaxKind.ProtectedKeyword)
+            ? 'protected'
+            : ('public' as 'public' | 'private' | 'protected'),
       }));
       classes.push({
         name,
@@ -151,7 +158,7 @@ export function parseTypeScriptFile(filePath: string, content?: string, language
         named.unshift(node.importClause.name.getText());
       }
       // Detect JSON module imports (e.g. `import data from './data.json'`)
-      const isJsonModule = JSON_EXTENSIONS.some(ext => source.endsWith(ext));
+      const isJsonModule = JSON_EXTENSIONS.some((ext) => source.endsWith(ext));
       imports.push({
         source,
         named,
@@ -227,7 +234,7 @@ function extractDynamicImport(node: ts.Expression): string | null {
  */
 function scanForDynamicImports(
   sourceFile: ts.SourceFile,
-  imports: { source: string; named: string[]; kind: string }[]
+  imports: { source: string; named: string[]; kind: string }[],
 ): void {
   const visited = new Set<ts.Node>();
 

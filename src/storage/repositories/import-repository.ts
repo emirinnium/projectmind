@@ -7,8 +7,17 @@ import { getDatabase } from '../database.js';
 export class ImportRepository {
   constructor(private readonly db: DatabaseSync = getDatabase()) {}
 
-  getImports(fileId: number): Array<{ id: number; source: string; kind: string; resolved: boolean; resolvedPath: string | null }> {
-    const rows = this.db.prepare('SELECT * FROM imports WHERE file_id = ?').all(fileId) as Record<string, SQLOutputValue>[];
+  getImports(fileId: number): Array<{
+    id: number;
+    source: string;
+    kind: string;
+    resolved: boolean;
+    resolvedPath: string | null;
+  }> {
+    const rows = this.db.prepare('SELECT * FROM imports WHERE file_id = ?').all(fileId) as Record<
+      string,
+      SQLOutputValue
+    >[];
     return rows.map((r) => ({
       id: r.id as number,
       source: r.source as string,
@@ -22,8 +31,13 @@ export class ImportRepository {
    * Get all files that import the given file (reverse dependencies).
    * Matches on resolved_path (set during scan) with raw-source fallback.
    */
-  getDependents(fileId: number, projectId: number): Array<{ id: number; path: string; relativePath: string }> {
-    const rows = this.db.prepare(`
+  getDependents(
+    fileId: number,
+    projectId: number,
+  ): Array<{ id: number; path: string; relativePath: string }> {
+    const rows = this.db
+      .prepare(
+        `
       SELECT DISTINCT f.id, f.path, f.relative_path 
       FROM files f
       JOIN imports i ON f.id = i.file_id
@@ -31,8 +45,14 @@ export class ImportRepository {
         i.resolved_path = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
         OR i.source = (SELECT relative_path FROM files WHERE id = ? AND project_id = f.project_id)
       )
-    `).all(projectId, fileId, fileId) as Record<string, SQLOutputValue>[];
-    return rows.map((r) => ({ id: r.id as number, path: r.path as string, relativePath: r.relative_path as string }));
+    `,
+      )
+      .all(projectId, fileId, fileId) as Record<string, SQLOutputValue>[];
+    return rows.map((r) => ({
+      id: r.id as number,
+      path: r.path as string,
+      relativePath: r.relative_path as string,
+    }));
   }
 
   /**
@@ -41,7 +61,7 @@ export class ImportRepository {
   findCircularDependencies(
     allFiles: Array<{ id: number; relativePath: string }>,
     getImportsFn: (fileId: number) => Array<{ source: string }>,
-    resolveImportFn: (source: string) => { id: number; relativePath: string } | null
+    resolveImportFn: (source: string) => { id: number; relativePath: string } | null,
   ): string[][] {
     const fileMap = new Map(allFiles.map((f) => [f.id, f]));
     const cycles: string[][] = [];
@@ -51,7 +71,10 @@ export class ImportRepository {
     const dfs = (fileId: number, path: number[]): void => {
       if (recStack.has(fileId)) {
         const cycleStart = recStack.get(fileId)!;
-        const cycle = path.slice(cycleStart).map((id) => fileMap.get(id)?.relativePath || '').filter(Boolean);
+        const cycle = path
+          .slice(cycleStart)
+          .map((id) => fileMap.get(id)?.relativePath || '')
+          .filter(Boolean);
         if (cycle.length > 0) {
           cycles.push(cycle);
         }
@@ -91,7 +114,7 @@ export class ImportRepository {
     fileId: number,
     getImportsFn: (fileId: number) => Array<{ source: string }>,
     resolveImportFn: (source: string) => { id: number; relativePath: string } | null,
-    maxDepth: number = 10
+    maxDepth: number = 10,
   ): Array<{ id: number; relativePath: string; depth: number; path: string[] }> {
     const results: Array<{ id: number; relativePath: string; depth: number; path: string[] }> = [];
     const visited = new Set<number>();
@@ -105,7 +128,12 @@ export class ImportRepository {
         const resolved = resolveImportFn(imp.source);
         if (resolved && !visited.has(resolved.id)) {
           const newPath = [...path, imp.source];
-          results.push({ id: resolved.id, relativePath: resolved.relativePath, depth: depth + 1, path: newPath });
+          results.push({
+            id: resolved.id,
+            relativePath: resolved.relativePath,
+            depth: depth + 1,
+            path: newPath,
+          });
           trace(resolved.id, depth + 1, newPath);
         }
       }
@@ -122,8 +150,11 @@ export class ImportRepository {
     modulePath: string,
     allFiles: Array<{ id: number; relativePath: string }>,
     getImportsFn: (fileId: number) => Array<{ source: string; kind: string }>,
-    resolveImportFn: (source: string) => { id: number; relativePath: string } | null
-  ): { nodes: Array<{ id: number; relativePath: string }>; edges: Array<{ from: string; to: string; kind: string }> } {
+    resolveImportFn: (source: string) => { id: number; relativePath: string } | null,
+  ): {
+    nodes: Array<{ id: number; relativePath: string }>;
+    edges: Array<{ from: string; to: string; kind: string }>;
+  } {
     const moduleFiles = allFiles.filter((f) => f.relativePath.startsWith(modulePath));
     const moduleFileIds = new Set(moduleFiles.map((f) => f.id));
 
@@ -148,9 +179,11 @@ export class ImportRepository {
    */
   storeCircularDependencies(cycles: string[][]): void {
     for (const cycle of cycles) {
-      this.db.prepare(
-        `INSERT OR IGNORE INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)`
-      ).run(cycle.join(' -> '), cycle.length);
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)`,
+        )
+        .run(cycle.join(' -> '), cycle.length);
     }
   }
 

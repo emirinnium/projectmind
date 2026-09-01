@@ -22,7 +22,7 @@ export function classifyErrorHandling(
   tryBlocks: number,
   dotCatch: number,
   throws: number,
-  resultObjects: number
+  resultObjects: number,
 ): string {
   const styles: Array<[string, number]> = [
     ['try-catch', tryBlocks],
@@ -60,7 +60,7 @@ export function dominantNaming(camel: number, snake: number, pascal: number): st
  */
 export function computeFingerprint(
   relativePaths: string[],
-  projectRoot: string
+  projectRoot: string,
 ): import('./types.js').AgentProfile['fingerprint'] {
   const root = projectRoot;
   let asyncHits = 0;
@@ -127,8 +127,7 @@ export function computeFingerprint(
   const styleDenominator = asyncHits + thenHits;
 
   return {
-    asyncPreference:
-      styleDenominator > 0 ? round2(asyncHits / styleDenominator) : -1,
+    asyncPreference: styleDenominator > 0 ? round2(asyncHits / styleDenominator) : -1,
     // `as` assertions per 10 lines of code, capped at 1.0.
     typeStrictness: Math.min(1, round2(assertionCount / (totalLines / 10))),
     errorHandlingStyle: classifyErrorHandling(tryBlocks, dotCatch, throws, resultObjects),

@@ -34,107 +34,142 @@ export function createSbomCommand(): Command {
     .option('--namespace <uri>', 'Document namespace URI')
     .option('--sign', 'Sign SBOM (requires cosign)')
     .option('--validate', 'Validate existing SBOM file')
-    .action(asyncHandler(async (opts: { format: string; output: string; includeDev: string; includePeer: string; includeOptional: string; projectName: string; projectVersion: string; namespace: string; sign: boolean; validate: boolean }) => {
-      await withService(['scale'], async (_ctx, services) => {
-        services.scale!;
-        const { loadConfig } = await import('../../utils/config.js');
-        const config = loadConfig();
-        
-        output.section('SBOM Generator');
-        
-        if (opts.validate) {
-          if (!opts.output || !existsSync(opts.output)) {
-            output.error('Specify SBOM file to validate with -o');
-            return;
-          }
-          const content = readFileSync(opts.output, 'utf-8');
-          const result = validateSbom(content, opts.format);
-          if (result.valid) {
-            output.success('SBOM is valid');
-          } else {
-            output.error(`SBOM validation failed: ${result.errors.join(', ')}`);
-            process.exit(1);
-          }
-          return;
-        }
-        
-        const pkgPath = join(config.projectRoot, 'package.json');
-        if (!existsSync(pkgPath)) {
-          output.warn('No package.json found');
-          return;
-        }
-        
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-        const projectName = opts.projectName || pkg.name || 'projectmind';
-        const projectVersion = opts.projectVersion || pkg.version || '0.0.0';
-        const namespace = opts.namespace || `https://github.com/emirinnium/${projectName}/sbom/${projectVersion}`;
-        
-        const deps = {
-          ...(opts.includeDev === 'true' ? pkg.devDependencies : {}),
-          ...(opts.includePeer === 'true' ? pkg.peerDependencies : {}),
-          ...(opts.includeOptional === 'true' ? pkg.optionalDependencies : {}),
-          ...pkg.dependencies,
-        };
-        
-        const packages: SbomPackage[] = Object.entries(deps).map(([name, version]) => ({
-          name,
-          version: (version as string).replace(/^[\^~]/, ''),
-          license: pkg.license,
-          downloadLocation: `https://www.npmjs.com/package/${name}`,
-        }));
-        
-        output.section(`SBOM Generation: ${projectName}@${projectVersion}`);
-        output.kv('Format', opts.format.toUpperCase());
-        output.kv('Packages', packages.length);
-        output.kv('Namespace', namespace);
-        
-        let content = '';
-        
-        switch (opts.format) {
-          case 'spdx':
-          case 'spdx-tag':
-            content = generateSpdx(projectName, projectVersion, namespace, packages, opts.format === 'spdx-tag');
-            break;
-          case 'cyclonedx':
-            content = generateCycloneDx(projectName, projectVersion, namespace, packages);
-            break;
-          case 'json':
-            content = JSON.stringify({ 
-              sbom: { 
-                specVersion: '1.5',
-                serialNumber: `urn:uuid:${generateUuid()}`,
-                name: projectName,
-                version: projectVersion,
-                metadata: { timestamp: new Date().toISOString() },
-                packages 
-              } 
-            }, null, 2);
-            break;
-        }
-        
-        if (opts.output) {
-          writeFileSync(opts.output, content);
-          output.success(`SBOM written to ${opts.output}`);
-        } else {
-          output.info(content);
-        }
-        
-        if (opts.sign) {
-          if (!opts.output) {
-            output.warn('Signing requires --output <file> (cosign signs a file on disk)');
-          } else {
-            signWithCosign(opts.output);
-          }
-        }
-        
-        output.success(`SBOM generated: ${packages.length} packages in ${opts.format.toUpperCase()} format`);
-      });
-    }));
-  
+    .action(
+      asyncHandler(
+        async (opts: {
+          format: string;
+          output: string;
+          includeDev: string;
+          includePeer: string;
+          includeOptional: string;
+          projectName: string;
+          projectVersion: string;
+          namespace: string;
+          sign: boolean;
+          validate: boolean;
+        }) => {
+          await withService(['scale'], async (_ctx, services) => {
+            services.scale!;
+            const { loadConfig } = await import('../../utils/config.js');
+            const config = loadConfig();
+
+            output.section('SBOM Generator');
+
+            if (opts.validate) {
+              if (!opts.output || !existsSync(opts.output)) {
+                output.error('Specify SBOM file to validate with -o');
+                return;
+              }
+              const content = readFileSync(opts.output, 'utf-8');
+              const result = validateSbom(content, opts.format);
+              if (result.valid) {
+                output.success('SBOM is valid');
+              } else {
+                output.error(`SBOM validation failed: ${result.errors.join(', ')}`);
+                process.exit(1);
+              }
+              return;
+            }
+
+            const pkgPath = join(config.projectRoot, 'package.json');
+            if (!existsSync(pkgPath)) {
+              output.warn('No package.json found');
+              return;
+            }
+
+            const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+            const projectName = opts.projectName || pkg.name || 'projectmind';
+            const projectVersion = opts.projectVersion || pkg.version || '0.0.0';
+            const namespace =
+              opts.namespace ||
+              `https://github.com/emirinnium/${projectName}/sbom/${projectVersion}`;
+
+            const deps = {
+              ...(opts.includeDev === 'true' ? pkg.devDependencies : {}),
+              ...(opts.includePeer === 'true' ? pkg.peerDependencies : {}),
+              ...(opts.includeOptional === 'true' ? pkg.optionalDependencies : {}),
+              ...pkg.dependencies,
+            };
+
+            const packages: SbomPackage[] = Object.entries(deps).map(([name, version]) => ({
+              name,
+              version: (version as string).replace(/^[\^~]/, ''),
+              license: pkg.license,
+              downloadLocation: `https://www.npmjs.com/package/${name}`,
+            }));
+
+            output.section(`SBOM Generation: ${projectName}@${projectVersion}`);
+            output.kv('Format', opts.format.toUpperCase());
+            output.kv('Packages', packages.length);
+            output.kv('Namespace', namespace);
+
+            let content = '';
+
+            switch (opts.format) {
+              case 'spdx':
+              case 'spdx-tag':
+                content = generateSpdx(
+                  projectName,
+                  projectVersion,
+                  namespace,
+                  packages,
+                  opts.format === 'spdx-tag',
+                );
+                break;
+              case 'cyclonedx':
+                content = generateCycloneDx(projectName, projectVersion, namespace, packages);
+                break;
+              case 'json':
+                content = JSON.stringify(
+                  {
+                    sbom: {
+                      specVersion: '1.5',
+                      serialNumber: `urn:uuid:${generateUuid()}`,
+                      name: projectName,
+                      version: projectVersion,
+                      metadata: { timestamp: new Date().toISOString() },
+                      packages,
+                    },
+                  },
+                  null,
+                  2,
+                );
+                break;
+            }
+
+            if (opts.output) {
+              writeFileSync(opts.output, content);
+              output.success(`SBOM written to ${opts.output}`);
+            } else {
+              output.info(content);
+            }
+
+            if (opts.sign) {
+              if (!opts.output) {
+                output.warn('Signing requires --output <file> (cosign signs a file on disk)');
+              } else {
+                signWithCosign(opts.output);
+              }
+            }
+
+            output.success(
+              `SBOM generated: ${packages.length} packages in ${opts.format.toUpperCase()} format`,
+            );
+          });
+        },
+      ),
+    );
+
   return sbomCmd;
 }
 
-function generateSpdx(projectName: string, projectVersion: string, namespace: string, packages: SbomPackage[], tagValue: boolean): string {
+function generateSpdx(
+  projectName: string,
+  projectVersion: string,
+  namespace: string,
+  packages: SbomPackage[],
+  tagValue: boolean,
+): string {
   const lines = [
     'SPDXVersion: SPDX-2.3',
     'DataLicense: CC0-1.0',
@@ -154,7 +189,7 @@ function generateSpdx(projectName: string, projectVersion: string, namespace: st
     `PackageCopyrightText: NOASSERTION`,
     '',
   ];
-  
+
   for (const pkg of packages) {
     lines.push('', '## Dependency Package');
     lines.push(`PackageName: ${pkg.name}`);
@@ -165,21 +200,30 @@ function generateSpdx(projectName: string, projectVersion: string, namespace: st
     lines.push(`PackageDownloadLocation: ${pkg.downloadLocation || 'NOASSERTION'}`);
     lines.push(`PackageCopyrightText: NOASSERTION`);
   }
-  
+
   if (tagValue) {
     return lines.join('\n');
   }
   return lines.join('\n');
 }
 
-function generateCycloneDx(projectName: string, projectVersion: string, namespace: string, packages: SbomPackage[]): string {
-  const packagesXml = packages.map(pkg => `
+function generateCycloneDx(
+  projectName: string,
+  projectVersion: string,
+  namespace: string,
+  packages: SbomPackage[],
+): string {
+  const packagesXml = packages
+    .map(
+      (pkg) => `
     <component type="library">
       <name>${escapeXml(pkg.name)}</name>
       <version>${escapeXml(pkg.version)}</version>
       <purl>pkg:npm/${escapeXml(pkg.name)}@${escapeXml(pkg.version)}</purl>
-    </component>`).join('\n');
-  
+    </component>`,
+    )
+    .join('\n');
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <bom xmlns="http://cyclonedx.org/schema/bom/1.5" version="1" serialNumber="urn:uuid:${generateUuid()}">
   <metadata>
@@ -220,22 +264,26 @@ function validateSbom(content: string, format: string): { valid: boolean; errors
 
       const version = first('SPDXVersion');
       if (!version) errors.push('Missing SPDXVersion');
-      else if (!/^SPDX-2\.[0-3]$/.test(version)) errors.push(`Unsupported SPDXVersion "${version}" (expected SPDX-2.2/2.3)`);
+      else if (!/^SPDX-2\.[0-3]$/.test(version))
+        errors.push(`Unsupported SPDXVersion "${version}" (expected SPDX-2.2/2.3)`);
 
-      if (first('DataLicense') !== 'CC0-1.0') errors.push('Missing/invalid DataLicense (must be CC0-1.0)');
-      if (first('SPDXID') !== 'SPDXRef-DOCUMENT') errors.push('Missing document SPDXID: SPDXRef-DOCUMENT');
+      if (first('DataLicense') !== 'CC0-1.0')
+        errors.push('Missing/invalid DataLicense (must be CC0-1.0)');
+      if (first('SPDXID') !== 'SPDXRef-DOCUMENT')
+        errors.push('Missing document SPDXID: SPDXRef-DOCUMENT');
 
       if (!first('DocumentName')) errors.push('Missing DocumentName');
       const ns = first('DocumentNamespace');
       if (!ns) errors.push('Missing DocumentNamespace');
       else if (!/^https?:\/\//.test(ns)) errors.push('DocumentNamespace must be an absolute URI');
 
-      if (!(tags.get('Creator')?.length)) errors.push('Missing Creator');
+      if (!tags.get('Creator')?.length) errors.push('Missing Creator');
       const created = first('Created');
       if (!created) errors.push('Missing Created');
-      else if (Number.isNaN(Date.parse(created))) errors.push('Created is not a valid ISO timestamp');
+      else if (Number.isNaN(Date.parse(created)))
+        errors.push('Created is not a valid ISO timestamp');
 
-      if (!(tags.get('PackageName')?.length)) errors.push('No PackageName entries found');
+      if (!tags.get('PackageName')?.length) errors.push('No PackageName entries found');
     } else if (format === 'cyclonedx') {
       // CycloneDX XML structural checks.
       if (!/<\?xml\s+version=/.test(content)) errors.push('Missing XML declaration');
@@ -244,8 +292,10 @@ function validateSbom(content: string, format: string): { valid: boolean; errors
         errors.push('Missing <bom> root element');
       } else {
         const bomTag = bomMatch[0];
-        if (!bomTag.includes('xmlns="http://cyclonedx.org/schema/bom/')) errors.push('Missing CycloneDX namespace');
-        if (!/serialNumber="urn:uuid:[0-9a-fA-F-]{36}"/.test(bomTag)) errors.push('Missing/invalid serialNumber (urn:uuid:...)');
+        if (!bomTag.includes('xmlns="http://cyclonedx.org/schema/bom/'))
+          errors.push('Missing CycloneDX namespace');
+        if (!/serialNumber="urn:uuid:[0-9a-fA-F-]{36}"/.test(bomTag))
+          errors.push('Missing/invalid serialNumber (urn:uuid:...)');
         if (!/version="\d+"/.test(bomTag)) errors.push('Missing bom version attribute');
       }
       if (!content.includes('<metadata>')) errors.push('Missing metadata section');
@@ -259,7 +309,17 @@ function validateSbom(content: string, format: string): { valid: boolean; errors
         if (!/<version>[\s\S]+?<\/version>/.test(body)) errors.push('component without <version>');
       }
     } else if (format === 'json') {
-      interface SbomJson { bomFormat?: string; specVersion?: string; version?: number; components?: Array<Record<string, string | number>>; sbom?: { specVersion?: string; serialNumber?: string; packages?: Array<{ name?: string; version?: string }> } }
+      interface SbomJson {
+        bomFormat?: string;
+        specVersion?: string;
+        version?: number;
+        components?: Array<Record<string, string | number>>;
+        sbom?: {
+          specVersion?: string;
+          serialNumber?: string;
+          packages?: Array<{ name?: string; version?: string }>;
+        };
+      }
       const parsed = JSON.parse(content) as SbomJson;
 
       if (parsed.bomFormat === 'CycloneDX') {
@@ -269,7 +329,11 @@ function validateSbom(content: string, format: string): { valid: boolean; errors
         if (!Array.isArray(parsed.components)) errors.push('Missing components array');
       } else {
         const sbom = parsed.sbom as
-          | { specVersion?: string; serialNumber?: string; packages?: Array<{ name?: string; version?: string }> }
+          | {
+              specVersion?: string;
+              serialNumber?: string;
+              packages?: Array<{ name?: string; version?: string }>;
+            }
           | undefined;
         if (!sbom) {
           errors.push('Missing sbom root');

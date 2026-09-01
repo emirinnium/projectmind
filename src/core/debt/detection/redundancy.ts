@@ -24,7 +24,10 @@ export class RedundancyDetector {
   private vecIndex: VecIndex;
 
   constructor(db?: DatabaseSync) {
-    this.embeddingCache = globalCacheRegistry.getOrCreate('embeddings', () => new EmbeddingCache()) as AdvancedCache<string, number[]>;
+    this.embeddingCache = globalCacheRegistry.getOrCreate(
+      'embeddings',
+      () => new EmbeddingCache(),
+    ) as AdvancedCache<string, number[]>;
     this.db = db || getDatabase();
     this.vecIndex = getVecIndex(this.db);
   }
@@ -99,7 +102,7 @@ export class RedundancyDetector {
     target: FileInfo,
     targetEmbedding: number[],
     allFiles: FileInfo[],
-    embeddings: Map<number, number[]>
+    embeddings: Map<number, number[]>,
   ): Promise<FileInfo[]> {
     const THRESHOLD = 0.95;
 
@@ -111,9 +114,7 @@ export class RedundancyDetector {
       }
 
       const rawMatches = this.vecIndex.findSimilar(targetEmbedding, 20);
-      const matchIds = rawMatches
-        .filter((m) => (1 - m.distance) >= THRESHOLD)
-        .map((m) => m.id);
+      const matchIds = rawMatches.filter((m) => 1 - m.distance >= THRESHOLD).map((m) => m.id);
 
       if (matchIds.length > 0) {
         const idSet = new Set(matchIds);

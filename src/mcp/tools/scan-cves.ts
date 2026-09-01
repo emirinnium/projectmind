@@ -57,7 +57,10 @@ export function registerScanCvesTool(server: McpServer, deps: McpDependencies): 
         'Returns structured vulnerability details, severity levels, and suggested fixes.\n' +
         'Input schema accepts `fix` (run `npm audit fix` preview) and `level` (minimum severity to report).',
       inputSchema: {
-        fix: z.boolean().default(false).describe('If true, run `npm audit fix --dry-run` to preview fixes (read-only).'),
+        fix: z
+          .boolean()
+          .default(false)
+          .describe('If true, run `npm audit fix --dry-run` to preview fixes (read-only).'),
         level: z
           .enum(['info', 'low', 'moderate', 'high', 'critical'])
           .default('moderate')
@@ -93,11 +96,16 @@ export function registerScanCvesTool(server: McpServer, deps: McpDependencies): 
             content: [
               {
                 type: 'text',
-                text: JSON.stringify({
-                  success: false,
-                  error: 'Failed to parse npm audit output. Is this a Node.js project with package-lock.json/yarn.lock?',
-                  rawOutput: auditOutput.substring(0, 500),
-                } satisfies ScanCvesResponse, null, 2),
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    error:
+                      'Failed to parse npm audit output. Is this a Node.js project with package-lock.json/yarn.lock?',
+                    rawOutput: auditOutput.substring(0, 500),
+                  } satisfies ScanCvesResponse,
+                  null,
+                  2,
+                ),
               },
             ],
           };
@@ -145,12 +153,24 @@ export function registerScanCvesTool(server: McpServer, deps: McpDependencies): 
         });
 
         // Filter by level if specified
-        const levelOrder: Record<string, number> = { info: 0, low: 1, moderate: 2, high: 3, critical: 4 };
+        const levelOrder: Record<string, number> = {
+          info: 0,
+          low: 1,
+          moderate: 2,
+          high: 3,
+          critical: 4,
+        };
         const minLevel = levelOrder[args.level];
         const filteredVulns = vulnerabilities.filter((v) => levelOrder[v.severity] >= minLevel);
 
         // Compute summary
-        const bySeverity: Record<string, number> = { info: 0, low: 0, moderate: 0, high: 0, critical: 0 };
+        const bySeverity: Record<string, number> = {
+          info: 0,
+          low: 0,
+          moderate: 0,
+          high: 0,
+          critical: 0,
+        };
         filteredVulns.forEach((v) => {
           bySeverity[v.severity] = (bySeverity[v.severity] || 0) + 1;
         });
@@ -185,6 +205,6 @@ export function registerScanCvesTool(server: McpServer, deps: McpDependencies): 
           ],
         };
       }
-    }
+    },
   );
 }

@@ -69,7 +69,12 @@ export class PatternLibrary {
       if (fn.name === 'anonymous') continue;
       const convention = this.detectNamingConvention(fn.name);
       // Higher confidence for standard conventions
-      const confidence = convention === 'unknown' ? 0.5 : convention.includes('camel') || convention.includes('Pascal') ? 0.9 : 0.85;
+      const confidence =
+        convention === 'unknown'
+          ? 0.5
+          : convention.includes('camel') || convention.includes('Pascal')
+            ? 0.9
+            : 0.85;
       patterns.push({
         id: 0,
         name: fn.name,
@@ -92,11 +97,14 @@ export class PatternLibrary {
     const importSources = file.imports.map((i) => i.source);
 
     // Higher confidence for consistent import style
-    const hasRelative = importSources.some(s => s.startsWith('.'));
-    const hasAbsolute = importSources.some(s => s.startsWith('@/') || s.startsWith('#'));
-    const hasNodeBuiltin = importSources.some(s => s.startsWith('node:'));
-    const hasExternal = importSources.some(s => !s.startsWith('.') && !s.startsWith('@/') && !s.startsWith('#') && !s.startsWith('node:'));
-    
+    const hasRelative = importSources.some((s) => s.startsWith('.'));
+    const hasAbsolute = importSources.some((s) => s.startsWith('@/') || s.startsWith('#'));
+    const hasNodeBuiltin = importSources.some((s) => s.startsWith('node:'));
+    const hasExternal = importSources.some(
+      (s) =>
+        !s.startsWith('.') && !s.startsWith('@/') && !s.startsWith('#') && !s.startsWith('node:'),
+    );
+
     let confidence = 0.7;
     if (hasRelative && !hasAbsolute && !hasExternal) confidence = 0.9; // Pure relative
     if (hasAbsolute && !hasRelative) confidence = 0.95; // Pure path aliases
@@ -124,13 +132,14 @@ export class PatternLibrary {
     const hasClasses = file.classes.length > 0;
     const hasFunctions = file.functions.length > 0;
     const functionDensity = file.functions.length / Math.max(file.lines, 1);
-    
+
     // Higher confidence for well-structured files
     let confidence = 0.6;
     if (file.lines > 50 && file.lines < 300) confidence = 0.8; // Good file size
     if (hasClasses && hasFunctions) confidence = Math.max(confidence, 0.85); // Mixed structure
     if (functionDensity > 0.05 && functionDensity < 0.3) confidence = Math.max(confidence, 0.8); // Reasonable density
-    if (file.imports.length > 0 && file.imports.length < 20) confidence = Math.max(confidence, 0.85); // Reasonable imports
+    if (file.imports.length > 0 && file.imports.length < 20)
+      confidence = Math.max(confidence, 0.85); // Reasonable imports
 
     patterns.push({
       id: 0,
@@ -172,29 +181,35 @@ export class PatternLibrary {
   }
 
   private storePattern(pattern: Omit<Pattern, 'id'> & { id: number }, codeHash: string): void {
-    const existing = this.db.prepare('SELECT id, usage_count, last_seen FROM patterns WHERE code_hash = ? AND name = ?')
-      .get(codeHash, pattern.name) as { id: number; usage_count: number; last_seen: string } | undefined;
+    const existing = this.db
+      .prepare('SELECT id, usage_count, last_seen FROM patterns WHERE code_hash = ? AND name = ?')
+      .get(codeHash, pattern.name) as
+      { id: number; usage_count: number; last_seen: string } | undefined;
 
     if (existing) {
-      this.db.prepare(
-        'UPDATE patterns SET usage_count = usage_count + 1, last_seen = ?, confidence = MIN(?, 1.0) WHERE id = ?'
-      ).run(new Date().toISOString(), pattern.confidence, existing.id);
+      this.db
+        .prepare(
+          'UPDATE patterns SET usage_count = usage_count + 1, last_seen = ?, confidence = MIN(?, 1.0) WHERE id = ?',
+        )
+        .run(new Date().toISOString(), pattern.confidence, existing.id);
     } else {
       const embedding = pattern.embedding ? JSON.stringify(pattern.embedding) : null;
-      this.db.prepare(
-        `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count, embedding)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(
-        pattern.name,
-        pattern.category,
-        pattern.description,
-        pattern.codeHash,
-        pattern.confidence,
-        new Date().toISOString(),
-        new Date().toISOString(),
-        1,
-        embedding
-      );
+      this.db
+        .prepare(
+          `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count, embedding)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          pattern.name,
+          pattern.category,
+          pattern.description,
+          pattern.codeHash,
+          pattern.confidence,
+          new Date().toISOString(),
+          new Date().toISOString(),
+          1,
+          embedding,
+        );
     }
   }
 
@@ -208,7 +223,9 @@ export class PatternLibrary {
       return this.patternCache;
     }
 
-    const rows = this.db.prepare('SELECT * FROM patterns ORDER BY usage_count DESC, last_seen DESC').all() as Record<string, SQLOutputValue>[];
+    const rows = this.db
+      .prepare('SELECT * FROM patterns ORDER BY usage_count DESC, last_seen DESC')
+      .all() as Record<string, SQLOutputValue>[];
     this.patternCache = rows.map((r) => ({
       id: r.id as number,
       name: r.name as string,
@@ -254,7 +271,8 @@ export class PatternLibrary {
   }
 
   getCoherenceScore(): number {
-    const result = this.db.prepare('SELECT AVG(confidence) as avg_conf, COUNT(*) as cnt FROM patterns')
+    const result = this.db
+      .prepare('SELECT AVG(confidence) as avg_conf, COUNT(*) as cnt FROM patterns')
       .get() as { avg_conf: number | null; cnt: number };
 
     if (!result.cnt) return 1.0;

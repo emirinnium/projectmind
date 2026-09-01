@@ -8,10 +8,7 @@ export type { RetryOptions };
  * in storage/database-utils (previously a near-duplicate with divergent
  * defaults); preserves this module's original default delay semantics.
  */
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  options: RetryOptions = {}
-): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
   const {
     maxAttempts = 3,
     baseDelayMs = 1000,

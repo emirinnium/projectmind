@@ -17,13 +17,45 @@ import { logger } from '../utils/logger.js';
  */
 
 /** Extensions with a registered parser (mirrors scanner's fast-glob set). */
-const SUPPORTED_EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.rs', '.java', '.rb', '.c', '.cpp', '.h', '.hpp']);
+const SUPPORTED_EXT = new Set([
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.py',
+  '.go',
+  '.rs',
+  '.java',
+  '.rb',
+  '.c',
+  '.cpp',
+  '.h',
+  '.hpp',
+]);
 
 /** Directory segments never worth watching (mirrors scanner ignore list). */
 const IGNORED_DIR_PARTS = new Set([
-  'node_modules', 'dist', 'dist-tests', '.git', 'coverage', 'build', 'out',
-  'target', '__pycache__', '.venv', 'vendor', '.next', '.turbo', '.cache',
-  'tmp', 'temp', '.vscode', '.idea', '.projectmind',
+  'node_modules',
+  'dist',
+  'dist-tests',
+  '.git',
+  'coverage',
+  'build',
+  'out',
+  'target',
+  '__pycache__',
+  '.venv',
+  'vendor',
+  '.next',
+  '.turbo',
+  '.cache',
+  'tmp',
+  'temp',
+  '.vscode',
+  '.idea',
+  '.projectmind',
 ]);
 
 export interface WatcherBatchResult {
@@ -73,7 +105,7 @@ export class ProjectWatcher {
       upsertFile(struct: FileStructure, relPath: string): Promise<number>;
       storeFileDetails(fileId: number, struct: FileStructure): Promise<void> | void;
     },
-    private options: ProjectWatcherOptions = {}
+    private options: ProjectWatcherOptions = {},
   ) {
     this.debounceMs = Math.max(50, options.debounceMs ?? 400);
   }
@@ -170,7 +202,9 @@ export class ProjectWatcher {
       }
     });
     w.on('error', (error) => {
-      logger.warn(`Directory watcher error for ${d}:`, { error: error instanceof Error ? error.message : String(error) });
+      logger.warn(`Directory watcher error for ${d}:`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
       w.close();
       this.dirWatchers.delete(d);
     });
@@ -230,7 +264,9 @@ export class ProjectWatcher {
         this.options.coherence?.invalidateFileCache(rel);
         updated.push(rel);
       } catch (e) {
-        logger.warn(`Watcher failed to index ${abs}:`, { error: e instanceof Error ? e.message : String(e) });
+        logger.warn(`Watcher failed to index ${abs}:`, {
+          error: e instanceof Error ? e.message : String(e),
+        });
         failed.push(relative(this.root, abs));
       }
     }
@@ -243,7 +279,9 @@ export class ProjectWatcher {
       this.options.onBatchProcessed?.({ updated, failed });
     } catch (error) {
       // consumer callback errors must not kill the watch loop
-      logger.warn('Watcher onBatchProcessed callback failed:', { error: error instanceof Error ? error.message : String(error) });
+      logger.warn('Watcher onBatchProcessed callback failed:', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }

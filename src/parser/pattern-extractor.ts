@@ -153,7 +153,11 @@ export class PatternExtractor {
     };
   }
 
-  private async parseFromContent(filePath: string, content: string, lang: Language): Promise<FileStructure | null> {
+  private async parseFromContent(
+    filePath: string,
+    content: string,
+    lang: Language,
+  ): Promise<FileStructure | null> {
     try {
       if (lang === 'typescript' || lang === 'javascript') {
         const { parseTypeScriptFile } = await import('./ast/parser.js');
@@ -174,11 +178,15 @@ export class PatternExtractor {
     const path = file.filePath.toLowerCase();
 
     // Repository pattern (AST-based detection)
-    const hasRepositoryInterface = file.classes.some(cls => {
-      return cls.implements.some(impl => impl.includes('Repository')) ||
-             cls.methods.some(method => method.name === 'find' || method.name === 'save' || method.name === 'delete');
+    const hasRepositoryInterface = file.classes.some((cls) => {
+      return (
+        cls.implements.some((impl) => impl.includes('Repository')) ||
+        cls.methods.some(
+          (method) => method.name === 'find' || method.name === 'save' || method.name === 'delete',
+        )
+      );
     });
-    
+
     if (hasRepositoryInterface || path.includes('repository') || path.includes('repo')) {
       patterns.push({
         id: 'arch-repository',
@@ -186,7 +194,10 @@ export class PatternExtractor {
         category: 'architectural',
         description: 'Data access abstraction — decouples business logic from persistence',
         filePath: file.filePath,
-        lineNumber: hasRepositoryInterface ? file.classes.find(cls => cls.implements.some(impl => impl.includes('Repository')))?.startLine || 0 : 0,
+        lineNumber: hasRepositoryInterface
+          ? file.classes.find((cls) => cls.implements.some((impl) => impl.includes('Repository')))
+              ?.startLine || 0
+          : 0,
         confidence: hasRepositoryInterface ? 0.95 : 0.85,
         severity: 'info',
       });
@@ -235,7 +246,9 @@ export class PatternExtractor {
     }
 
     // Factory pattern in file structure
-    const hasFactory = file.functions.some(f => f.name.toLowerCase().includes('factory') || f.name.toLowerCase().includes('create'));
+    const hasFactory = file.functions.some(
+      (f) => f.name.toLowerCase().includes('factory') || f.name.toLowerCase().includes('create'),
+    );
     if (hasFactory) {
       patterns.push({
         id: 'arch-factory',
@@ -260,11 +273,20 @@ export class PatternExtractor {
 
     // Singleton detection (AST-based)
     for (const cls of file.classes) {
-      const hasPrivateConstructor = cls.methods.some(method => method.name === 'constructor' && method.accessModifier === 'private');
-      const hasStaticInstance = cls.properties.some(prop => prop.name === 'instance' && prop.isStatic);
-      const hasGetInstanceMethod = cls.methods.some(method => method.name === 'getInstance' && method.isStatic);
-      
-      if ((hasPrivateConstructor && hasStaticInstance && hasGetInstanceMethod) || cls.name.toLowerCase().includes('singleton')) {
+      const hasPrivateConstructor = cls.methods.some(
+        (method) => method.name === 'constructor' && method.accessModifier === 'private',
+      );
+      const hasStaticInstance = cls.properties.some(
+        (prop) => prop.name === 'instance' && prop.isStatic,
+      );
+      const hasGetInstanceMethod = cls.methods.some(
+        (method) => method.name === 'getInstance' && method.isStatic,
+      );
+
+      if (
+        (hasPrivateConstructor && hasStaticInstance && hasGetInstanceMethod) ||
+        cls.name.toLowerCase().includes('singleton')
+      ) {
         patterns.push({
           id: 'design-singleton',
           name: 'Singleton Pattern',
@@ -272,7 +294,8 @@ export class PatternExtractor {
           description: `Class "${cls.name}" implements singleton via private constructor/static instance`,
           filePath: file.filePath,
           lineNumber: cls.startLine,
-          confidence: hasPrivateConstructor && hasStaticInstance && hasGetInstanceMethod ? 0.98 : 0.9,
+          confidence:
+            hasPrivateConstructor && hasStaticInstance && hasGetInstanceMethod ? 0.98 : 0.9,
           severity: 'info',
           suggestion: 'Consider dependency injection instead for testability',
         });
@@ -280,8 +303,12 @@ export class PatternExtractor {
     }
 
     // Observer pattern
-    const hasObserver = file.functions.some(f =>
-      f.name.includes('subscribe') || f.name.includes('on') || f.name.includes('emit') || f.name.includes('listen')
+    const hasObserver = file.functions.some(
+      (f) =>
+        f.name.includes('subscribe') ||
+        f.name.includes('on') ||
+        f.name.includes('emit') ||
+        f.name.includes('listen'),
     );
     if (hasObserver) {
       patterns.push({
@@ -297,9 +324,10 @@ export class PatternExtractor {
     }
 
     // Strategy pattern
-    const hasStrategy = file.classes.length > 1 &&
-      file.classes.some(c => c.implements.length > 0) &&
-      file.functions.some(f => f.name.includes('execute') || f.name.includes('strategy'));
+    const hasStrategy =
+      file.classes.length > 1 &&
+      file.classes.some((c) => c.implements.length > 0) &&
+      file.functions.some((f) => f.name.includes('execute') || f.name.includes('strategy'));
     if (hasStrategy) {
       patterns.push({
         id: 'design-strategy',
@@ -314,7 +342,9 @@ export class PatternExtractor {
     }
 
     // Decorator detection (TypeScript)
-    const hasDecorator = file.imports.some(i => i.source.includes('reflect-metadata') || i.source.includes('decorator'));
+    const hasDecorator = file.imports.some(
+      (i) => i.source.includes('reflect-metadata') || i.source.includes('decorator'),
+    );
     if (hasDecorator) {
       patterns.push({
         id: 'design-decorator',
@@ -358,8 +388,8 @@ export class PatternExtractor {
     // God class (>500 lines, >10 methods, or high cognitive load)
     for (const cls of file.classes) {
       const classLength = cls.endLine - cls.startLine;
-      const isGodClass = (classLength > 500) || (cls.methodsCount > 15) || (cls.cognitiveLoad > 50);
-      
+      const isGodClass = classLength > 500 || cls.methodsCount > 15 || cls.cognitiveLoad > 50;
+
       if (isGodClass) {
         patterns.push({
           id: `smell-god-class-${cls.name}`,
@@ -370,7 +400,8 @@ export class PatternExtractor {
           lineNumber: cls.startLine,
           confidence: cls.cognitiveLoad > 50 ? 0.95 : 0.8,
           severity: cls.cognitiveLoad > 50 ? 'critical' : 'warning',
-          suggestion: 'Extract cohesive groups of methods/properties into separate classes based on responsibility domains',
+          suggestion:
+            'Extract cohesive groups of methods/properties into separate classes based on responsibility domains',
         });
       }
     }
@@ -387,7 +418,8 @@ export class PatternExtractor {
           lineNumber: fn.startLine,
           confidence: 0.9,
           severity: 'warning',
-          suggestion: 'Simplify conditional logic — use early returns, strategy pattern, or extract conditions',
+          suggestion:
+            'Simplify conditional logic — use early returns, strategy pattern, or extract conditions',
         });
       }
     }
@@ -410,8 +442,10 @@ export class PatternExtractor {
     }
 
     // Primitive obsession
-    const primitiveParams = file.functions.filter(f =>
-      f.parameters.length >= 3 && f.parameters.every(p => ['string', 'number', 'boolean'].includes(p.type))
+    const primitiveParams = file.functions.filter(
+      (f) =>
+        f.parameters.length >= 3 &&
+        f.parameters.every((p) => ['string', 'number', 'boolean'].includes(p.type)),
     );
     if (primitiveParams.length > 2) {
       patterns.push({
@@ -436,9 +470,14 @@ export class PatternExtractor {
     const patterns: ExtendedPattern[] = [];
 
     // Check for consistent error handling style
-    const hasTryCatch = file.functions.some(f => f.name.includes('try') || f.name.includes('catch') || f.name.includes('handle'));
-    const hasAsyncResult = file.functions.some(f => f.isAsync && f.name.includes('Result'));
-    const hasEither = file.imports.some(i => i.source.includes('either') || i.source.includes('result') || i.source.includes('fp-ts'));
+    const hasTryCatch = file.functions.some(
+      (f) => f.name.includes('try') || f.name.includes('catch') || f.name.includes('handle'),
+    );
+    const hasAsyncResult = file.functions.some((f) => f.isAsync && f.name.includes('Result'));
+    const hasEither = file.imports.some(
+      (i) =>
+        i.source.includes('either') || i.source.includes('result') || i.source.includes('fp-ts'),
+    );
 
     if (hasTryCatch && !hasEither) {
       patterns.push({
@@ -450,7 +489,8 @@ export class PatternExtractor {
         lineNumber: 0,
         confidence: 0.8,
         severity: 'info',
-        suggestion: 'Consider Result/Either types for expected errors, exceptions only for exceptional cases',
+        suggestion:
+          'Consider Result/Either types for expected errors, exceptions only for exceptional cases',
       });
     }
 
@@ -476,7 +516,7 @@ export class PatternExtractor {
   private detectConcurrencyPatterns(file: FileStructure): ExtendedPattern[] {
     const patterns: ExtendedPattern[] = [];
 
-    const asyncCount = file.functions.filter(f => f.isAsync).length;
+    const asyncCount = file.functions.filter((f) => f.isAsync).length;
     const totalFns = file.functions.length;
 
     if (totalFns > 0 && asyncCount / totalFns > 0.5) {
@@ -493,7 +533,7 @@ export class PatternExtractor {
       });
     }
 
-    const hasWorkerThreads = file.imports.some(i => i.source === 'node:worker_threads');
+    const hasWorkerThreads = file.imports.some((i) => i.source === 'node:worker_threads');
     if (hasWorkerThreads) {
       patterns.push({
         id: 'conc-worker-threads',
@@ -519,8 +559,9 @@ export class PatternExtractor {
     if (file.language !== 'typescript') return patterns;
 
     // Check for 'any' usage (heuristic based on function signatures)
-    const anyUsage = file.functions.filter(f =>
-      f.signature.includes(': any') || f.signature.includes('<any>') || f.returnType === 'any'
+    const anyUsage = file.functions.filter(
+      (f) =>
+        f.signature.includes(': any') || f.signature.includes('<any>') || f.returnType === 'any',
     );
 
     if (anyUsage.length > 0) {
@@ -538,8 +579,9 @@ export class PatternExtractor {
     }
 
     // Check for type guards / discriminated unions
-    const hasTypeGuards = file.functions.some(f =>
-      f.name.startsWith('is') && f.returnType.includes('=>') || f.returnType.includes('is ')
+    const hasTypeGuards = file.functions.some(
+      (f) =>
+        (f.name.startsWith('is') && f.returnType.includes('=>')) || f.returnType.includes('is '),
     );
     if (hasTypeGuards) {
       patterns.push({

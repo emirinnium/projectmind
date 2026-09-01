@@ -16,7 +16,11 @@ export interface KGGraphLike {
   getFileByPath(path: string): { id?: number; path: string } | null;
   getImports?(fileId: number): Array<{ source: string; named: string[]; kind: string }>;
   getDependents?(fileId: number): Array<{ source: string; named: string[]; kind: string }>;
-  findSimilarFiles?(embedding: number[], threshold?: number, limit?: number): Array<{ path: string; score?: number }>;
+  findSimilarFiles?(
+    embedding: number[],
+    threshold?: number,
+    limit?: number,
+  ): Array<{ path: string; score?: number }>;
 }
 
 /**
@@ -27,7 +31,11 @@ export interface KgAdapterSource {
   getFileByPath(path: string): { id?: number; path?: string; relativePath?: string } | null;
   getImports?(fileId: number): Array<{ source: string; named?: string[]; kind?: string }>;
   getDependents?(fileId: number): Array<{ path?: string; relativePath?: string }>;
-  findSimilarFiles?(embedding: number[], threshold?: number, limit?: number): Array<{ path?: string; relativePath?: string }>;
+  findSimilarFiles?(
+    embedding: number[],
+    threshold?: number,
+    limit?: number,
+  ): Array<{ path?: string; relativePath?: string }>;
 }
 
 /**
@@ -150,14 +158,67 @@ export class IntentEngine {
   }
 
   private readonly intentKeywords: Record<IntentType, string[]> = {
-    read: ['read', 'find', 'search', 'locate', 'discover', 'view', 'show', 'get', 'fetch', 'query', 'select', 'db'],
-    write: ['write', 'create', 'add', 'insert', 'modify', 'update', 'edit', 'generate', 'produce', 'save', 'delete'],
-    validate: ['validate', 'check', 'verify', 'test', 'lint', 'audit', 'inspect', 'ensure', 'confirm', 'assert', 'guard'],
-    transform: ['transform', 'convert', 'refactor', 'rewrite', 'migrate', 'change', 'adapt', 'restructure', 'map', 'parse', 'serialize'],
+    read: [
+      'read',
+      'find',
+      'search',
+      'locate',
+      'discover',
+      'view',
+      'show',
+      'get',
+      'fetch',
+      'query',
+      'select',
+      'db',
+    ],
+    write: [
+      'write',
+      'create',
+      'add',
+      'insert',
+      'modify',
+      'update',
+      'edit',
+      'generate',
+      'produce',
+      'save',
+      'delete',
+    ],
+    validate: [
+      'validate',
+      'check',
+      'verify',
+      'test',
+      'lint',
+      'audit',
+      'inspect',
+      'ensure',
+      'confirm',
+      'assert',
+      'guard',
+    ],
+    transform: [
+      'transform',
+      'convert',
+      'refactor',
+      'rewrite',
+      'migrate',
+      'change',
+      'adapt',
+      'restructure',
+      'map',
+      'parse',
+      'serialize',
+    ],
   };
 
   private resolveQueryText(query: IntentQuery): string {
-    if (query.naturalLanguage !== undefined && query.naturalLanguage !== null && query.naturalLanguage !== '') {
+    if (
+      query.naturalLanguage !== undefined &&
+      query.naturalLanguage !== null &&
+      query.naturalLanguage !== ''
+    ) {
       return query.naturalLanguage;
     }
     if (query.text !== undefined && query.text !== null && query.text !== '') {
@@ -167,7 +228,15 @@ export class IntentEngine {
   }
 
   classifyIntent(query: IntentQuery): IntentType {
-    const text = (this.resolveQueryText(query) + ' ' + (query.context || '') + ' ' + (query.structuralHints?.join(' ') || '') + ' ' + (query.expectedOutputs?.join(' ') || '')).toLowerCase();
+    const text = (
+      this.resolveQueryText(query) +
+      ' ' +
+      (query.context || '') +
+      ' ' +
+      (query.structuralHints?.join(' ') || '') +
+      ' ' +
+      (query.expectedOutputs?.join(' ') || '')
+    ).toLowerCase();
     const scores: Record<IntentType, number> = { read: 0, write: 0, validate: 0, transform: 0 };
     for (const [intent, keywords] of Object.entries(this.intentKeywords)) {
       for (const kw of keywords) {
@@ -182,7 +251,10 @@ export class IntentEngine {
     let best: IntentType = 'read';
     let bestScore = -1;
     for (const [intent, score] of Object.entries(scores)) {
-      if (score > bestScore) { bestScore = score; best = intent as IntentType; }
+      if (score > bestScore) {
+        bestScore = score;
+        best = intent as IntentType;
+      }
     }
     return best;
   }
@@ -207,7 +279,8 @@ export class IntentEngine {
     let hits = 0;
     if (intent === 'read') {
       for (const line of lines) {
-        if (/\b(readFileSync|readFile|db\.select|db\.query|get\(|fetch\(|find\()\b/.test(line)) hits++;
+        if (/\b(readFileSync|readFile|db\.select|db\.query|get\(|fetch\(|find\()\b/.test(line))
+          hits++;
       }
     } else if (intent === 'write') {
       for (const line of lines) {
@@ -215,7 +288,10 @@ export class IntentEngine {
       }
     } else if (intent === 'validate') {
       for (const line of lines) {
-        if (/\b(if\s*\(.*\)\s*throw|assert\(|expect\(|z\.\w+|is[A-Z]\w+\(|type\s+guard)\b/.test(line)) hits++;
+        if (
+          /\b(if\s*\(.*\)\s*throw|assert\(|expect\(|z\.\w+|is[A-Z]\w+\(|type\s+guard)\b/.test(line)
+        )
+          hits++;
       }
     } else if (intent === 'transform') {
       for (const line of lines) {
@@ -226,7 +302,10 @@ export class IntentEngine {
   }
 
   // F4: semantic scoring with real embeddings + lexical fallback
-  async computeSemanticScore(queryText: string, filePath: string): Promise<{ score: number; source: 'embedding' | 'lexical' }> {
+  async computeSemanticScore(
+    queryText: string,
+    filePath: string,
+  ): Promise<{ score: number; source: 'embedding' | 'lexical' }> {
     const readablePath = this.resolveFilePath(filePath);
     try {
       // Outside the project root — never read it; degrade to a zero lexical score.
@@ -239,12 +318,21 @@ export class IntentEngine {
       return { score: Math.max(0, Math.min(1, sim)), source: 'embedding' };
     } catch (e) {
       // Graceful lexical fallback
-      logger.warn(`Embedding-based semantic score failed, falling back to lexical: ${e instanceof Error ? e.message : String(e)}`);
+      logger.warn(
+        `Embedding-based semantic score failed, falling back to lexical: ${e instanceof Error ? e.message : String(e)}`,
+      );
       const queryTokens = new Set(queryText.toLowerCase().split(/\W+/).filter(Boolean));
       let fileContent = '';
-      try { if (readablePath) fileContent = readFileSync(readablePath, 'utf-8'); } catch (e) { logger.warn(`Failed to read file for lexical fallback: ${e instanceof Error ? e.message : String(e)}`, { filePath: readablePath ?? 'unknown' }); }
+      try {
+        if (readablePath) fileContent = readFileSync(readablePath, 'utf-8');
+      } catch (e) {
+        logger.warn(
+          `Failed to read file for lexical fallback: ${e instanceof Error ? e.message : String(e)}`,
+          { filePath: readablePath ?? 'unknown' },
+        );
+      }
       const fileTokens = new Set(fileContent.toLowerCase().split(/\W+/).filter(Boolean));
-      const intersection = new Set([...queryTokens].filter(t => fileTokens.has(t)));
+      const intersection = new Set([...queryTokens].filter((t) => fileTokens.has(t)));
       const union = new Set([...queryTokens, ...fileTokens]);
       const jaccard = union.size > 0 ? intersection.size / union.size : 0;
       return { score: Math.min(1, jaccard), source: 'lexical' };
@@ -256,7 +344,7 @@ export class IntentEngine {
     filePath: string,
     kgGraph: KGGraphLike,
     semanticScore?: number,
-    _semanticSource?: 'embedding' | 'lexical'
+    _semanticSource?: 'embedding' | 'lexical',
   ): HybridScore {
     const intent = this.classifyIntent(query);
     const intentScore = this.intentScore(intent, filePath);
@@ -279,7 +367,10 @@ export class IntentEngine {
     }
 
     const sem = semanticScore ?? SIMILARITY_THRESHOLD;
-    const total = this.weights.semantic * sem + this.weights.structural * structuralScore + this.weights.intent * intentScore;
+    const total =
+      this.weights.semantic * sem +
+      this.weights.structural * structuralScore +
+      this.weights.intent * intentScore;
     return {
       semantic: sem,
       structural: structuralScore,
@@ -289,7 +380,11 @@ export class IntentEngine {
   }
 
   // F4: fix KG adapter — findSimilarFiles returns FileInfo[] WITHOUT score; derive from rank
-  deriveSemanticFromSimilar(queryEmb: number[], similarResults: Array<{ path: string; score?: number }>, _limit = 5): Array<{ path: string; score: number; source: 'embedding' | 'lexical' }> {
+  deriveSemanticFromSimilar(
+    queryEmb: number[],
+    similarResults: Array<{ path: string; score?: number }>,
+    _limit = 5,
+  ): Array<{ path: string; score: number; source: 'embedding' | 'lexical' }> {
     const out: Array<{ path: string; score: number; source: 'embedding' | 'lexical' }> = [];
     for (let i = 0; i < similarResults.length; i++) {
       const rank = i + 1;
@@ -299,7 +394,11 @@ export class IntentEngine {
     return out;
   }
 
-  async search(query: IntentQuery, kgGraph?: KGGraphLike, limit = MAX_SIMILAR_RESULTS): Promise<SearchResult[]> {
+  async search(
+    query: IntentQuery,
+    kgGraph?: KGGraphLike,
+    limit = MAX_SIMILAR_RESULTS,
+  ): Promise<SearchResult[]> {
     const results: SearchResult[] = [];
     const queryText = this.resolveQueryText(query);
     const intent = this.classifyIntent(query);
@@ -326,7 +425,8 @@ export class IntentEngine {
           const s = similar[i];
           let path = '';
           if (this.db) {
-            const row = this.db.prepare('SELECT path FROM files WHERE id = ?').get(Number(s.id)) as { path?: string } | undefined;
+            const row = this.db.prepare('SELECT path FROM files WHERE id = ?').get(Number(s.id)) as
+              { path?: string } | undefined;
             if (row?.path) path = row.path;
           }
           if (path) {
@@ -335,7 +435,9 @@ export class IntentEngine {
           }
         }
       } catch (e) {
-        logger.warn(`VecIndex fallback search failed: ${e instanceof Error ? e.message : String(e)}`);
+        logger.warn(
+          `VecIndex fallback search failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
       }
     }
 
@@ -345,7 +447,10 @@ export class IntentEngine {
         const lexical = await this.computeSemanticScore(queryText, query.filePath);
         semanticFiles.push({ path: query.filePath, score: lexical.score, source: lexical.source });
       } catch (e) {
-        logger.warn(`Lexical fallback search failed: ${e instanceof Error ? e.message : String(e)}`, { filePath: query.filePath });
+        logger.warn(
+          `Lexical fallback search failed: ${e instanceof Error ? e.message : String(e)}`,
+          { filePath: query.filePath },
+        );
       }
     }
 
@@ -353,7 +458,13 @@ export class IntentEngine {
     for (const sf of semanticFiles) {
       if (seen.has(sf.path)) continue;
       seen.add(sf.path);
-      const score = this.computeHybridScore(query, sf.path, kgGraph || { getFileByPath: () => null }, sf.score, sf.source);
+      const score = this.computeHybridScore(
+        query,
+        sf.path,
+        kgGraph || { getFileByPath: () => null },
+        sf.score,
+        sf.source,
+      );
       // F5: snippet = actual file content snippet (most relevant line window)
       let snippet = '';
       try {
@@ -362,9 +473,12 @@ export class IntentEngine {
           const content = readFileSync(resolved, 'utf-8');
           const lines = content.split(/\r?\n/);
           // Pick a window around first marker match or first 3 lines
-          const markerIdx = lines.findIndex(l => this.getMarkers(intent, l) > 0);
+          const markerIdx = lines.findIndex((l) => this.getMarkers(intent, l) > 0);
           const start = Math.max(0, (markerIdx >= 0 ? markerIdx : 0) - 1);
-          snippet = lines.slice(start, start + 3).join('\n').substring(0, 200);
+          snippet = lines
+            .slice(start, start + 3)
+            .join('\n')
+            .substring(0, 200);
         }
       } catch {
         snippet = '';
@@ -400,13 +514,24 @@ export class IntentEngine {
                   const content = readFileSync(resolved, 'utf-8');
                   snippet = content.split(/\r?\n/).slice(0, 3).join('\n').substring(0, 200);
                 }
-              } catch { snippet = seed; }
-              results.push({ filePath: seed, score, rank: 0, snippet: snippet || seed, source: 'embedding' });
+              } catch {
+                snippet = seed;
+              }
+              results.push({
+                filePath: seed,
+                score,
+                rank: 0,
+                snippet: snippet || seed,
+                source: 'embedding',
+              });
             }
           }
         }
       } catch (e) {
-        logger.warn(`Structural neighbor expansion failed: ${e instanceof Error ? e.message : String(e)}`, { filePath: query.filePath });
+        logger.warn(
+          `Structural neighbor expansion failed: ${e instanceof Error ? e.message : String(e)}`,
+          { filePath: query.filePath },
+        );
       }
     }
 
@@ -418,7 +543,9 @@ export class IntentEngine {
 
 function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) return 0;
-  let dot = 0, na = 0, nb = 0;
+  let dot = 0,
+    na = 0,
+    nb = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
     na += a[i] * a[i];

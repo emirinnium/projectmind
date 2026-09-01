@@ -50,13 +50,13 @@ export interface SuggestNextFilesArgs {
  */
 function resolveTarget(
   deps: McpDependencies,
-  args: SuggestNextFilesArgs
+  args: SuggestNextFilesArgs,
 ): { fileId: number; relativePath: string; cognitiveLoad: number } {
   if (args.relativePath !== undefined && args.relativePath.trim() !== '') {
     const file = deps.kg.getFileByPath(args.relativePath);
     if (!file) {
       throw new Error(
-        `suggest_next_files: file '${args.relativePath}' not found in the knowledge graph. Run scan_project first.`
+        `suggest_next_files: file '${args.relativePath}' not found in the knowledge graph. Run scan_project first.`,
       );
     }
     return { fileId: file.id, relativePath: file.relativePath, cognitiveLoad: file.cognitiveLoad };
@@ -65,11 +65,15 @@ function resolveTarget(
   if (args.fileId !== undefined && args.fileId.trim() !== '') {
     const id = Number(args.fileId);
     if (!Number.isInteger(id) || id <= 0) {
-      throw new Error(`suggest_next_files: invalid fileId '${args.fileId}' — expected a positive integer.`);
+      throw new Error(
+        `suggest_next_files: invalid fileId '${args.fileId}' — expected a positive integer.`,
+      );
     }
     const file = deps.kg.getAllFiles().find((f) => f.id === id);
     if (!file) {
-      throw new Error(`suggest_next_files: file id ${id} not found in the knowledge graph. Run scan_project first.`);
+      throw new Error(
+        `suggest_next_files: file id ${id} not found in the knowledge graph. Run scan_project first.`,
+      );
     }
     return { fileId: file.id, relativePath: file.relativePath, cognitiveLoad: file.cognitiveLoad };
   }
@@ -85,7 +89,10 @@ function resolveTarget(
  * `predictMergeRiskForTool` / `semanticSearchForTool` pattern of exporting the
  * core logic for tests.
  */
-export function suggestNextFilesForTool(deps: McpDependencies, args: SuggestNextFilesArgs): UserContextResult {
+export function suggestNextFilesForTool(
+  deps: McpDependencies,
+  args: SuggestNextFilesArgs,
+): UserContextResult {
   const target = resolveTarget(deps, args);
   return assembleUserContext(deps.kg, {
     fileId: target.fileId,
@@ -119,7 +126,9 @@ export function registerSuggestNextFilesTool(server: McpServer, deps: McpDepende
         task: z
           .string()
           .optional()
-          .describe('Free-text description of the task (e.g. "add rate limiting") — used for keyword boosts'),
+          .describe(
+            'Free-text description of the task (e.g. "add rate limiting") — used for keyword boosts',
+          ),
         limit: z
           .number()
           .int()
@@ -146,6 +155,6 @@ export function registerSuggestNextFilesTool(server: McpServer, deps: McpDepende
           content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
         };
       }
-    }
+    },
   );
 }

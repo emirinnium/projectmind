@@ -7,7 +7,8 @@ import fg from 'fast-glob';
 export interface ContractTest {
   contractId: string;
   contractName: string;
-  contractType: 'layer' | 'forbidden-import' | 'forbidden-keyword' | 'required-import' | 'max-lines' | 'custom';
+  contractType:
+    'layer' | 'forbidden-import' | 'forbidden-keyword' | 'required-import' | 'max-lines' | 'custom';
   testType: 'positive' | 'negative';
   filePath: string;
   expectedResult: 'pass' | 'fail';
@@ -36,89 +37,107 @@ export function createContractTestCommand(): Command {
     .option('--output-dir <dir>', 'Output directory for generated tests', 'tests/contracts')
     .option('--format <fmt>', 'Output: text|json', 'text')
     .option('-o, --output <file>', 'Write to file')
-    .action(asyncHandler(async (opts: { generate: boolean; run: boolean; framework: string; outputDir: string; format: string; output: string }) => {
-      await withService(['scale', 'coherence'], async (_ctx, _services) => {
-        const config = loadConfig();
-        
-        output.section('Contract Test Generator');
-        output.kv('Framework', opts.framework);
-        output.kv('Output dir', opts.outputDir);
-        
-        // Get contracts from contract engine
-        const contracts = await getContracts(config);
-        
-        if (contracts.length === 0) {
-          output.warn('No contracts found. Configure contracts in .projectmindrc.json');
-          return;
-        }
-        
-        output.kv('Contracts found', contracts.length);
-        
-        const testFiles: { fileName: string; content: string }[] = [];
-        
-        if (opts.generate) {
-          output.section('Generating Contract Tests');
-          
-          const generated = generateContractTests(contracts, opts.framework, config);
-          testFiles.push(...generated);
-          
-          const outDir = join(config.projectRoot, opts.outputDir);
-          if (!existsSync(outDir)) {
-            mkdirSync(outDir, { recursive: true });
-          }
-          
-          for (const { fileName, content } of generated) {
-            const outputPath = join(outDir, fileName);
-            writeFileSync(outputPath, content);
-            output.success(`Generated: ${outputPath}`);
-          }
-          
-          output.success(`Generated ${generated.length} test file(s) in ${opts.outputDir}`);
-        }
-        
-        if (opts.run) {
-          output.section('Running Contract Tests');
-          output.info('Evaluating contracts against source files...');
-          
-          // Real evaluation: the ContractEngine scans actual project sources
-          // for violations of every configured contract.
-          const results = runContractEvaluation(config.projectRoot, contracts);
-          
-          output.kv('Files scanned', results.filesScanned);
-          output.kv('Contracts evaluated', results.total);
-          output.kv('Passed', results.passed);
-          output.kv('Failed', results.failed);
-          
-          if (results.failed > 0) {
-            output.warn('Some contract tests failed');
-            for (const failure of results.failures.slice(0, 10)) {
-              output.kv(`  ❌ ${failure.contract}`, failure.reason);
+    .action(
+      asyncHandler(
+        async (opts: {
+          generate: boolean;
+          run: boolean;
+          framework: string;
+          outputDir: string;
+          format: string;
+          output: string;
+        }) => {
+          await withService(['scale', 'coherence'], async (_ctx, _services) => {
+            const config = loadConfig();
+
+            output.section('Contract Test Generator');
+            output.kv('Framework', opts.framework);
+            output.kv('Output dir', opts.outputDir);
+
+            // Get contracts from contract engine
+            const contracts = await getContracts(config);
+
+            if (contracts.length === 0) {
+              output.warn('No contracts found. Configure contracts in .projectmindrc.json');
+              return;
             }
-          } else {
-            output.success('All contract tests passed!');
-          }
-        }
-        
-        if (!opts.generate && !opts.run) {
-          // List contracts with test suggestions
-          output.section('Contract Test Suggestions');
-          
-          for (const contract of contracts) {
-            const tests = suggestContractTests(contract);
-            output.kv(`${contract.name} (${contract.id})`, `${tests.length} test(s)`);
-            for (const test of tests.slice(0, 3)) {
-              output.kv(`  • ${test.description}`, test.type);
+
+            output.kv('Contracts found', contracts.length);
+
+            const testFiles: { fileName: string; content: string }[] = [];
+
+            if (opts.generate) {
+              output.section('Generating Contract Tests');
+
+              const generated = generateContractTests(contracts, opts.framework, config);
+              testFiles.push(...generated);
+
+              const outDir = join(config.projectRoot, opts.outputDir);
+              if (!existsSync(outDir)) {
+                mkdirSync(outDir, { recursive: true });
+              }
+
+              for (const { fileName, content } of generated) {
+                const outputPath = join(outDir, fileName);
+                writeFileSync(outputPath, content);
+                output.success(`Generated: ${outputPath}`);
+              }
+
+              output.success(`Generated ${generated.length} test file(s) in ${opts.outputDir}`);
             }
-          }
-        }
-        
-        if (opts.output) {
-          writeFileSync(opts.output, JSON.stringify({ contracts, testFiles: opts.generate ? testFiles.length : 0 }, null, 2));
-          output.success(`Written to ${opts.output}`);
-        }
-      });
-    }));
-  
+
+            if (opts.run) {
+              output.section('Running Contract Tests');
+              output.info('Evaluating contracts against source files...');
+
+              // Real evaluation: the ContractEngine scans actual project sources
+              // for violations of every configured contract.
+              const results = runContractEvaluation(config.projectRoot, contracts);
+
+              output.kv('Files scanned', results.filesScanned);
+              output.kv('Contracts evaluated', results.total);
+              output.kv('Passed', results.passed);
+              output.kv('Failed', results.failed);
+
+              if (results.failed > 0) {
+                output.warn('Some contract tests failed');
+                for (const failure of results.failures.slice(0, 10)) {
+                  output.kv(`  ❌ ${failure.contract}`, failure.reason);
+                }
+              } else {
+                output.success('All contract tests passed!');
+              }
+            }
+
+            if (!opts.generate && !opts.run) {
+              // List contracts with test suggestions
+              output.section('Contract Test Suggestions');
+
+              for (const contract of contracts) {
+                const tests = suggestContractTests(contract);
+                output.kv(`${contract.name} (${contract.id})`, `${tests.length} test(s)`);
+                for (const test of tests.slice(0, 3)) {
+                  output.kv(`  • ${test.description}`, test.type);
+                }
+              }
+            }
+
+            if (opts.output) {
+              writeFileSync(
+                opts.output,
+                JSON.stringify(
+                  { contracts, testFiles: opts.generate ? testFiles.length : 0 },
+                  null,
+                  2,
+                ),
+              );
+              output.success(`Written to ${opts.output}`);
+            }
+          });
+        },
+      ),
+    );
+
   return contractTestCmd;
 }
 
@@ -130,9 +149,13 @@ async function getContracts(_config: { projectRoot: string }): Promise<ContractL
   return new ContractEngine().getContracts() as ContractLike[];
 }
 
-function generateContractTests(contracts: ContractLike[], framework: string, _config: { projectRoot: string }): { fileName: string; content: string }[] {
+function generateContractTests(
+  contracts: ContractLike[],
+  framework: string,
+  _config: { projectRoot: string },
+): { fileName: string; content: string }[] {
   const testFiles: { fileName: string; content: string }[] = [];
-  
+
   // Group contracts by source pattern
   const byPattern = new Map<string, typeof contracts>();
   for (const contract of contracts) {
@@ -140,24 +163,27 @@ function generateContractTests(contracts: ContractLike[], framework: string, _co
     if (!byPattern.has(pattern)) byPattern.set(pattern, []);
     byPattern.get(pattern)!.push(contract);
   }
-  
+
   for (const [pattern, patternContracts] of byPattern) {
     const fileName = `contract-${pattern.replace(/[^a-zA-Z0-9]/g, '-')}.test.ts`;
     const content = generateTestFile(patternContracts, pattern, framework);
     testFiles.push({ fileName, content });
   }
-  
+
   return testFiles;
 }
 
 function generateTestFile(contracts: ContractLike[], pattern: string, framework: string): string {
   const isVitest = framework === 'vitest';
-  const importStmt = isVitest 
+  const importStmt = isVitest
     ? `import { describe, it, expect, vi } from 'vitest';`
     : `import { describe, it, expect, vi } from '@jest/globals';`;
-  
-  const contractTests = contracts.map(contract => {
-    const testCases = generateContractTestCases(contract).map(tc => `
+
+  const contractTests = contracts
+    .map((contract) => {
+      const testCases = generateContractTestCases(contract)
+        .map(
+          (tc) => `
   it('${tc.description}', () => {
     const code = \`${tc.testCode}\`;
     const violations = contractEngine.evaluate('${tc.filePath}', code);
@@ -171,14 +197,17 @@ function generateTestFile(contracts: ContractLike[], pattern: string, framework:
       expect(violation?.severity).toBe('${contract.severity}');
       expect(violation?.message).toContain('${tc.description}');
     }
-  }`).join('\n');
-    
-    return `
+  }`,
+        )
+        .join('\n');
+
+      return `
 describe('${contract.name} (${contract.id})', () => {
 ${testCases}
 });`;
-  }).join('\n\n');
-  
+    })
+    .join('\n\n');
+
   return `${importStmt}
 // Generated by ProjectMind contract-test.
 // Resolves the engine from the installed ProjectMind package — no path
@@ -192,9 +221,16 @@ ${contractTests}
 `;
 }
 
-function generateContractTestCases(contract: ContractLike): { description: string; filePath: string; testCode: string; expectedResult: 'pass' | 'fail' }[] {
-  const cases: { description: string; filePath: string; testCode: string; expectedResult: 'pass' | 'fail' }[] = [];
-  
+function generateContractTestCases(
+  contract: ContractLike,
+): { description: string; filePath: string; testCode: string; expectedResult: 'pass' | 'fail' }[] {
+  const cases: {
+    description: string;
+    filePath: string;
+    testCode: string;
+    expectedResult: 'pass' | 'fail';
+  }[] = [];
+
   // Negative test cases (should trigger violations)
   if (contract.forbiddenKeywords) {
     for (const kw of contract.forbiddenKeywords) {
@@ -206,7 +242,7 @@ function generateContractTestCases(contract: ContractLike): { description: strin
       });
     }
   }
-  
+
   if (contract.forbiddenImports) {
     for (const imp of contract.forbiddenImports) {
       cases.push({
@@ -217,7 +253,7 @@ function generateContractTestCases(contract: ContractLike): { description: strin
       });
     }
   }
-  
+
   if (contract.requiredImports) {
     for (const imp of contract.requiredImports) {
       cases.push({
@@ -228,7 +264,7 @@ function generateContractTestCases(contract: ContractLike): { description: strin
       });
     }
   }
-  
+
   if (contract.maxLines) {
     cases.push({
       description: `should detect file exceeding ${contract.maxLines} lines`,
@@ -237,7 +273,7 @@ function generateContractTestCases(contract: ContractLike): { description: strin
       expectedResult: 'fail',
     });
   }
-  
+
   // Positive test cases (should pass)
   cases.push({
     description: `should pass for compliant code`,
@@ -245,13 +281,13 @@ function generateContractTestCases(contract: ContractLike): { description: strin
     testCode: `export function compliant() { return 'ok'; }`,
     expectedResult: 'pass',
   });
-  
+
   return cases;
 }
 
 function suggestContractTests(contract: ContractLike): { description: string; type: string }[] {
   const suggestions: { description: string; type: string }[] = [];
-  
+
   if (contract.forbiddenKeywords) {
     for (const kw of contract.forbiddenKeywords) {
       suggestions.push({
@@ -260,7 +296,7 @@ function suggestContractTests(contract: ContractLike): { description: string; ty
       });
     }
   }
-  
+
   if (contract.forbiddenImports) {
     for (const imp of contract.forbiddenImports) {
       suggestions.push({
@@ -269,7 +305,7 @@ function suggestContractTests(contract: ContractLike): { description: string; ty
       });
     }
   }
-  
+
   if (contract.requiredImports) {
     for (const imp of contract.requiredImports) {
       suggestions.push({
@@ -278,19 +314,19 @@ function suggestContractTests(contract: ContractLike): { description: string; ty
       });
     }
   }
-  
+
   if (contract.maxLines) {
     suggestions.push({
       description: `Enforce max ${contract.maxLines} lines per file`,
       type: 'Negative (should fail)',
     });
   }
-  
+
   suggestions.push({
     description: 'Pass for compliant code',
     type: 'Positive (should pass)',
   });
-  
+
   return suggestions;
 }
 
@@ -299,7 +335,10 @@ function suggestContractTests(contract: ContractLike): { description: string; ty
  * ContractEngine. A contract "fails" when at least one matching source file
  * violates it; per-violation details are returned for reporting.
  */
-function runContractEvaluation(projectRoot: string, contracts: ContractLike[]): {
+function runContractEvaluation(
+  projectRoot: string,
+  contracts: ContractLike[],
+): {
   total: number;
   passed: number;
   failed: number;
@@ -308,18 +347,22 @@ function runContractEvaluation(projectRoot: string, contracts: ContractLike[]): 
 } {
   const engine = new ContractEngine(contracts as never);
 
-  const sourceFiles = fg.sync(
-    ['**/*.{ts,tsx,js,jsx,mjs,cjs}'],
-    {
-      cwd: projectRoot,
-      ignore: [
-        '**/node_modules/**', '**/dist/**', '**/dist-tests/**', '**/.git/**',
-        '**/coverage/**', '**/build/**', '**/out/**', '**/.next/**',
-        '**/*.min.*', '**/*.d.ts',
-      ],
-      absolute: false,
-    }
-  );
+  const sourceFiles = fg.sync(['**/*.{ts,tsx,js,jsx,mjs,cjs}'], {
+    cwd: projectRoot,
+    ignore: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/dist-tests/**',
+      '**/.git/**',
+      '**/coverage/**',
+      '**/build/**',
+      '**/out/**',
+      '**/.next/**',
+      '**/*.min.*',
+      '**/*.d.ts',
+    ],
+    absolute: false,
+  });
 
   // violations[contractId] = list of human-readable violation descriptions
   const violations = new Map<string, string[]>();

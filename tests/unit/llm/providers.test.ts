@@ -51,7 +51,7 @@ function makeJsonResponse(data: unknown, ok = true, status = 200): Response {
     body: null,
     bodyUsed: false,
     arrayBuffer: async () => new ArrayBuffer(0),
-    blob: async () => new Blob(),
+    blob: async () => new Blob([]),
     formData: async () => new FormData(),
   } as unknown as Response;
 }
@@ -138,17 +138,12 @@ describe('LLM Provider Defaults & Configuration', () => {
         ...baseConfig,
         apiKey: '',
       });
-      await expect(provider.analyze('test')).rejects.toThrow(
-        'Anthropic API key not configured'
-      );
+      await expect(provider.analyze('test')).rejects.toThrow('Anthropic API key not configured');
     });
 
     it('calls validateApiUrl with correct default URL', () => {
       new AnthropicProvider(baseConfig);
-      expect(validateApiUrl).toHaveBeenCalledWith(
-        'https://api.anthropic.com/v1',
-        'anthropic'
-      );
+      expect(validateApiUrl).toHaveBeenCalledWith('https://api.anthropic.com/v1', 'anthropic');
     });
 
     it('uses custom apiUrl when provided', () => {
@@ -156,10 +151,7 @@ describe('LLM Provider Defaults & Configuration', () => {
         ...baseConfig,
         apiUrl: 'https://api.anthropic.com/v1',
       });
-      expect(validateApiUrl).toHaveBeenCalledWith(
-        'https://api.anthropic.com/v1',
-        'anthropic'
-      );
+      expect(validateApiUrl).toHaveBeenCalledWith('https://api.anthropic.com/v1', 'anthropic');
     });
   });
 
@@ -194,17 +186,12 @@ describe('LLM Provider Defaults & Configuration', () => {
 
     it('throws when analyze is called without API key', async () => {
       const provider = new OpenAIProvider({ ...baseConfig, apiKey: '' });
-      await expect(provider.analyze('test')).rejects.toThrow(
-        'OpenAI API key not configured'
-      );
+      await expect(provider.analyze('test')).rejects.toThrow('OpenAI API key not configured');
     });
 
     it('calls validateApiUrl with correct default URL', () => {
       new OpenAIProvider(baseConfig);
-      expect(validateApiUrl).toHaveBeenCalledWith(
-        'https://api.openai.com/v1',
-        'openai'
-      );
+      expect(validateApiUrl).toHaveBeenCalledWith('https://api.openai.com/v1', 'openai');
     });
   });
 
@@ -236,10 +223,7 @@ describe('LLM Provider Defaults & Configuration', () => {
 
     it('calls validateApiUrl with default Ollama URL', () => {
       new OllamaProvider(baseConfig);
-      expect(validateApiUrl).toHaveBeenCalledWith(
-        'http://localhost:11434/api',
-        'ollama'
-      );
+      expect(validateApiUrl).toHaveBeenCalledWith('http://localhost:11434/api', 'ollama');
     });
 
     it('uses custom apiUrl when provided', () => {
@@ -247,10 +231,7 @@ describe('LLM Provider Defaults & Configuration', () => {
         ...baseConfig,
         apiUrl: 'http://192.168.1.100:11434/api',
       });
-      expect(validateApiUrl).toHaveBeenCalledWith(
-        'http://192.168.1.100:11434/api',
-        'ollama'
-      );
+      expect(validateApiUrl).toHaveBeenCalledWith('http://192.168.1.100:11434/api', 'ollama');
     });
   });
 
@@ -285,17 +266,12 @@ describe('LLM Provider Defaults & Configuration', () => {
 
     it('throws when analyze is called without API key', async () => {
       const provider = new GroqProvider({ ...baseConfig, apiKey: '' });
-      await expect(provider.analyze('test')).rejects.toThrow(
-        'Groq API key not configured'
-      );
+      await expect(provider.analyze('test')).rejects.toThrow('Groq API key not configured');
     });
 
     it('calls validateApiUrl with correct default URL', () => {
       new GroqProvider(baseConfig);
-      expect(validateApiUrl).toHaveBeenCalledWith(
-        'https://api.groq.com/openai/v1',
-        'groq'
-      );
+      expect(validateApiUrl).toHaveBeenCalledWith('https://api.groq.com/openai/v1', 'groq');
     });
   });
 
@@ -330,16 +306,14 @@ describe('LLM Provider Defaults & Configuration', () => {
 
     it('throws when analyze is called without API key', async () => {
       const provider = new GeminiProvider({ ...baseConfig, apiKey: '' });
-      await expect(provider.analyze('test')).rejects.toThrow(
-        'Gemini API key not configured'
-      );
+      await expect(provider.analyze('test')).rejects.toThrow('Gemini API key not configured');
     });
 
     it('calls validateApiUrl with correct default URL', () => {
       new GeminiProvider(baseConfig);
       expect(validateApiUrl).toHaveBeenCalledWith(
         'https://generativelanguage.googleapis.com/v1beta',
-        'gemini'
+        'gemini',
       );
     });
   });
@@ -360,7 +334,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
         makeJsonResponse({
           content: [{ text: 'Test response' }],
           usage: { input_tokens: 10, output_tokens: 20 },
-        })
+        }),
       );
 
       const result = await provider.analyze('Hello', 'System prompt', 0.5);
@@ -391,13 +365,9 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
         apiKey: 'sk-ant-test-key',
       });
 
-      mockFetch.mockResolvedValueOnce(
-        makeJsonResponse({ error: 'Unauthorized' }, false, 401)
-      );
+      mockFetch.mockResolvedValueOnce(makeJsonResponse({ error: 'Unauthorized' }, false, 401));
 
-      await expect(provider.analyze('Hello')).rejects.toThrow(
-        'Anthropic API error: 401'
-      );
+      await expect(provider.analyze('Hello')).rejects.toThrow('Anthropic API error: 401');
     });
 
     it('extracts reasoning trace from numbered steps', async () => {
@@ -412,7 +382,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
         makeJsonResponse({
           content: [{ text: content }],
           usage: { input_tokens: 5, output_tokens: 10 },
-        })
+        }),
       );
 
       const result = await provider.analyze('Analyze this');
@@ -434,7 +404,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
         makeJsonResponse({
           choices: [{ message: { content: 'GPT response' } }],
           usage: { prompt_tokens: 15, completion_tokens: 25 },
-        })
+        }),
       );
 
       const result = await provider.analyze('Hello', 'System', 0.7);
@@ -471,7 +441,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
       mockFetch.mockRejectedValueOnce(abortError);
 
       await expect(provider.analyze('Hello')).rejects.toThrow(
-        'OpenAI API request timed out after 1ms'
+        'OpenAI API request timed out after 1ms',
       );
     });
 
@@ -486,7 +456,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
         makeJsonResponse({
           choices: [{ message: { content: 'Response' } }],
           usage: { prompt_tokens: 5, completion_tokens: 5 },
-        })
+        }),
       );
 
       await provider.analyze('Hello');
@@ -506,7 +476,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
       mockFetch.mockResolvedValueOnce(
         makeJsonResponse({
           message: { content: 'Ollama response' },
-        })
+        }),
       );
 
       const result = await provider.analyze('Hello', 'System', 0.4);
@@ -535,9 +505,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
         model: 'codellama',
       });
 
-      mockFetch.mockResolvedValueOnce(
-        makeJsonResponse({ message: { content: 'OK' } })
-      );
+      mockFetch.mockResolvedValueOnce(makeJsonResponse({ message: { content: 'OK' } }));
 
       const result = await provider.analyze('test');
       expect(result.content).toBe('OK');
@@ -555,7 +523,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
       mockFetch.mockRejectedValueOnce(abortError);
 
       await expect(provider.analyze('Hello')).rejects.toThrow(
-        'Ollama API request timed out after 1ms'
+        'Ollama API request timed out after 1ms',
       );
     });
   });
@@ -573,7 +541,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
         makeJsonResponse({
           choices: [{ message: { content: 'Groq response' } }],
           usage: { prompt_tokens: 12, completion_tokens: 18 },
-        })
+        }),
       );
 
       const result = await provider.analyze('Hello', 'System', 0.3);
@@ -604,7 +572,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
         makeJsonResponse({
           choices: [{ message: { content } }],
           usage: { prompt_tokens: 5, output_tokens: 10 },
-        })
+        }),
       );
 
       const result = await provider.analyze('Analyze');
@@ -627,7 +595,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
         makeJsonResponse({
           candidates: [{ content: { parts: [{ text: 'Gemini response' }] } }],
           usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 15 },
-        })
+        }),
       );
 
       const result = await provider.analyze('Hello', 'System', 0.6);
@@ -635,7 +603,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const [url, options] = mockFetch.mock.calls[0];
       expect(url).toBe(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=gemini-test-key'
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=gemini-test-key',
       );
       expect(options.method).toBe('POST');
 
@@ -660,7 +628,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
       mockFetch.mockResolvedValueOnce(
         makeJsonResponse({
           candidates: [{ content: { parts: [{ text: 'Response' }] } }],
-        })
+        }),
       );
 
       await provider.analyze('Hello');
@@ -680,7 +648,7 @@ describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
       mockFetch.mockResolvedValueOnce(
         makeJsonResponse({
           candidates: [{ content: { parts: [{ text: content }] } }],
-        })
+        }),
       );
 
       const result = await provider.analyze('Analyze');
@@ -698,13 +666,9 @@ describe('LLM Provider Error Handling', () => {
       apiKey: 'sk-ant-test-key',
     });
 
-    mockFetch.mockResolvedValueOnce(
-      makeJsonResponse({ error: 'Rate limited' }, false, 429)
-    );
+    mockFetch.mockResolvedValueOnce(makeJsonResponse({ error: 'Rate limited' }, false, 429));
 
-    await expect(provider.analyze('test')).rejects.toThrow(
-      'Anthropic API error: 429'
-    );
+    await expect(provider.analyze('test')).rejects.toThrow('Anthropic API error: 429');
   });
 
   it('OpenAIProvider throws on non-ok response', async () => {
@@ -714,13 +678,9 @@ describe('LLM Provider Error Handling', () => {
       apiKey: 'sk-test-key',
     });
 
-    mockFetch.mockResolvedValueOnce(
-      makeJsonResponse({ error: 'Bad request' }, false, 400)
-    );
+    mockFetch.mockResolvedValueOnce(makeJsonResponse({ error: 'Bad request' }, false, 400));
 
-    await expect(provider.analyze('test')).rejects.toThrow(
-      'OpenAI API error: 400'
-    );
+    await expect(provider.analyze('test')).rejects.toThrow('OpenAI API error: 400');
   });
 
   it('OllamaProvider throws on non-ok response', async () => {
@@ -729,13 +689,9 @@ describe('LLM Provider Error Handling', () => {
       model: 'llama3.1',
     });
 
-    mockFetch.mockResolvedValueOnce(
-      makeJsonResponse({ error: 'Not found' }, false, 404)
-    );
+    mockFetch.mockResolvedValueOnce(makeJsonResponse({ error: 'Not found' }, false, 404));
 
-    await expect(provider.analyze('test')).rejects.toThrow(
-      'Ollama API error: 404'
-    );
+    await expect(provider.analyze('test')).rejects.toThrow('Ollama API error: 404');
   });
 
   it('GroqProvider throws on non-ok response', async () => {
@@ -745,13 +701,9 @@ describe('LLM Provider Error Handling', () => {
       apiKey: 'gsk-test-key',
     });
 
-    mockFetch.mockResolvedValueOnce(
-      makeJsonResponse({ error: 'Forbidden' }, false, 403)
-    );
+    mockFetch.mockResolvedValueOnce(makeJsonResponse({ error: 'Forbidden' }, false, 403));
 
-    await expect(provider.analyze('test')).rejects.toThrow(
-      'Groq API error: 403'
-    );
+    await expect(provider.analyze('test')).rejects.toThrow('Groq API error: 403');
   });
 
   it('GeminiProvider throws on non-ok response', async () => {
@@ -761,13 +713,9 @@ describe('LLM Provider Error Handling', () => {
       apiKey: 'gemini-test-key',
     });
 
-    mockFetch.mockResolvedValueOnce(
-      makeJsonResponse({ error: 'API key expired' }, false, 401)
-    );
+    mockFetch.mockResolvedValueOnce(makeJsonResponse({ error: 'API key expired' }, false, 401));
 
-    await expect(provider.analyze('test')).rejects.toThrow(
-      'Gemini API error: 401'
-    );
+    await expect(provider.analyze('test')).rejects.toThrow('Gemini API error: 401');
   });
 
   it('All providers preserve generic errors (non-AbortError)', async () => {

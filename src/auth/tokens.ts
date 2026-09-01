@@ -38,7 +38,7 @@ export function hashToken(plain: string): string {
 export class TokenService {
   constructor(
     private readonly db: DatabaseSync = getDatabase(),
-    private readonly ttlSeconds: number = 3600
+    private readonly ttlSeconds: number = 3600,
   ) {}
 
   issue(clientId: string, scope?: string): TokenIssueResponse {
@@ -50,7 +50,9 @@ export class TokenService {
     try {
       this.db.exec('BEGIN');
       this.db
-        .prepare('INSERT INTO oauth_tokens (token, client_id, scope, issued_at, expires_at) VALUES (?, ?, ?, ?, ?)')
+        .prepare(
+          'INSERT INTO oauth_tokens (token, client_id, scope, issued_at, expires_at) VALUES (?, ?, ?, ?, ?)',
+        )
         .run(tokenHash, clientId, scope ?? null, now, expiresAt);
       this.db.exec('COMMIT');
     } catch (error) {
@@ -74,10 +76,16 @@ export class TokenService {
   verify(bearer: string): TokenEntry | null {
     const row = this.db
       .prepare(
-        'SELECT token, client_id, scope, issued_at, expires_at FROM oauth_tokens WHERE token = ? AND expires_at > ?'
+        'SELECT token, client_id, scope, issued_at, expires_at FROM oauth_tokens WHERE token = ? AND expires_at > ?',
       )
       .get(hashToken(bearer), Date.now()) as
-      | { token: string; client_id: string; scope: string | null; issued_at: number; expires_at: number }
+      | {
+          token: string;
+          client_id: string;
+          scope: string | null;
+          issued_at: number;
+          expires_at: number;
+        }
       | undefined;
     if (row === undefined) return null;
     return {

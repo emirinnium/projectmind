@@ -2,7 +2,15 @@ import { DatabaseSync } from 'node:sqlite';
 import type { SQLOutputValue } from 'node:sqlite';
 import { getDatabase } from '../../../storage/database.js';
 
-export type DebtType = 'pattern_drift' | 'architectural_drift' | 'redundancy' | 'agent_conflict' | 'complexity' | 'code_age' | 'cognitive_load' | 'change_frequency';
+export type DebtType =
+  | 'pattern_drift'
+  | 'architectural_drift'
+  | 'redundancy'
+  | 'agent_conflict'
+  | 'complexity'
+  | 'code_age'
+  | 'cognitive_load'
+  | 'change_frequency';
 export type Severity = 'high' | 'medium' | 'low';
 
 export interface DebtItem {
@@ -62,7 +70,12 @@ export class DebtPersistence {
     filePath: string | null;
   }): DebtItem {
     const fileId = opts.filePath
-      ? (this.getStmt('SELECT id FROM files WHERE path = ? OR relative_path = ?').get(opts.filePath, opts.filePath) as { id: number } | undefined)?.id
+      ? (
+          this.getStmt('SELECT id FROM files WHERE path = ? OR relative_path = ?').get(
+            opts.filePath,
+            opts.filePath,
+          ) as { id: number } | undefined
+        )?.id
       : null;
 
     // Deduplicate: descriptions are deterministic per finding
@@ -70,13 +83,13 @@ export class DebtPersistence {
     // so an existing unresolved item with the same type+description is the
     // SAME finding — refresh it instead of inserting another copy.
     const existing = this.getStmt(
-      'SELECT id FROM debt_items WHERE type = ? AND description = ? AND resolved = 0 LIMIT 1'
+      'SELECT id FROM debt_items WHERE type = ? AND description = ? AND resolved = 0 LIMIT 1',
     ).get(opts.type, opts.description) as { id: number } | undefined;
 
     if (existing) {
       this.getStmt(
         `UPDATE debt_items SET detected_at = CURRENT_TIMESTAMP, severity = ?, suggestion = ?, reasoning_trace = ?
-         WHERE id = ?`
+         WHERE id = ?`,
       ).run(opts.severity, opts.suggestion, JSON.stringify(opts.reasoningTrace), existing.id);
 
       return {
@@ -95,14 +108,14 @@ export class DebtPersistence {
     const result = this.getStmt(
       `INSERT INTO debt_items 
        (type, description, severity, suggestion, reasoning_trace, file_id)
-       VALUES (?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?)`,
     ).run(
       opts.type,
       opts.description,
       opts.severity,
       opts.suggestion,
       JSON.stringify(opts.reasoningTrace),
-      fileId ?? null
+      fileId ?? null,
     );
 
     return {
@@ -140,7 +153,7 @@ export class DebtPersistence {
 
     // Get total count (without pagination)
     const countResult = this.getStmt(
-      `SELECT COUNT(*) as count FROM debt_items d ${whereClause}`
+      `SELECT COUNT(*) as count FROM debt_items d ${whereClause}`,
     ).get(...params) as { count: number };
     const totalItems = countResult.count;
 
@@ -150,20 +163,29 @@ export class DebtPersistence {
        FROM debt_items d LEFT JOIN files f ON d.file_id = f.id 
        ${whereClause}
        ORDER BY d.detected_at DESC
-       LIMIT ? OFFSET ?`
+       LIMIT ? OFFSET ?`,
     ).all(...params, limit || -1, offset) as Record<string, SQLOutputValue>[];
 
     // Get severity/type counts (from full dataset, not paginated)
     const severityCounts = this.getStmt(
-      `SELECT severity, COUNT(*) as count FROM debt_items d ${whereClause} GROUP BY severity`
+      `SELECT severity, COUNT(*) as count FROM debt_items d ${whereClause} GROUP BY severity`,
     ).all(...params) as Array<{ severity: Severity; count: number }>;
 
     const typeCounts = this.getStmt(
-      `SELECT type, COUNT(*) as count FROM debt_items d ${whereClause} GROUP BY type`
+      `SELECT type, COUNT(*) as count FROM debt_items d ${whereClause} GROUP BY type`,
     ).all(...params) as Array<{ type: DebtType; count: number }>;
 
     const bySeverity: Record<Severity, number> = { high: 0, medium: 0, low: 0 };
-    const byType: Record<DebtType, number> = { pattern_drift: 0, architectural_drift: 0, redundancy: 0, agent_conflict: 0, complexity: 0, code_age: 0, cognitive_load: 0, change_frequency: 0 };
+    const byType: Record<DebtType, number> = {
+      pattern_drift: 0,
+      architectural_drift: 0,
+      redundancy: 0,
+      agent_conflict: 0,
+      complexity: 0,
+      code_age: 0,
+      cognitive_load: 0,
+      change_frequency: 0,
+    };
 
     for (const { severity: s, count } of severityCounts) {
       bySeverity[s] = count;
@@ -173,7 +195,7 @@ export class DebtPersistence {
     }
 
     const genomeResult = this.getStmt(
-      'SELECT coherence_score FROM project_genome ORDER BY computed_at DESC LIMIT 1'
+      'SELECT coherence_score FROM project_genome ORDER BY computed_at DESC LIMIT 1',
     ).get() as { coherence_score: number | null } | undefined;
 
     return {
@@ -187,7 +209,7 @@ export class DebtPersistence {
         description: item.description as string,
         severity: item.severity as Severity,
         suggestion: item.suggestion as string,
-        reasoningTrace: JSON.parse(item.reasoning_trace as string || '[]'),
+        reasoningTrace: JSON.parse((item.reasoning_trace as string) || '[]'),
         detectedAt: item.detected_at as string,
         resolved: item.resolved === 1,
         filePath: item.file_path as string | null,
@@ -197,7 +219,9 @@ export class DebtPersistence {
   }
 
   resolveDebt(debtId: number): void {
-    this.getStmt('UPDATE debt_items SET resolved = 1, resolved_at = CURRENT_TIMESTAMP WHERE id = ?').run(debtId);
+    this.getStmt(
+      'UPDATE debt_items SET resolved = 1, resolved_at = CURRENT_TIMESTAMP WHERE id = ?',
+    ).run(debtId);
   }
 
   clearAll(): void {
@@ -207,51 +231,58 @@ export class DebtPersistence {
   /**
    * Batch insert debt items to avoid N+1 queries.
    */
-  batchInsertDebtItems(items: Array<{
-    type: DebtType;
-    description: string;
-    severity: Severity;
-    suggestion: string;
-    reasoningTrace: string[];
-    filePath: string | null;
-  }>): void {
+  batchInsertDebtItems(
+    items: Array<{
+      type: DebtType;
+      description: string;
+      severity: Severity;
+      suggestion: string;
+      reasoningTrace: string[];
+      filePath: string | null;
+    }>,
+  ): void {
     if (items.length === 0) return;
-    
+
     // Start a transaction
     this.db.exec('BEGIN TRANSACTION');
-    
+
     try {
       for (const item of items) {
         const fileId = item.filePath
-          ? (this.getStmt('SELECT id FROM files WHERE path = ? OR relative_path = ?').get(item.filePath, item.filePath) as { id: number } | undefined)?.id
+          ? (
+              this.getStmt('SELECT id FROM files WHERE path = ? OR relative_path = ?').get(
+                item.filePath,
+                item.filePath,
+              ) as { id: number } | undefined
+            )?.id
           : null;
 
         // Check for existing unresolved item
         const existing = this.getStmt(
-          'SELECT id FROM debt_items WHERE type = ? AND description = ? AND resolved = 0 LIMIT 1'
+          'SELECT id FROM debt_items WHERE type = ? AND description = ? AND resolved = 0 LIMIT 1',
         ).get(item.type, item.description) as { id: number } | undefined;
 
         if (existing) {
           this.getStmt(
             `UPDATE debt_items SET detected_at = CURRENT_TIMESTAMP, severity = ?, suggestion = ?, reasoning_trace = ?
-             WHERE id = ?`
+             WHERE id = ?`,
           ).run(item.severity, item.suggestion, JSON.stringify(item.reasoningTrace), existing.id);
         } else {
           this.getStmt(
             `INSERT INTO debt_items 
              (type, description, severity, suggestion, reasoning_trace, file_id)
-             VALUES (?, ?, ?, ?, ?, ?)`
+             VALUES (?, ?, ?, ?, ?, ?)`,
           ).run(
             item.type,
             item.description,
             item.severity,
             item.suggestion,
             JSON.stringify(item.reasoningTrace),
-            fileId ?? null
+            fileId ?? null,
           );
         }
       }
-      
+
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');

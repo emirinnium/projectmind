@@ -23,7 +23,10 @@ export interface PredictImpactRiskArgs {
  * Predict change impact with risk levels — enhanced version of predict_impact
  * that includes riskLevel on each failure and an overall risk assessment.
  */
-export function predictImpactForTool(deps: McpDependencies, args: PredictImpactRiskArgs): {
+export function predictImpactForTool(
+  deps: McpDependencies,
+  args: PredictImpactRiskArgs,
+): {
   success: boolean;
   filePath: string;
   riskLevel: 'low' | 'medium' | 'high' | 'critical';
@@ -43,7 +46,7 @@ export function predictImpactForTool(deps: McpDependencies, args: PredictImpactR
   return {
     success: true,
     filePath: args.filePath,
-    riskLevel: getOverallRiskLevel(failures.map(f => f.riskLevel ?? 'low')),
+    riskLevel: getOverallRiskLevel(failures.map((f) => f.riskLevel ?? 'low')),
     failures,
     failureCount: failures.length,
   };
@@ -60,9 +63,21 @@ export function registerPredictImpactRiskTool(server: McpServer, deps: McpDepend
         'Returns predicted failures with riskLevel and an overall risk assessment.',
       inputSchema: {
         filePath: z.string().describe('File being changed'),
-        changeType: z.enum(['add', 'modify', 'delete']).default('modify').describe('Kind of change'),
-        previousContent: z.string().optional().describe('Pre-change file content (defaults to git HEAD version)'),
-        limit: z.number().int().min(1).max(50).default(10).describe('Maximum predicted failures to return'),
+        changeType: z
+          .enum(['add', 'modify', 'delete'])
+          .default('modify')
+          .describe('Kind of change'),
+        previousContent: z
+          .string()
+          .optional()
+          .describe('Pre-change file content (defaults to git HEAD version)'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .default(10)
+          .describe('Maximum predicted failures to return'),
       },
     },
     async (args) => {
@@ -82,6 +97,6 @@ export function registerPredictImpactRiskTool(server: McpServer, deps: McpDepend
           content: [{ type: 'text', text: JSON.stringify({ success: false, error: message }) }],
         };
       }
-    }
+    },
   );
 }

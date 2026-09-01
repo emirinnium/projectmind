@@ -3,17 +3,28 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { trackAgentAccess } from './types.js';
 import { confineToProject } from './_shared.js';
-import { initEmbeddingProvider, getCurrentProvider, generateEmbedding } from '@/parser/embeddings.js';
+import {
+  initEmbeddingProvider,
+  getCurrentProvider,
+  generateEmbedding,
+} from '@/parser/embeddings.js';
 
 export function registerEmbeddingTools(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
     'init_embedding_provider',
     {
       title: 'Init Embedding Provider',
-      description: 'Initialize the embedding provider for code/text similarity. Supports simple, unixcoder, and codebert providers. UniXcoder/CodeBERT require onnxruntime-node and model files.',
+      description:
+        'Initialize the embedding provider for code/text similarity. Supports simple, unixcoder, and codebert providers. UniXcoder/CodeBERT require onnxruntime-node and model files.',
       inputSchema: {
-        provider: z.enum(['simple', 'unixcoder', 'codebert']).default('simple').describe('Embedding provider to use'),
-        modelPath: z.string().optional().describe('Path to ONNX model file (for unixcoder/codebert)'),
+        provider: z
+          .enum(['simple', 'unixcoder', 'codebert'])
+          .default('simple')
+          .describe('Embedding provider to use'),
+        modelPath: z
+          .string()
+          .optional()
+          .describe('Path to ONNX model file (for unixcoder/codebert)'),
         dimension: z.number().default(768).describe('Embedding dimension'),
       },
     },
@@ -23,7 +34,10 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
           trackAgentAccess(deps.kg, deps.agentName, 'embedding-init');
         }
 
-        const modelPath = args.modelPath !== undefined ? confineToProject(args.modelPath, deps.projectRoot) : undefined;
+        const modelPath =
+          args.modelPath !== undefined
+            ? confineToProject(args.modelPath, deps.projectRoot)
+            : undefined;
 
         await initEmbeddingProvider({
           provider: args.provider,
@@ -35,11 +49,15 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: true,
-                provider: getCurrentProvider(),
-                dimension: args.dimension,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: true,
+                  provider: getCurrentProvider(),
+                  dimension: args.dimension,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -48,22 +66,27 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 
   server.registerTool(
     'generate_embedding',
     {
       title: 'Generate Embedding',
-      description: 'Generate an embedding vector for the given text or code snippet using the current embedding provider.',
+      description:
+        'Generate an embedding vector for the given text or code snippet using the current embedding provider.',
       inputSchema: {
         text: z.string().describe('Text or code snippet to embed'),
         dimension: z.number().default(768).describe('Embedding dimension'),
@@ -81,12 +104,16 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: true,
-                provider: getCurrentProvider(),
-                dimension: embedding.length,
-                embedding,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: true,
+                  provider: getCurrentProvider(),
+                  dimension: embedding.length,
+                  embedding,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -95,15 +122,19 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 
   server.registerTool(
@@ -125,10 +156,14 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: true,
-                provider,
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: true,
+                  provider,
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
@@ -137,14 +172,18 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
           content: [
             {
               type: 'text',
-              text: JSON.stringify({
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-              }, null, 2),
+              text: JSON.stringify(
+                {
+                  success: false,
+                  error: error instanceof Error ? error.message : String(error),
+                },
+                null,
+                2,
+              ),
             },
           ],
         };
       }
-    }
+    },
   );
 }

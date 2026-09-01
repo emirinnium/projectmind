@@ -2,7 +2,11 @@ import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import type { FileStructure } from './ast-parser.js';
 import { KnowledgeGraph } from '../storage/knowledge-graph.js';
-import { createLangParser, type LangSyntaxNode, type StructuralLanguage } from './language-service.js';
+import {
+  createLangParser,
+  type LangSyntaxNode,
+  type StructuralLanguage,
+} from './language-service.js';
 import { sanitizeIdentity } from './taint-utils.js';
 
 export interface TaintSource {
@@ -37,85 +41,378 @@ export interface TaintFlow {
 }
 
 // Known source patterns: module.function or function name -> kind
-const SOURCE_PATTERNS: Array<{ pattern: RegExp; kind: TaintSource['kind']; extractIdentity: (text: string) => string; languages?: string[] }> = [
+const SOURCE_PATTERNS: Array<{
+  pattern: RegExp;
+  kind: TaintSource['kind'];
+  extractIdentity: (text: string) => string;
+  languages?: string[];
+}> = [
   // TypeScript/JavaScript
-  { pattern: /^fs\.readFile(Sync)?$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^fs\.readFile(Sync)?\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
-  { pattern: /^fs\.createReadStream$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^fs\.createReadStream\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
-  { pattern: /^process\.env$/, kind: 'ENV', extractIdentity: (text) => sanitizeIdentity(text.replace(/^process\.env\./, '')), languages: ['typescript', 'javascript'] },
-  { pattern: /^process\.stdin$/, kind: 'STDIN', extractIdentity: () => 'process.stdin', languages: ['typescript', 'javascript'] },
-  { pattern: /^fetch$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^fetch\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
-  { pattern: /^http\.request$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^http\.request\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
-  { pattern: /^https\.request$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^https\.request\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
-  { pattern: /^net\.connect$/, kind: 'SOCKET', extractIdentity: (text) => sanitizeIdentity(text.replace(/^net\.connect\(/, '').replace(/[)'"]/g, '')), languages: ['typescript', 'javascript'] },
+  {
+    pattern: /^fs\.readFile(Sync)?$/,
+    kind: 'FILE',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^fs\.readFile(Sync)?\(/, '').replace(/[)'"]/g, '')),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^fs\.createReadStream$/,
+    kind: 'FILE',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^fs\.createReadStream\(/, '').replace(/[)'"]/g, '')),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^process\.env$/,
+    kind: 'ENV',
+    extractIdentity: (text) => sanitizeIdentity(text.replace(/^process\.env\./, '')),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^process\.stdin$/,
+    kind: 'STDIN',
+    extractIdentity: () => 'process.stdin',
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^fetch$/,
+    kind: 'NETWORK',
+    extractIdentity: (text) => sanitizeIdentity(text.replace(/^fetch\(/, '').replace(/[)'"]/g, '')),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^http\.request$/,
+    kind: 'NETWORK',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^http\.request\(/, '').replace(/[)'"]/g, '')),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^https\.request$/,
+    kind: 'NETWORK',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^https\.request\(/, '').replace(/[)'"]/g, '')),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^net\.connect$/,
+    kind: 'SOCKET',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^net\.connect\(/, '').replace(/[)'"]/g, '')),
+    languages: ['typescript', 'javascript'],
+  },
 
   // Python
-  { pattern: /^open$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^open\(/, '').replace(/[)'"]/g, '')), languages: ['python'] },
-  { pattern: /^os\.environ$/, kind: 'ENV', extractIdentity: (text) => sanitizeIdentity(text.replace(/^os\.environ\[/, '').replace(/[\]'"]/g, '')), languages: ['python'] },
-  { pattern: /^sys\.stdin$/, kind: 'STDIN', extractIdentity: () => 'sys.stdin', languages: ['python'] },
-  { pattern: /^requests\.get$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^requests\.get\(/, '').replace(/[)'"]/g, '')), languages: ['python'] },
-  { pattern: /^requests\.post$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^requests\.post\(/, '').replace(/[)'"]/g, '')), languages: ['python'] },
-  { pattern: /^subprocess\.run$/, kind: 'SOCKET', extractIdentity: (text) => sanitizeIdentity(text.replace(/^subprocess\.run\(/, '').replace(/[)'"]/g, '')), languages: ['python'] },
+  {
+    pattern: /^open$/,
+    kind: 'FILE',
+    extractIdentity: (text) => sanitizeIdentity(text.replace(/^open\(/, '').replace(/[)'"]/g, '')),
+    languages: ['python'],
+  },
+  {
+    pattern: /^os\.environ$/,
+    kind: 'ENV',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^os\.environ\[/, '').replace(/[\]'"]/g, '')),
+    languages: ['python'],
+  },
+  {
+    pattern: /^sys\.stdin$/,
+    kind: 'STDIN',
+    extractIdentity: () => 'sys.stdin',
+    languages: ['python'],
+  },
+  {
+    pattern: /^requests\.get$/,
+    kind: 'NETWORK',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^requests\.get\(/, '').replace(/[)'"]/g, '')),
+    languages: ['python'],
+  },
+  {
+    pattern: /^requests\.post$/,
+    kind: 'NETWORK',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^requests\.post\(/, '').replace(/[)'"]/g, '')),
+    languages: ['python'],
+  },
+  {
+    pattern: /^subprocess\.run$/,
+    kind: 'SOCKET',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^subprocess\.run\(/, '').replace(/[)'"]/g, '')),
+    languages: ['python'],
+  },
 
   // Go
-  { pattern: /^os\.Open$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^os\.Open\(/, '').replace(/[)'"]/g, '')), languages: ['go'] },
-  { pattern: /^os\.Getenv$/, kind: 'ENV', extractIdentity: (text) => sanitizeIdentity(text.replace(/^os\.Getenv\(/, '').replace(/[)'"]/g, '')), languages: ['go'] },
-  { pattern: /^http\.Get$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^http\.Get\(/, '').replace(/[)'"]/g, '')), languages: ['go'] },
-  { pattern: /^http\.Post$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^http\.Post\(/, '').replace(/[)'"]/g, '')), languages: ['go'] },
-  { pattern: /^exec\.Command$/, kind: 'SOCKET', extractIdentity: (text) => sanitizeIdentity(text.replace(/^exec\.Command\(/, '').replace(/[)'"]/g, '')), languages: ['go'] },
+  {
+    pattern: /^os\.Open$/,
+    kind: 'FILE',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^os\.Open\(/, '').replace(/[)'"]/g, '')),
+    languages: ['go'],
+  },
+  {
+    pattern: /^os\.Getenv$/,
+    kind: 'ENV',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^os\.Getenv\(/, '').replace(/[)'"]/g, '')),
+    languages: ['go'],
+  },
+  {
+    pattern: /^http\.Get$/,
+    kind: 'NETWORK',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^http\.Get\(/, '').replace(/[)'"]/g, '')),
+    languages: ['go'],
+  },
+  {
+    pattern: /^http\.Post$/,
+    kind: 'NETWORK',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^http\.Post\(/, '').replace(/[)'"]/g, '')),
+    languages: ['go'],
+  },
+  {
+    pattern: /^exec\.Command$/,
+    kind: 'SOCKET',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^exec\.Command\(/, '').replace(/[)'"]/g, '')),
+    languages: ['go'],
+  },
 
   // Rust
-  { pattern: /^std::fs::File::open$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^std::fs::File::open\(/, '').replace(/[)'"]/g, '')), languages: ['rust'] },
-  { pattern: /^std::env::var$/, kind: 'ENV', extractIdentity: (text) => sanitizeIdentity(text.replace(/^std::env::var\(/, '').replace(/[)'"]/g, '')), languages: ['rust'] },
-  { pattern: /^reqwest::get$/, kind: 'NETWORK', extractIdentity: (text) => sanitizeIdentity(text.replace(/^reqwest::get\(/, '').replace(/[)'"]/g, '')), languages: ['rust'] },
-  { pattern: /^std::process::Command::new$/, kind: 'SOCKET', extractIdentity: (text) => sanitizeIdentity(text.replace(/^std::process::Command::new\(/, '').replace(/[)'"]/g, '')), languages: ['rust'] },
+  {
+    pattern: /^std::fs::File::open$/,
+    kind: 'FILE',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^std::fs::File::open\(/, '').replace(/[)'"]/g, '')),
+    languages: ['rust'],
+  },
+  {
+    pattern: /^std::env::var$/,
+    kind: 'ENV',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^std::env::var\(/, '').replace(/[)'"]/g, '')),
+    languages: ['rust'],
+  },
+  {
+    pattern: /^reqwest::get$/,
+    kind: 'NETWORK',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^reqwest::get\(/, '').replace(/[)'"]/g, '')),
+    languages: ['rust'],
+  },
+  {
+    pattern: /^std::process::Command::new$/,
+    kind: 'SOCKET',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^std::process::Command::new\(/, '').replace(/[)'"]/g, '')),
+    languages: ['rust'],
+  },
 
   // Java
-  { pattern: /^Files\.readAllBytes$/, kind: 'FILE', extractIdentity: (text) => sanitizeIdentity(text.replace(/^Files\.readAllBytes\(/, '').replace(/[)'"]/g, '')), languages: ['java'] },
-  { pattern: /^System\.getenv$/, kind: 'ENV', extractIdentity: (text) => sanitizeIdentity(text.replace(/^System\.getenv\(/, '').replace(/[)'"]/g, '')), languages: ['java'] },
-  { pattern: /^System\.in$/, kind: 'STDIN', extractIdentity: () => 'System.in', languages: ['java'] },
-  { pattern: /^HttpClient\.newHttpClient$/, kind: 'NETWORK', extractIdentity: () => 'HttpClient', languages: ['java'] },
+  {
+    pattern: /^Files\.readAllBytes$/,
+    kind: 'FILE',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^Files\.readAllBytes\(/, '').replace(/[)'"]/g, '')),
+    languages: ['java'],
+  },
+  {
+    pattern: /^System\.getenv$/,
+    kind: 'ENV',
+    extractIdentity: (text) =>
+      sanitizeIdentity(text.replace(/^System\.getenv\(/, '').replace(/[)'"]/g, '')),
+    languages: ['java'],
+  },
+  {
+    pattern: /^System\.in$/,
+    kind: 'STDIN',
+    extractIdentity: () => 'System.in',
+    languages: ['java'],
+  },
+  {
+    pattern: /^HttpClient\.newHttpClient$/,
+    kind: 'NETWORK',
+    extractIdentity: () => 'HttpClient',
+    languages: ['java'],
+  },
   // `Runtime.getRuntime().exec(...)` may render as either `getRuntime().exec` or
   // (after AGENT name normalization) `getRuntime.exec` — accept both forms.
-  { pattern: /^Runtime\.getRuntime(\(\))?\.exec$/, kind: 'SOCKET', extractIdentity: (text) => sanitizeIdentity(text.replace(/^Runtime\.getRuntime(\(\))?\.exec\(/, '').replace(/[)'"]/g, '')), languages: ['java'] },
+  {
+    pattern: /^Runtime\.getRuntime(\(\))?\.exec$/,
+    kind: 'SOCKET',
+    extractIdentity: (text) =>
+      sanitizeIdentity(
+        text.replace(/^Runtime\.getRuntime(\(\))?\.exec\(/, '').replace(/[)'"]/g, ''),
+      ),
+    languages: ['java'],
+  },
 ];
 
 // Known sink patterns: function name -> kind
-const SINK_PATTERNS: Array<{ pattern: RegExp; kind: TaintSink['kind']; extractIdentity: (text: string) => string; languages?: string[] }> = [
+const SINK_PATTERNS: Array<{
+  pattern: RegExp;
+  kind: TaintSink['kind'];
+  extractIdentity: (text: string) => string;
+  languages?: string[];
+}> = [
   // TypeScript/JavaScript
-  { pattern: /^eval$/, kind: 'ENV', extractIdentity: () => 'eval', languages: ['typescript', 'javascript'] },
-  { pattern: /^Function$/, kind: 'ENV', extractIdentity: () => 'Function', languages: ['typescript', 'javascript'] },
-  { pattern: /^exec$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^execSync$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^execFile$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^spawn$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^child_process\.exec$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^child_process\.spawn$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^query$/, kind: 'DATABASE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^execute$/, kind: 'DATABASE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^send$/, kind: 'NETWORK', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^write$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^writeFile$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^writeFileSync$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
-  { pattern: /^createWriteStream$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['typescript', 'javascript'] },
+  {
+    pattern: /^eval$/,
+    kind: 'ENV',
+    extractIdentity: () => 'eval',
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^Function$/,
+    kind: 'ENV',
+    extractIdentity: () => 'Function',
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^exec$/,
+    kind: 'SOCKET',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^execSync$/,
+    kind: 'SOCKET',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^execFile$/,
+    kind: 'SOCKET',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^spawn$/,
+    kind: 'SOCKET',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^child_process\.exec$/,
+    kind: 'SOCKET',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^child_process\.spawn$/,
+    kind: 'SOCKET',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^query$/,
+    kind: 'DATABASE',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^execute$/,
+    kind: 'DATABASE',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^send$/,
+    kind: 'NETWORK',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^write$/,
+    kind: 'FILE',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^writeFile$/,
+    kind: 'FILE',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^writeFileSync$/,
+    kind: 'FILE',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
+  {
+    pattern: /^createWriteStream$/,
+    kind: 'FILE',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['typescript', 'javascript'],
+  },
 
   // Python
   { pattern: /^eval$/, kind: 'ENV', extractIdentity: () => 'eval', languages: ['python'] },
   { pattern: /^exec$/, kind: 'ENV', extractIdentity: () => 'exec', languages: ['python'] },
-  { pattern: /^subprocess\.run$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['python'] },
-  { pattern: /^subprocess\.Popen$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['python'] },
-  { pattern: /^open$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['python'] },
+  {
+    pattern: /^subprocess\.run$/,
+    kind: 'SOCKET',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['python'],
+  },
+  {
+    pattern: /^subprocess\.Popen$/,
+    kind: 'SOCKET',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['python'],
+  },
+  {
+    pattern: /^open$/,
+    kind: 'FILE',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['python'],
+  },
 
   // Go
-  { pattern: /^exec\.Command$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['go'] },
-  { pattern: /^os\.Create$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['go'] },
+  {
+    pattern: /^exec\.Command$/,
+    kind: 'SOCKET',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['go'],
+  },
+  {
+    pattern: /^os\.Create$/,
+    kind: 'FILE',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['go'],
+  },
 
   // Rust
-  { pattern: /^std::process::Command::new$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['rust'] },
-  { pattern: /^std::fs::File::create$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['rust'] },
+  {
+    pattern: /^std::process::Command::new$/,
+    kind: 'SOCKET',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['rust'],
+  },
+  {
+    pattern: /^std::fs::File::create$/,
+    kind: 'FILE',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['rust'],
+  },
 
   // Java
-  { pattern: /^Runtime\.getRuntime(\(\))?\.exec$/, kind: 'SOCKET', extractIdentity: (t) => sanitizeIdentity(t), languages: ['java'] },
-  { pattern: /^Files\.write$/, kind: 'FILE', extractIdentity: (t) => sanitizeIdentity(t), languages: ['java'] },
+  {
+    pattern: /^Runtime\.getRuntime(\(\))?\.exec$/,
+    kind: 'SOCKET',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['java'],
+  },
+  {
+    pattern: /^Files\.write$/,
+    kind: 'FILE',
+    extractIdentity: (t) => sanitizeIdentity(t),
+    languages: ['java'],
+  },
 ];
 
 /**
@@ -124,7 +421,14 @@ const SINK_PATTERNS: Array<{ pattern: RegExp; kind: TaintSink['kind']; extractId
  */
 
 export class TaintAnalyzer {
-  private static readonly SUPPORTED: readonly StructuralLanguage[] = ['typescript', 'javascript', 'python', 'go', 'rust', 'java'];
+  private static readonly SUPPORTED: readonly StructuralLanguage[] = [
+    'typescript',
+    'javascript',
+    'python',
+    'go',
+    'rust',
+    'java',
+  ];
 
   constructor(private kg: KnowledgeGraph) {}
 
@@ -158,7 +462,10 @@ export class TaintAnalyzer {
   // Shared pattern matching (both analysis paths use these)
   // ---------------------------------------------------------------------------
 
-  private matchSource(text: string, language: StructuralLanguage): { kind: TaintSource['kind']; qualifiedName: string; identity: string } | undefined {
+  private matchSource(
+    text: string,
+    language: StructuralLanguage,
+  ): { kind: TaintSource['kind']; qualifiedName: string; identity: string } | undefined {
     for (const { pattern, kind, extractIdentity, languages } of SOURCE_PATTERNS) {
       if (languages && !languages.includes(language)) continue;
       const match = text.match(pattern);
@@ -169,7 +476,10 @@ export class TaintAnalyzer {
     return undefined;
   }
 
-  private matchSink(text: string, language: StructuralLanguage): { kind: TaintSink['kind']; identity: string } | null {
+  private matchSink(
+    text: string,
+    language: StructuralLanguage,
+  ): { kind: TaintSink['kind']; identity: string } | null {
     for (const { pattern, kind, extractIdentity, languages } of SINK_PATTERNS) {
       if (languages && !languages.includes(language)) continue;
       if (pattern.test(text)) {
@@ -183,7 +493,11 @@ export class TaintAnalyzer {
   // TypeScript/JavaScript path (TypeScript Compiler API)
   // ---------------------------------------------------------------------------
 
-  private analyzeTypeScript(filePath: string, content: string, language: 'typescript' | 'javascript'): TaintFlow[] {
+  private analyzeTypeScript(
+    filePath: string,
+    content: string,
+    language: 'typescript' | 'javascript',
+  ): TaintFlow[] {
     const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
     const flows: TaintFlow[] = [];
     const variables = new Map<string, TaintSource>();
@@ -217,14 +531,21 @@ export class TaintAnalyzer {
       return sanitizeIdentity(source.identity);
     };
 
-    const extractIdentityFromCall = (callNode: ts.CallExpression, source: { identity: string }): string => {
+    const extractIdentityFromCall = (
+      callNode: ts.CallExpression,
+      source: { identity: string },
+    ): string => {
       if (callNode.arguments.length > 0) {
         return sanitizeIdentity(callNode.arguments[0]!.getText(sourceFile).replace(/[)'"]/g, ''));
       }
       return sanitizeIdentity(source.identity);
     };
 
-    const visit = (node: ts.Node, currentFunctionName: string | undefined, path: TaintPathNode[] = []): void => {
+    const visit = (
+      node: ts.Node,
+      currentFunctionName: string | undefined,
+      path: TaintPathNode[] = [],
+    ): void => {
       const currentPath = [...path];
 
       if (ts.isVariableDeclaration(node) && node.initializer) {
@@ -264,7 +585,7 @@ export class TaintAnalyzer {
                   node,
                   type: 'intermediate' as const,
                   function: currentFunctionName,
-                }
+                },
               ];
               flows.push({
                 source: { ...varSource, identity },
@@ -299,7 +620,7 @@ export class TaintAnalyzer {
                     node: arg,
                     type: 'intermediate' as const,
                     function: currentFunctionName,
-                  }
+                  },
                 ];
                 interProceduralPaths.set(`${calleeText}.${paramName}`, flowPath);
               }
@@ -325,11 +646,16 @@ export class TaintAnalyzer {
                   node,
                   type: 'sink' as const,
                   function: currentFunctionName,
-                }
+                },
               ];
               flows.push({
                 source: varSource,
-                sink: { qualifiedName: calleeText, kind: sinkInfo.kind, identity: sanitizeIdentity(sinkInfo.identity), node },
+                sink: {
+                  qualifiedName: calleeText,
+                  kind: sinkInfo.kind,
+                  identity: sanitizeIdentity(sinkInfo.identity),
+                  node,
+                },
                 viaFunction: currentFunctionName,
                 viaVariable: arg,
                 path: flowPath,
@@ -365,8 +691,14 @@ export class TaintAnalyzer {
     // Inter-procedural pass with path tracking
     for (const [fnName, fn] of localFns) {
       const seeds = fn.params
-        .map((p) => ({ p, src: parameterTaint.get(`${fnName}.${p}`), path: interProceduralPaths.get(`${fnName}.${p}`) }))
-        .filter((s): s is { p: string; src: TaintSource; path: TaintPathNode[] } => !!s.src && !!s.path);
+        .map((p) => ({
+          p,
+          src: parameterTaint.get(`${fnName}.${p}`),
+          path: interProceduralPaths.get(`${fnName}.${p}`),
+        }))
+        .filter(
+          (s): s is { p: string; src: TaintSource; path: TaintPathNode[] } => !!s.src && !!s.path,
+        );
 
       if (seeds.length === 0) continue;
 
@@ -379,7 +711,7 @@ export class TaintAnalyzer {
       ts.forEachChild(fn.node, (child) => visit(child, fnName));
 
       for (let i = before; i < flows.length; i++) {
-        const seed = seeds.find(s => s.p === flows[i].viaVariable);
+        const seed = seeds.find((s) => s.p === flows[i].viaVariable);
         if (seed) {
           flows[i] = {
             ...flows[i],
@@ -400,7 +732,11 @@ export class TaintAnalyzer {
   // Python / Go / Rust / Java path (tree-sitter)
   // ---------------------------------------------------------------------------
 
-  private analyzeMultiLanguage(filePath: string, content: string, language: 'python' | 'go' | 'rust' | 'java'): TaintFlow[] {
+  private analyzeMultiLanguage(
+    filePath: string,
+    content: string,
+    language: 'python' | 'go' | 'rust' | 'java',
+  ): TaintFlow[] {
     const flows: TaintFlow[] = [];
     const parsed = createLangParser(filePath, content);
     if (!parsed) return flows;
@@ -470,7 +806,8 @@ export class TaintAnalyzer {
             const name = n.childForFieldName('name');
             if (name) {
               const obj = n.childForFieldName('object');
-              const objText = obj && obj.type !== 'this' && obj.type !== 'super' ? getQualified(obj) : undefined;
+              const objText =
+                obj && obj.type !== 'this' && obj.type !== 'super' ? getQualified(obj) : undefined;
               return (objText ? objText + '.' : '') + name.text;
             }
             return n.text;
@@ -496,8 +833,11 @@ export class TaintAnalyzer {
         const fn = cur.childForFieldName('function');
         if (!fn) return cur;
         const inner =
-          fn.type === 'attribute' ? fn.childForFieldName('object') :
-          fn.type === 'field_expression' ? fn.childForFieldName('value') : undefined;
+          fn.type === 'attribute'
+            ? fn.childForFieldName('object')
+            : fn.type === 'field_expression'
+              ? fn.childForFieldName('value')
+              : undefined;
         if (!inner || (inner.type !== 'call' && inner.type !== 'call_expression')) return cur;
         cur = inner;
       }
@@ -522,7 +862,9 @@ export class TaintAnalyzer {
       }
       if (init.type === 'subscript') {
         const idx = init.childForFieldName('subscript');
-        return idx ? sanitizeIdentity(idx.text.replace(/^['"]|['"]$/g, '')) : sanitizeIdentity(source.identity);
+        return idx
+          ? sanitizeIdentity(idx.text.replace(/^['"]|['"]$/g, ''))
+          : sanitizeIdentity(source.identity);
       }
       if (init.type === 'attribute') {
         return sanitizeIdentity(init.childForFieldName('attribute')?.text ?? source.identity);
@@ -552,7 +894,8 @@ export class TaintAnalyzer {
           if (!single || single.type !== 'identifier') return null;
           // Go wraps single expressions in expression_list nodes; unwrap so the
           // initializer is the actual call/expression instead of the wrapper.
-          const initValue = right.type === 'expression_list' ? (right.namedChildren[0] ?? right) : right;
+          const initValue =
+            right.type === 'expression_list' ? (right.namedChildren[0] ?? right) : right;
           return { name: single.text, init: initValue };
         }
         case 'rust': {
@@ -563,7 +906,9 @@ export class TaintAnalyzer {
           const ident =
             pattern.type === 'identifier'
               ? pattern
-              : pattern.type === 'tuple_pattern' && pattern.namedChildren.length === 1 && pattern.namedChildren[0]?.type === 'identifier'
+              : pattern.type === 'tuple_pattern' &&
+                  pattern.namedChildren.length === 1 &&
+                  pattern.namedChildren[0]?.type === 'identifier'
                 ? pattern.namedChildren[0]!
                 : undefined;
           if (!ident) return null;
@@ -590,7 +935,12 @@ export class TaintAnalyzer {
     };
 
     // Function definition node kinds per language.
-    const fnKinds = new Set<string>(['function_definition', 'function_declaration', 'method_declaration', 'function_item']);
+    const fnKinds = new Set<string>([
+      'function_definition',
+      'function_declaration',
+      'method_declaration',
+      'function_item',
+    ]);
 
     const fnParams = (n: LangSyntaxNode): string[] => {
       const paramsNode = n.childForFieldName('parameters');
@@ -606,7 +956,11 @@ export class TaintAnalyzer {
       return paramsNode.namedChildren.map(walk).filter((x): x is string => x !== undefined);
     };
 
-    const visit = (n: LangSyntaxNode, currentFunctionName: string | undefined, path: TaintPathNode[] = []): void => {
+    const visit = (
+      n: LangSyntaxNode,
+      currentFunctionName: string | undefined,
+      path: TaintPathNode[] = [],
+    ): void => {
       const currentPath = [...path];
 
       // Variable declarations initialize taint.
@@ -618,14 +972,24 @@ export class TaintAnalyzer {
           const src: TaintSource = { ...source, node: decl.init };
           const identity = identityFromInit(chainRoot(decl.init), src);
           variables.set(decl.name, { ...src, identity });
-          currentPath.push({ node: decl.init, type: 'source' as const, function: currentFunctionName, variable: decl.name });
+          currentPath.push({
+            node: decl.init,
+            type: 'source' as const,
+            function: currentFunctionName,
+            variable: decl.name,
+          });
         }
       }
 
       if (isCallNode(n)) {
         const calleeText = sanitizeIdentity(getQualified(chainRoot(n)));
         const bareName: string | undefined =
-          calleeText && !calleeText.includes('.') && !calleeText.includes('(') && !calleeText.includes(':') ? calleeText : undefined;
+          calleeText &&
+          !calleeText.includes('.') &&
+          !calleeText.includes('(') &&
+          !calleeText.includes(':')
+            ? calleeText
+            : undefined;
 
         // Source call site: a tainted variable passed INTO a known source API.
         const source = this.matchSource(calleeText, language);
@@ -636,12 +1000,22 @@ export class TaintAnalyzer {
             if (varSource) {
               flows.push({
                 source: { ...varSource, identity },
-                sink: { qualifiedName: calleeText, kind: source.kind, identity: calleeText, node: n },
+                sink: {
+                  qualifiedName: calleeText,
+                  kind: source.kind,
+                  identity: calleeText,
+                  node: n,
+                },
                 viaFunction: currentFunctionName,
                 viaVariable: arg,
                 path: [
                   ...currentPath,
-                  { node: varSource.node, type: 'source' as const, function: currentFunctionName, variable: arg },
+                  {
+                    node: varSource.node,
+                    type: 'source' as const,
+                    function: currentFunctionName,
+                    variable: arg,
+                  },
                   { node: n, type: 'intermediate' as const, function: currentFunctionName },
                 ],
               });
@@ -661,7 +1035,12 @@ export class TaintAnalyzer {
                 parameterTaint.set(`${bareName}.${paramName}`, varSource);
                 interProceduralPaths.set(`${bareName}.${paramName}`, [
                   ...currentPath,
-                  { node: varSource.node, type: 'source' as const, function: currentFunctionName, variable: arg },
+                  {
+                    node: varSource.node,
+                    type: 'source' as const,
+                    function: currentFunctionName,
+                    variable: arg,
+                  },
                   { node: argNode, type: 'intermediate' as const, function: currentFunctionName },
                 ]);
               }
@@ -677,12 +1056,22 @@ export class TaintAnalyzer {
             if (varSource) {
               flows.push({
                 source: varSource,
-                sink: { qualifiedName: calleeText, kind: sinkInfo.kind, identity: sanitizeIdentity(sinkInfo.identity), node: n },
+                sink: {
+                  qualifiedName: calleeText,
+                  kind: sinkInfo.kind,
+                  identity: sanitizeIdentity(sinkInfo.identity),
+                  node: n,
+                },
                 viaFunction: currentFunctionName,
                 viaVariable: arg,
                 path: [
                   ...currentPath,
-                  { node: varSource.node, type: 'source' as const, function: currentFunctionName, variable: arg },
+                  {
+                    node: varSource.node,
+                    type: 'source' as const,
+                    function: currentFunctionName,
+                    variable: arg,
+                  },
                   { node: n, type: 'sink' as const, function: currentFunctionName },
                 ],
               });
@@ -712,8 +1101,14 @@ export class TaintAnalyzer {
     // Inter-procedural pass with path tracking.
     for (const [fnName, fn] of localFns) {
       const seeds = fn.params
-        .map((p) => ({ p, src: parameterTaint.get(`${fnName}.${p}`), path: interProceduralPaths.get(`${fnName}.${p}`) }))
-        .filter((s): s is { p: string; src: TaintSource; path: TaintPathNode[] } => !!s.src && !!s.path);
+        .map((p) => ({
+          p,
+          src: parameterTaint.get(`${fnName}.${p}`),
+          path: interProceduralPaths.get(`${fnName}.${p}`),
+        }))
+        .filter(
+          (s): s is { p: string; src: TaintSource; path: TaintPathNode[] } => !!s.src && !!s.path,
+        );
 
       if (seeds.length === 0) continue;
 
@@ -726,7 +1121,7 @@ export class TaintAnalyzer {
       for (const child of fn.node.namedChildren) visit(child, fnName);
 
       for (let i = before; i < flows.length; i++) {
-        const seed = seeds.find(s => s.p === flows[i].viaVariable);
+        const seed = seeds.find((s) => s.p === flows[i].viaVariable);
         if (seed) {
           flows[i] = {
             ...flows[i],

@@ -55,7 +55,9 @@ class ResourceSubscriptionManager {
       await this.server.server.sendResourceUpdated({ uri: resourceId });
       logger.info(`Sent resource/updated notification for ${resourceId}.`);
     } catch (e) {
-      logger.warn(`Failed to send resource/updated notification for ${resourceId}:`, { error: e instanceof Error ? e.message : String(e) });
+      logger.warn(`Failed to send resource/updated notification for ${resourceId}:`, {
+        error: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -83,14 +85,17 @@ class ResourceSubscriptionManager {
           // Source edits change file inventory (schema) and project stats.
           void this.notifyResourceUpdated('pm://stats');
           void this.notifyResourceUpdated('pm://schema');
-        }
+        },
       );
       this.watchers.push(watcher);
       logger.info(`Resource file-watch started for ${rootDir}`);
     } catch (e) {
-      logger.warn('Resource file-watch unavailable (recursive watch unsupported on this platform):', {
-        error: e instanceof Error ? e.message : String(e),
-      });
+      logger.warn(
+        'Resource file-watch unavailable (recursive watch unsupported on this platform):',
+        {
+          error: e instanceof Error ? e.message : String(e),
+        },
+      );
     }
   }
 }
@@ -135,27 +140,43 @@ export function registerCoreResources(server: McpServer, deps: McpDependencies):
     'schema',
     'pm://schema',
     {
-      title: 'Database Schema', 
-      description: 'Table names of the ProjectMind knowledge-graph SQLite database.', 
+      title: 'Database Schema',
+      description: 'Table names of the ProjectMind knowledge-graph SQLite database.',
       mimeType: 'application/json',
       _meta: { supportsSubscribe: true },
     },
     async () => {
       let tables: Array<Record<string, SQLOutputValue>> = [];
       try {
-        tables = getStatement(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`).all();
+        tables = getStatement(
+          `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`,
+        ).all();
       } catch (e) {
-        logger.warn('pm://schema read failed', { error: e instanceof Error ? e.message : String(e) });
+        logger.warn('pm://schema read failed', {
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
-      return { contents: [{ uri: 'pm://schema', mimeType: 'application/json', text: JSON.stringify({ tables }, null, 2) }] };
-    }
+      return {
+        contents: [
+          {
+            uri: 'pm://schema',
+            mimeType: 'application/json',
+            text: JSON.stringify({ tables }, null, 2),
+          },
+        ],
+      };
+    },
   );
 
   // pm://config — sanitized effective configuration (secrets masked).
   server.registerResource(
     'config',
     'pm://config',
-    { title: 'Effective Config', description: 'Resolved ProjectMind configuration with all secrets masked.', mimeType: 'application/json' },
+    {
+      title: 'Effective Config',
+      description: 'Resolved ProjectMind configuration with all secrets masked.',
+      mimeType: 'application/json',
+    },
     async () => {
       let config: JsonValue;
       try {
@@ -163,17 +184,36 @@ export function registerCoreResources(server: McpServer, deps: McpDependencies):
       } catch (e) {
         config = { error: String(e) };
       }
-      return { contents: [{ uri: 'pm://config', mimeType: 'application/json', text: JSON.stringify(config, null, 2) }] };
-    }
+      return {
+        contents: [
+          {
+            uri: 'pm://config',
+            mimeType: 'application/json',
+            text: JSON.stringify(config, null, 2),
+          },
+        ],
+      };
+    },
   );
 
   // pm://stats — quick project statistics from the knowledge graph.
   server.registerResource(
     'stats',
     'pm://stats',
-    { title: 'Project Stats', description: 'File counts per language, agent-touch coverage and session count for the active project.', mimeType: 'application/json' },
+    {
+      title: 'Project Stats',
+      description:
+        'File counts per language, agent-touch coverage and session count for the active project.',
+      mimeType: 'application/json',
+    },
     async () => {
-      const stats: { totalFiles: number; languages: Record<string, number>; agentTouchedFiles: number; agentCoverage: string | number; error?: string } = { totalFiles: 0, languages: {}, agentTouchedFiles: 0, agentCoverage: '0%' };
+      const stats: {
+        totalFiles: number;
+        languages: Record<string, number>;
+        agentTouchedFiles: number;
+        agentCoverage: string | number;
+        error?: string;
+      } = { totalFiles: 0, languages: {}, agentTouchedFiles: 0, agentCoverage: '0%' };
       try {
         const files = deps.kg.getAllFiles();
         const languages: Record<string, number> = {};
@@ -186,12 +226,17 @@ export function registerCoreResources(server: McpServer, deps: McpDependencies):
         stats.totalFiles = files.length;
         stats.languages = languages;
         stats.agentTouchedFiles = touched;
-        stats.agentCoverage = files.length > 0 ? Math.round((touched / files.length) * 1000) / 10 + '%' : '0%';
+        stats.agentCoverage =
+          files.length > 0 ? Math.round((touched / files.length) * 1000) / 10 + '%' : '0%';
       } catch (e) {
         stats.error = String(e);
       }
-      return { contents: [{ uri: 'pm://stats', mimeType: 'application/json', text: JSON.stringify(stats, null, 2) }] };
-    }
+      return {
+        contents: [
+          { uri: 'pm://stats', mimeType: 'application/json', text: JSON.stringify(stats, null, 2) },
+        ],
+      };
+    },
   );
 }
 
@@ -215,7 +260,7 @@ export function registerResourceSubscriptionTool(server: McpServer): void {
     async ({ resourceId, clientId }: { resourceId: string; clientId: string }) => {
       subscriptionManager.subscribe(resourceId, clientId);
       return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true }) }] };
-    }
+    },
   );
 
   server.registerTool(
@@ -232,7 +277,7 @@ export function registerResourceSubscriptionTool(server: McpServer): void {
     async ({ resourceId, clientId }: { resourceId: string; clientId: string }) => {
       subscriptionManager.unsubscribe(resourceId, clientId);
       return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true }) }] };
-    }
+    },
   );
 }
 
@@ -245,22 +290,24 @@ export function registerWorkflowPrompts(server: McpServer): void {
       argsSchema: { file: z.string().describe('Relative path of the file to refactor') },
     },
     ({ file }: PromptArgs) => ({
-      messages: [{
-        role: 'user',
-        content: {
-          type: 'text',
-          text: [
-            `I want to refactor \`${file ?? '<file>'}\` safely.`,
-            '',
-            'Follow this workflow with the ProjectMind tools before touching code:',
-            '1. get_context on the file — understand imports, dependents and similar files.',
-            '2. analyze_impact on it — list everything that breaks if signatures change.',
-            '3. Only then propose the refactor; keep public surfaces stable where impact is high.',
-            '4. After editing, run check_coherence on the modified file and fix any warn/fail verdicts.',
-          ].join('\n'),
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: [
+              `I want to refactor \`${file ?? '<file>'}\` safely.`,
+              '',
+              'Follow this workflow with the ProjectMind tools before touching code:',
+              '1. get_context on the file — understand imports, dependents and similar files.',
+              '2. analyze_impact on it — list everything that breaks if signatures change.',
+              '3. Only then propose the refactor; keep public surfaces stable where impact is high.',
+              '4. After editing, run check_coherence on the modified file and fix any warn/fail verdicts.',
+            ].join('\n'),
+          },
         },
-      }],
-    })
+      ],
+    }),
   );
 
   server.registerPrompt(
@@ -270,21 +317,23 @@ export function registerWorkflowPrompts(server: McpServer): void {
       description: 'Full quality gate before committing: coherence, debt, circular deps, genome.',
     },
     () => ({
-      messages: [{
-        role: 'user',
-        content: {
-          type: 'text',
-          text: [
-            'Run the ProjectMind pre-commit quality gate:',
-            '1. debt_report — high-severity items must be 0.',
-            '2. find_circular_deps — no new cycles introduced.',
-            '3. genome_score — confirm score stays ≥ 70%.',
-            '4. Run the full health sweep via the CLI bridge: projectmind_run_cli ["doctor","scan-health"] (clients without the projectmind_ prefix: run_cli).',
-            'Report each gate as PASS/FAIL with numbers before I commit.',
-          ].join('\n'),
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: [
+              'Run the ProjectMind pre-commit quality gate:',
+              '1. debt_report — high-severity items must be 0.',
+              '2. find_circular_deps — no new cycles introduced.',
+              '3. genome_score — confirm score stays ≥ 70%.',
+              '4. Run the full health sweep via the CLI bridge: projectmind_run_cli ["doctor","scan-health"] (clients without the projectmind_ prefix: run_cli).',
+              'Report each gate as PASS/FAIL with numbers before I commit.',
+            ].join('\n'),
+          },
         },
-      }],
-    })
+      ],
+    }),
   );
 
   server.registerPrompt(
@@ -294,19 +343,21 @@ export function registerWorkflowPrompts(server: McpServer): void {
       description: 'Triage cognitive-debt findings into fix-now / schedule / accept buckets.',
     },
     () => ({
-      messages: [{
-        role: 'user',
-        content: {
-          type: 'text',
-          text: [
-            'Triage my technical debt:',
-            '1. Call projectmind_debt_report, then severity-order via projectmind_run_cli (clients without the projectmind_ prefix: debt_report / run_cli).',
-            '2. Group findings into: FIX-NOW (high severity, small effort), SCHEDULE (systemic), ACCEPT (informational).',
-            '3. For each FIX-NOW item propose the minimal change.',
-          ].join('\n'),
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: [
+              'Triage my technical debt:',
+              '1. Call projectmind_debt_report, then severity-order via projectmind_run_cli (clients without the projectmind_ prefix: debt_report / run_cli).',
+              '2. Group findings into: FIX-NOW (high severity, small effort), SCHEDULE (systemic), ACCEPT (informational).',
+              '3. For each FIX-NOW item propose the minimal change.',
+            ].join('\n'),
+          },
         },
-      }],
-    })
+      ],
+    }),
   );
 
   server.registerPrompt(
@@ -317,18 +368,20 @@ export function registerWorkflowPrompts(server: McpServer): void {
       argsSchema: { file: z.string().describe('Relative path of the file to explain') },
     },
     ({ file }: PromptArgs) => ({
-      messages: [{
-        role: 'user',
-        content: {
-          type: 'text',
-          text: [
-            `Explain \`${file ?? '<file>'}\` to a new teammate:`,
-            '1. get_context on it — summarize purpose from imports/dependents/similar files.',
-            '2. analyze_impact — how central is it? What breaks without it?',
-            '3. Give a 5-line summary: role, key exports, main collaborators, risk notes.',
-          ].join('\n'),
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: [
+              `Explain \`${file ?? '<file>'}\` to a new teammate:`,
+              '1. get_context on it — summarize purpose from imports/dependents/similar files.',
+              '2. analyze_impact — how central is it? What breaks without it?',
+              '3. Give a 5-line summary: role, key exports, main collaborators, risk notes.',
+            ].join('\n'),
+          },
         },
-      }],
-    })
+      ],
+    }),
   );
 }

@@ -7,9 +7,7 @@ import { Command } from 'commander';
  */
 export async function buildProgram(): Promise<Command> {
   const program = new Command();
-  program
-    .name('projectmind')
-    .description('Living Codebase Intelligence Layer for AI Agents');
+  program.name('projectmind').description('Living Codebase Intelligence Layer for AI Agents');
 
   const modules: Array<{ path: string; name: string }> = [
     { path: './commands/init.js', name: 'createInitCommand' },
@@ -71,7 +69,7 @@ export async function buildProgram(): Promise<Command> {
     { path: './commands/taint.js', name: 'createTaintCommand' },
     { path: './commands/init-mcp.js', name: 'createInitMcpCommand' },
     { path: './commands/watch.js', name: 'createWatchCommand' },
-    { path: './commands/serve.js', name: 'createServeCommand' }
+    { path: './commands/serve.js', name: 'createServeCommand' },
   ];
 
   for (const { path, name } of modules) {
@@ -85,4 +83,3 @@ export async function buildProgram(): Promise<Command> {
 
   return program;
 }
-

@@ -51,7 +51,10 @@ export interface AutoFixToolResult {
  * Pure and dependency-light (only needs `projectRoot`) so it is directly
  * unit-testable, mirroring the evaluateContracts pattern.
  */
-export async function runAutoFix(deps: McpDependencies, args: AutoFixArgs): Promise<AutoFixToolResult> {
+export async function runAutoFix(
+  deps: McpDependencies,
+  args: AutoFixArgs,
+): Promise<AutoFixToolResult> {
   const absPath = confineToProject(args.filePath, deps.projectRoot);
   const engine = new AutoFixEngine(deps.projectRoot);
   const apply = args.apply ?? false;
@@ -87,12 +90,17 @@ export function registerAutoFixTool(server: McpServer, deps: McpDependencies): v
         'Run AST-safe mechanical fixes (organize/dedupe/remove-unused imports, add return types, var-to-const) on a single file. ' +
         'Defaults to PREVIEW: returns a unified line diff without touching disk. Pass apply:true to persist the changes.',
       inputSchema: {
-        filePath: z.string().describe('Path of the file to fix (relative to project root or absolute in-project)'),
+        filePath: z
+          .string()
+          .describe('Path of the file to fix (relative to project root or absolute in-project)'),
         fixes: z
           .array(z.enum(AUTO_FIXER_IDS))
           .optional()
           .describe('Fixers to run; defaults to all when omitted'),
-        apply: z.boolean().default(false).describe('When true, write changes to disk; when false (default) only preview the diff'),
+        apply: z
+          .boolean()
+          .default(false)
+          .describe('When true, write changes to disk; when false (default) only preview the diff'),
       },
     },
     async (args) => {
@@ -111,6 +119,6 @@ export function registerAutoFixTool(server: McpServer, deps: McpDependencies): v
           content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
         };
       }
-    }
+    },
   );
 }

@@ -54,7 +54,11 @@ export class CoherenceEngine {
   }
 
   async checkCoherence(options: CoherenceCheckOptions): Promise<CoherenceResult> {
-    const cacheKey = this.cache.makeKey(options.code, options.filePath, options.deepAnalysis ?? false);
+    const cacheKey = this.cache.makeKey(
+      options.code,
+      options.filePath,
+      options.deepAnalysis ?? false,
+    );
 
     const cached = this.cache.get(cacheKey);
     if (cached) {

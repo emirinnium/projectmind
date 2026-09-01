@@ -38,7 +38,12 @@ export class CachePersistence<K, V> {
     try {
       if (existsSync(this.options.persistPath)) {
         const data = readFileSync(this.options.persistPath, 'utf-8');
-        const parsed = JSON.parse(data) as { key: string; value: V; createdAt: number; expiresAt: number }[];
+        const parsed = JSON.parse(data) as {
+          key: string;
+          value: V;
+          createdAt: number;
+          expiresAt: number;
+        }[];
         const now = Date.now();
         for (const item of parsed) {
           if (item.expiresAt > now) {
@@ -53,7 +58,10 @@ export class CachePersistence<K, V> {
         }
       }
     } catch (e) {
-      logger.error('Failed to load cache from disk', { path: this.options.persistPath, error: e instanceof Error ? e.message : String(e) });
+      logger.error('Failed to load cache from disk', {
+        path: this.options.persistPath,
+        error: e instanceof Error ? e.message : String(e),
+      });
       this.options.onError(e as Error);
     }
   }
@@ -76,7 +84,10 @@ export class CachePersistence<K, V> {
 
       writeFileSync(this.options.persistPath, JSON.stringify(data));
     } catch (e) {
-      logger.error('Failed to persist cache to disk', { path: this.options.persistPath, error: e instanceof Error ? e.message : String(e) });
+      logger.error('Failed to persist cache to disk', {
+        path: this.options.persistPath,
+        error: e instanceof Error ? e.message : String(e),
+      });
       this.options.onError(e as Error);
     }
   }

@@ -1,5 +1,13 @@
 export { CLIContext, ContextFn, createContext, closeContext } from './context.js';
-export { withContext, withService, withScale, withDebt, withCoherence, withServices, ServiceMap } from './services.js';
+export {
+  withContext,
+  withService,
+  withScale,
+  withDebt,
+  withCoherence,
+  withServices,
+  ServiceMap,
+} from './services.js';
 export { output } from './output.js';
 export { formatGenomeScore, formatDebtReport, handleCliError, asyncHandler } from './formatters.js';
 export { getFilesToCheck } from './files.js';

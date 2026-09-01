@@ -12,7 +12,9 @@ import { ProjectWatcher } from '@/core/watcher.js';
  */
 export function createWatchCommand(): Command {
   return new Command('watch')
-    .description('Live-watch the project and incrementally refresh the knowledge graph on file changes')
+    .description(
+      'Live-watch the project and incrementally refresh the knowledge graph on file changes',
+    )
     .option('--root <dir>', 'Root directory to watch (defaults to configured project root)')
     .option('--debounce <ms>', 'Batch settle window in milliseconds', '400')
     .action(async (opts: { root?: string; debounce?: string }) => {
@@ -25,11 +27,15 @@ export function createWatchCommand(): Command {
           coherence: services.coherence ?? null,
           onBatchProcessed: ({ updated, failed }) => {
             if (updated.length > 0) {
-              output.success(`⚡ ${updated.length} file(s) refreshed${failed.length > 0 ? `, ${failed.length} failed` : ''}`);
+              output.success(
+                `⚡ ${updated.length} file(s) refreshed${failed.length > 0 ? `, ${failed.length} failed` : ''}`,
+              );
               for (const f of updated.slice(0, 5)) output.kv('  ↻', f);
               if (updated.length > 5) output.info(`  … +${updated.length - 5} more`);
             } else if (failed.length > 0) {
-              output.warn(`${failed.length} file(s) could not be parsed (deleted or unsupported content) — full scan will reconcile`);
+              output.warn(
+                `${failed.length} file(s) could not be parsed (deleted or unsupported content) — full scan will reconcile`,
+              );
             }
           },
         });

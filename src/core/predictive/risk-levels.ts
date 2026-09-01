@@ -36,8 +36,8 @@ export function getOverallRiskLevel(levels: RiskLevel[]): RiskLevel {
  * Mirrors the logic previously inlined in ImpactPredictor.
  */
 export function computeRiskLevel(failures: PredictedFailure[]): RiskLevel {
-  const highConf = failures.filter(f => f.confidence >= 0.7).length;
-  const criticalConf = failures.filter(f => f.confidence >= 0.9).length;
+  const highConf = failures.filter((f) => f.confidence >= 0.7).length;
+  const criticalConf = failures.filter((f) => f.confidence >= 0.9).length;
   const total = failures.length;
   if (criticalConf > 0 || total >= 20) return 'critical';
   if (highConf > 0 || total >= 10) return 'high';

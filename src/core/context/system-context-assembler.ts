@@ -54,13 +54,19 @@ export function assembleSystemContext(
     task?: string;
     maxTokens?: number;
     limit?: number;
-  }
+  },
 ): SystemContextResult {
   const { fileId } = options;
 
   // ---- Candidate pools -------------------------------------------------
   const scores = new Map<number, { info: FileInfo; score: number; reasons: Set<string> }>();
-  const consider = (info: FileInfo, points: number, reason: string, layer?: string, module?: string): void => {
+  const consider = (
+    info: FileInfo,
+    points: number,
+    reason: string,
+    layer?: string,
+    module?: string,
+  ): void => {
     if (info.id === fileId) return;
     let entry = scores.get(info.id);
     if (!entry) {
@@ -107,10 +113,13 @@ export function assembleSystemContext(
     }
   } catch (e) {
     // Graph traversal failed — fall back to direct dependents from the KG.
-    logger.error('Failed to compute impact radius via graph traversal, falling back to direct dependents', {
-      fileId,
-      error: e instanceof Error ? e.message : String(e),
-    });
+    logger.error(
+      'Failed to compute impact radius via graph traversal, falling back to direct dependents',
+      {
+        fileId,
+        error: e instanceof Error ? e.message : String(e),
+      },
+    );
     for (const d of kg.getDependents(fileId)) {
       consider(d, 0.5, 'direct-dependent', 'system');
       considered++;
@@ -162,8 +171,7 @@ export function assembleSystemContext(
     task: options.task?.trim() || null,
     items,
     consideredFiles: considered,
-    note:
-      'System-level ranking: higher score = higher systemic impact. Includes layer and module metadata.',
+    note: 'System-level ranking: higher score = higher systemic impact. Includes layer and module metadata.',
     hasCircularDeps: false,
   };
 }
