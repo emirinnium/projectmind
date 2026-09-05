@@ -1,8 +1,15 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, resolve, basename, sep, isAbsolute } from 'node:path';
 import { logger } from './logger.js';
+import { normalizePath } from './paths.js';
 import 'dotenv/config';
-import { validateConfig, type ProjectMindRc } from './config-schema.js';
+import {
+  tryValidateConfig,
+  getDefaults,
+  type ProjectMindRc,
+  SECRET_KEYS,
+} from './config-schema.js';
 
 export interface ProjectMindConfig {
   projectRoot: string;
@@ -14,6 +21,7 @@ export interface ProjectMindConfig {
     provider: string;
     model: string;
     apiKey: string | undefined;
+    endpoint?: string;
     deepModel: string;
     confidenceThreshold: number;
     maxCacheSize: number;
@@ -77,38 +85,204 @@ const DEFAULT_CONFIG: ProjectMindConfig = {
 };
 
 /**
- * Load and validate configuration from .projectmindrc.json
- * Falls back to defaults for invalid or missing fields.
+ * Get the global config file path (XDG-compliant with win32 fallback)
  */
-export function loadConfig(): ProjectMindConfig {
-  const configPath = join(process.cwd(), '.projectmindrc.json');
-  if (existsSync(configPath)) {
-    try {
-      const rawContent = readFileSync(configPath, 'utf-8');
-      const parsed = JSON.parse(rawContent);
+function getGlobalConfigPath(): string {
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME;
+  if (xdgConfigHome) {
+    return join(xdgConfigHome, 'projectmind', 'config.json');
+  }
+  if (process.platform === 'win32') {
+    const home = process.env.USERPROFILE || homedir();
+    return join(home, 'AppData', 'Roaming', 'projectmind', 'config.json');
+  }
+  return join(homedir(), '.config', 'projectmind', 'config.json');
+}
 
-      // Validate with Zod schema
-      const validated = validateConfig(parsed as unknown);
+/**
+ * Get the project config file path
+ */
+function getProjectConfigPath(): string {
+  return join(process.cwd(), '.projectmindrc.json');
+}
 
-      // Merge with defaults and resolve API keys from env vars
-      const config = mergeWithDefaults(validated);
-      return config;
-    } catch (e) {
-      if (e instanceof SyntaxError) {
-        logger.warn('Invalid JSON in .projectmindrc.json, using defaults');
+/**
+ * Check if project config contains secrets and warn if git-tracked
+ */
+function checkSecretHygiene(projectRaw: unknown, projectPath: string): void {
+  if (!projectRaw || typeof projectRaw !== 'object') return;
+
+  const raw = projectRaw as Record<string, any>;
+  for (const key of SECRET_KEYS) {
+    if (raw.llm?.[key] || raw.embeddings?.[key]) {
+      logger.warn(
+        `apiKey found in project config (${projectPath}). ` +
+          `This file may be git-tracked. Use 'pm config set --global' or environment variables instead.`,
+      );
+      return;
+    }
+  }
+}
+
+/**
+ * Load raw global config without applying Zod defaults (sparse).
+ * Used internally for correct precedence: raw layers are merged before a single validation.
+ */
+function loadGlobalConfigRaw(): { parsed: unknown; path: string } | null {
+  const globalPath = getGlobalConfigPath();
+  if (!existsSync(globalPath)) return null;
+
+  try {
+    const content = readFileSync(globalPath, 'utf-8');
+    const parsed = JSON.parse(content) as unknown;
+
+    // Check permissions on POSIX systems
+    if (process.platform !== 'win32') {
+      try {
+        const stats = statSync(globalPath);
+        const mode = stats.mode & 0o777;
+        if (mode !== 0o600) {
+          logger.warn(`Global config file permissions are ${mode.toString(8)}, expected 600`);
+        }
+      } catch {
+        // stat may fail, non-blocking
+      }
+    }
+
+    return { parsed, path: globalPath };
+  } catch (error) {
+    logger.warn(
+      `Invalid global config at ${globalPath}: ${error instanceof Error ? error.message : String(error)}. Using defaults.`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Load and validate global config from ~/.config/projectmind/config.json
+ * @deprecated Prefer loadGlobalConfigRaw for precedence-aware merging; this shim retains backward compatibility.
+ */
+function loadGlobalConfig(): ProjectMindRc | null {
+  const raw = loadGlobalConfigRaw();
+  if (!raw) return null;
+  return tryValidateConfig(raw.parsed);
+}
+
+/**
+ * Load raw project config without validation
+ */
+function loadProjectConfigRaw(): { parsed: unknown; path: string } | null {
+  const projectPath = getProjectConfigPath();
+  if (!existsSync(projectPath)) return null;
+
+  try {
+    const content = readFileSync(projectPath, 'utf-8');
+    return { parsed: JSON.parse(content) as unknown, path: projectPath };
+  } catch (error) {
+    logger.warn(
+      `Invalid project config at ${projectPath}: ${error instanceof Error ? error.message : String(error)}. Using defaults.`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Type-safe deep merge for plain-object records. Used at the raw-config
+ * boundary where we explicitly accept `unknown` shape (raw JSON).
+ */
+type AnyRecord = Record<string, unknown>;
+
+function isPlainObject(v: unknown): v is AnyRecord {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+/**
+ * Deep merge multiple raw configs with later configs overriding earlier ones.
+ * Works on sparse (raw JSON) objects so Zod defaults are not densified before precedence.
+ */
+function mergeConfigs(...configs: (AnyRecord | null | undefined)[]): AnyRecord {
+  const result: AnyRecord = {};
+  for (const config of configs) {
+    if (!config || !isPlainObject(config)) continue;
+    for (const key of Object.keys(config)) {
+      const value = config[key];
+      if (isPlainObject(value)) {
+        const existing = result[key];
+        const merged = isPlainObject(existing) ? { ...existing, ...value } : { ...value };
+        result[key] = merged;
       } else {
-        logger.warn(`Failed to load config: ${e instanceof Error ? e.message : String(e)}`);
+        result[key] = value;
       }
     }
   }
+  return result;
+}
 
-  return {
-    ...DEFAULT_CONFIG,
-    llm: {
-      ...DEFAULT_CONFIG.llm,
-      apiKey: resolveApiKey(),
-    },
-  };
+/**
+ * Apply CLI overrides to a validated config. Nested plain objects are deep
+ * merged; primitives and arrays replace.
+ */
+function applyCliOverrides(
+  config: ProjectMindConfig,
+  cliOverrides: Partial<ProjectMindRc>,
+): ProjectMindConfig {
+  const target = config as unknown as AnyRecord;
+  for (const key of Object.keys(cliOverrides) as Array<keyof ProjectMindRc>) {
+    const value = cliOverrides[key] as unknown;
+    if (isPlainObject(value)) {
+      const existing = target[key];
+      target[key] = isPlainObject(existing) ? { ...existing, ...value } : { ...value };
+    } else if (value !== undefined) {
+      target[key] = value;
+    }
+  }
+  return config;
+}
+
+/**
+ * Load config with full precedence: defaults < global < project < env < CLI overrides
+ * Precedence fix (B1): merge RAW JSON sparsely, then validate the merged result once
+ * so Zod defaults do not densify layers and incorrectly override globals.
+ */
+function loadEffectiveConfig(cliOverrides?: Partial<ProjectMindRc>): ProjectMindConfig {
+  // 1. Load raw global + project configs (no Zod defaults applied yet)
+  const globalRaw = loadGlobalConfigRaw();
+  const projectRaw = loadProjectConfigRaw();
+
+  // 2. Check secret hygiene for project file (raw)
+  if (projectRaw) {
+    checkSecretHygiene(projectRaw.parsed, projectRaw.path);
+  }
+
+  // 3. Merge raw layers sparsely: defaults < global < project
+  const mergedRaw = mergeConfigs(
+    (globalRaw?.parsed as AnyRecord | undefined) ?? null,
+    (projectRaw?.parsed as AnyRecord | undefined) ?? null,
+  );
+
+  // 4. Validate merged result once — Zod defaults applied only here
+  const validated = tryValidateConfig(mergedRaw);
+  const mergedRc = (validated ?? getDefaults()) as ProjectMindRc;
+
+  // 5. Apply existing mergeWithDefaults logic (handles env vars via resolveApiKey, path normalization, etc.)
+  const config = mergeWithDefaults(mergedRc);
+
+  // 6. Apply CLI overrides (if any)
+  if (cliOverrides) {
+    applyCliOverrides(config, cliOverrides);
+  }
+
+  return config;
+}
+
+/**
+ * Load and validate configuration from .projectmindrc.json
+ * Falls back to defaults for invalid or missing fields.
+ *
+ * @deprecated Use loadEffectiveConfig() for full precedence support
+ */
+export function loadConfig(): ProjectMindConfig {
+  return loadEffectiveConfig();
 }
 
 /**
@@ -131,14 +305,14 @@ function normalizeStatePath(
   projectRoot: string,
 ): string {
   if (raw === undefined || raw.trim() === '') {
-    return fallback;
+    return normalizePath(fallback);
   }
 
   if (isAbsolute(raw)) {
     logger.warn(
       `Config path "${raw}" is absolute; relocating to .projectmind/${basename(raw)} to keep state inside the project.`,
     );
-    return join('.projectmind', basename(raw));
+    return normalizePath(join('.projectmind', basename(raw)));
   }
 
   const resolved = resolve(projectRoot, raw);
@@ -147,10 +321,10 @@ function normalizeStatePath(
     logger.warn(
       `Config path "${raw}" resolves outside .projectmind/; relocating to .projectmind/${basename(resolved) || basename(fallback)}.`,
     );
-    return join('.projectmind', basename(resolved) || basename(fallback));
+    return normalizePath(join('.projectmind', basename(resolved) || basename(fallback)));
   }
 
-  return raw;
+  return normalizePath(raw);
 }
 
 /**
@@ -158,7 +332,7 @@ function normalizeStatePath(
  */
 export function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
   const provider = validated.llm?.provider ?? DEFAULT_CONFIG.llm.provider;
-  const llmConfig = {
+  const llmConfig: ProjectMindConfig['llm'] = {
     provider,
     model: validated.llm?.model ?? DEFAULT_CONFIG.llm.model,
     apiKey: resolveApiKey(validated.llm?.apiKey, provider),
@@ -167,6 +341,10 @@ export function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
       validated.llm?.confidenceThreshold ?? DEFAULT_CONFIG.llm.confidenceThreshold,
     maxCacheSize: validated.llm?.maxCacheSize ?? DEFAULT_CONFIG.llm.maxCacheSize,
   };
+  // Include endpoint only if defined (it's optional)
+  if (validated.llm?.endpoint) {
+    llmConfig.endpoint = validated.llm.endpoint;
+  }
 
   const embeddingsConfig = {
     provider: validated.embeddings?.provider ?? DEFAULT_CONFIG.embeddings.provider,
@@ -188,17 +366,22 @@ export function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
     memoryBridge: validated.features?.memoryBridge ?? DEFAULT_CONFIG.features.memoryBridge,
   };
 
+  // Fix B1 projectRoot '.' vs cwd: Zod default '.' would otherwise override DEFAULT_CONFIG cwd
+  const effectiveProjectRoot =
+    validated.projectRoot && validated.projectRoot !== '.'
+      ? validated.projectRoot
+      : DEFAULT_CONFIG.projectRoot;
   return {
-    projectRoot: validated.projectRoot ?? DEFAULT_CONFIG.projectRoot,
+    projectRoot: effectiveProjectRoot,
     databasePath: normalizeStatePath(
       validated.databasePath,
       DEFAULT_CONFIG.databasePath,
-      validated.projectRoot ?? DEFAULT_CONFIG.projectRoot,
+      effectiveProjectRoot,
     ),
     embeddingsDir: normalizeStatePath(
       validated.embeddingsDir,
       DEFAULT_CONFIG.embeddingsDir,
-      validated.projectRoot ?? DEFAULT_CONFIG.projectRoot,
+      effectiveProjectRoot,
     ),
     maxDepth: validated.maxDepth ?? DEFAULT_CONFIG.maxDepth,
     ignorePatterns: validated.ignorePatterns ?? DEFAULT_CONFIG.ignorePatterns,
@@ -235,3 +418,12 @@ function resolveApiKey(configApiKey?: string, provider?: string): string | undef
 export function getConfigPath(): string {
   return join(process.cwd(), '.projectmind');
 }
+
+export {
+  getGlobalConfigPath,
+  getProjectConfigPath,
+  loadGlobalConfig,
+  loadGlobalConfigRaw,
+  loadEffectiveConfig,
+  loadProjectConfigRaw,
+};

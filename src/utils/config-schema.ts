@@ -12,6 +12,7 @@ const LLMConfigSchema = z.object({
   provider: z.enum(['anthropic', 'openai', 'gemini', 'groq', 'ollama']).default('anthropic'),
   model: z.string().min(1).default('claude-3-5-sonnet-20241022'),
   apiKey: z.string().optional(),
+  endpoint: z.string().url().optional(),
   deepModel: z.string().min(1).default('claude-3-opus-20240229'),
   confidenceThreshold: z.number().min(0).max(1).default(0.7),
   maxCacheSize: z.number().int().positive().default(DEFAULT_MAX_CACHE_SIZE),
@@ -91,7 +92,7 @@ export type ProjectMindRc = z.infer<typeof ProjectMindRcSchema>;
 /**
  * Get default config values
  */
-function getDefaults(): ProjectMindRc & {
+export function getDefaults(): ProjectMindRc & {
   llm: NonNullable<ProjectMindRc['llm']>;
   embeddings: NonNullable<ProjectMindRc['embeddings']>;
   features: NonNullable<ProjectMindRc['features']>;
@@ -140,7 +141,7 @@ function getDefaults(): ProjectMindRc & {
 }
 
 /**
- * Validate and parse .projectmindrc.json content
+ * Validate and parse .projectmindrc.json content. Returns defaults for invalid fields.
  */
 export function validateConfig(configJson: unknown): ProjectMindRc & {
   llm: NonNullable<ProjectMindRc['llm']>;
@@ -169,4 +170,54 @@ export function validateConfig(configJson: unknown): ProjectMindRc & {
   };
 }
 
+/**
+ * Try to validate config, returning null on validation failure.
+ * Used for config layer loading where invalid layers should be skipped.
+ */
+export function tryValidateConfig(configJson: unknown): ProjectMindRc | null {
+  const input = configJson === null || configJson === undefined ? {} : configJson;
+  const result = ProjectMindRcSchema.safeParse(input);
+  if (!result.success) {
+    const errors = result.error.issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
+    logger.warn(`Invalid .projectmindrc.json:\n${errors}\nSkipping this config layer.`);
+    return null;
+  }
+
+  // Merge validated data with defaults for nested objects (preserve null for optional nested objects)
+  return {
+    ...result.data,
+    ...(result.data.llm ? {} : { llm: getDefaults().llm }),
+    ...(result.data.embeddings ? {} : { embeddings: getDefaults().embeddings }),
+    ...(result.data.features ? {} : { features: getDefaults().features }),
+  };
+}
+
+/**
+ * Parse and validate config, throwing on invalid input.
+ * Use this for CLI operations where validation failure should be explicit.
+ */
+export function parseConfig(configJson: unknown): ProjectMindRc & {
+  llm: NonNullable<ProjectMindRc['llm']>;
+  embeddings: NonNullable<ProjectMindRc['embeddings']>;
+  features: NonNullable<ProjectMindRc['features']>;
+} {
+  const input = configJson === null || configJson === undefined ? {} : configJson;
+
+  const result = ProjectMindRcSchema.parse(input);
+
+  // Merge validated data with defaults for nested objects
+  return {
+    ...result,
+    llm: result.llm ?? getDefaults().llm,
+    embeddings: result.embeddings ?? getDefaults().embeddings,
+    features: result.features ?? getDefaults().features,
+  };
+}
+
 export { LLMConfigSchema, EmbeddingsConfigSchema, FeaturesConfigSchema };
+
+export type GlobalConfig = ProjectMindRc;
+export const GlobalConfigSchema = ProjectMindRcSchema;
+export const SECRET_KEYS = ['apiKey', 'openaiApiKey'] as const;

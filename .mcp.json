@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "projectmind": {
+      "type": "stdio",
+      "command": "projectmind",
+      "args": ["mcp"],
+      "env": {
+        "PROJECTMIND_ROOT": "."
+      },
+      "description": "ProjectMind - Living Codebase Intelligence Layer for AI Agents"
+    }
+  }
+}

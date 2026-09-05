@@ -115,16 +115,6 @@ __pycache__/
 # Tool configs (local)
 .eslintcache
 
-# Packaging smoke-test sandbox
-smoke/
-*.tgz
-
-# Extension packages
-*.vsix
-
-# Local dev/test scripts (kept out of the published repo)
-scripts/
-
-# Exhaustive test sandbox
-all-actions-sandbox/
+# OpenCode config (not used in this project)
+opencode.json
 .opencode/
