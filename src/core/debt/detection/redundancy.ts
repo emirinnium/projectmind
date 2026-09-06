@@ -12,8 +12,6 @@ import { logger } from '../../../utils/logger.js';
 // to keep this module's public surface unchanged (no duplicate declarations).
 export type { DebtType, Severity, DebtItem, DebtReport } from './persistence.js';
 
-import type { GenomeComputer } from './genome.js';
-
 /**
  * Handles detection of code redundancy through embedding similarity
  * Structurally matches the RedundancyDetector interface for loose coupling.

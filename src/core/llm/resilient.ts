@@ -33,38 +33,48 @@ export function withProviderResilience(
   const minIntervalMs = opts.minIntervalMs ?? 1200;
 
   const wrapped = provider as RateLimitedProvider;
+  // Serialize calls per provider. A timestamp check alone allows concurrent
+  // callers to observe the same stale value and bypass the intended spacing.
+  let callQueue: Promise<unknown> = Promise.resolve();
 
   return {
     name: provider.name,
     model: provider.model,
     isAvailable: () => provider.isAvailable(),
 
-    async analyze(
-      prompt: string,
-      systemPrompt?: string,
-      temperature?: number,
-    ): Promise<LLMResponse> {
-      // Client-side rate limiting: space calls apart.
-      const last = wrapped.__lastCallAt ?? 0;
-      const wait = last + minIntervalMs - Date.now();
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    analyze(prompt: string, systemPrompt?: string, temperature?: number): Promise<LLMResponse> {
+      const run = async (): Promise<LLMResponse> => {
+        // Client-side rate limiting: space calls apart.
+        const last = wrapped.__lastCallAt ?? 0;
+        const wait = last + minIntervalMs - Date.now();
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 
-      let attempt = 0;
-      for (;;) {
-        wrapped.__lastCallAt = Date.now();
-        try {
-          return await provider.analyze(prompt, systemPrompt, temperature);
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          attempt++;
-          if (attempt > maxRetries || !RETRYABLE.test(msg)) throw e;
-          const backoffMs = Math.min(8000, minIntervalMs * 2 ** attempt);
-          logger.warn(
-            `[llm:${provider.name}] transient failure (${msg.slice(0, 120)}) — retry ${attempt}/${maxRetries} in ${backoffMs}ms`,
-          );
-          await new Promise((r) => setTimeout(r, backoffMs));
+        let attempt = 0;
+        for (;;) {
+          wrapped.__lastCallAt = Date.now();
+          try {
+            return await provider.analyze(prompt, systemPrompt, temperature);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            attempt++;
+            if (attempt > maxRetries || !RETRYABLE.test(msg)) throw e;
+            const backoffMs = Math.min(8000, minIntervalMs * 2 ** attempt);
+            logger.warn(
+              `[llm:${provider.name}] transient failure (${msg.slice(0, 120)}) — retry ${attempt}/${maxRetries} in ${backoffMs}ms`,
+            );
+            await new Promise((r) => setTimeout(r, backoffMs));
+          }
         }
-      }
+      };
+
+      const result = callQueue.then(run, run);
+      // Keep the queue usable after a failed request; the individual caller
+      // still receives the original rejection.
+      callQueue = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
     },
   };
 }

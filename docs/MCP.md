@@ -2,9 +2,9 @@
 
 ProjectMind exposes **two complementary surfaces** to coding agents:
 
-1. **Dedicated MCP tools** (28) — typed inputs for hot paths
-2. **`run_cli` bridge tool** — programmatic access to the *entire* CLI surface
-   (50 commands) for capabilities without a dedicated tool
+1. **Dedicated MCP tools** (66 explicit registrations) — typed inputs for hot paths
+2. **`run_cli` bridge tool** — programmatic access to the CLI surface for
+   capabilities without a dedicated tool
 
 ---
 
@@ -38,14 +38,22 @@ claude mcp add --scope user projectmind -- npx -y @emirhanturker/projectmind@lat
 ```json
 {
   "mcp": {
-    "projectmind": {
+    "servers": {
+      "projectmind": {
       "type": "local",
       "command": ["npx", "-y", "@emirhanturker/projectmind", "mcp"],
-      "environment": { "PROJECTMIND_ROOT": "." }
+      "disabled": false
+      }
     }
   }
 }
 ```
+
+### Codex, Devin, Antigravity, and Kilo Code
+
+Run `pm mcp-init codex`, `pm mcp-init devin`, `pm mcp-init antigravity`, or
+`pm mcp-init kilo-code`. The command writes the client-specific project-local
+manifest and an instruction file while preserving unrelated configuration.
 
 ### Windsurf / any stdio-MCP client
 Same shape as Cursor: `command=npx`, `args=["-y","@emirhanturker/projectmind","mcp"]`.
@@ -103,7 +111,7 @@ Without an LLM key the server runs fully functional **fast-tier** analysis.
 
 ---
 
-## Dedicated Tools (28)
+## Dedicated Tools
 
 | Group | Tools |
 |---|---|

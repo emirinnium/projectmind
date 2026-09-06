@@ -106,9 +106,7 @@ export function createAuditCommand(): Command {
               output.success('No security issues found in scanned files');
             } else {
               if (opts.format === 'json') {
-                console.log(
-                  JSON.stringify({ findings, summary: { total: findings.length } }, null, 2),
-                );
+                output.json({ protocolVersion: 1, findings, summary: { total: findings.length } });
               } else {
                 output.section(`Findings (${findings.length})`);
                 for (const f of findings.slice(0, 50)) {

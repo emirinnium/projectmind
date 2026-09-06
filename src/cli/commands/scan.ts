@@ -15,9 +15,17 @@ export function createScanCommand(): Command {
             ['scale'],
             async (_ctx, services) => {
               const scale = services.scale!;
-              output.info(
-                `Scanning project at: ${opts.root}${opts.full ? ' (full scan)' : ' (incremental)'}`,
-              );
+              // Machine-readable mode must keep stdout parseable. Human progress
+              // remains available on stderr for callers that want diagnostics.
+              if (opts.json) {
+                process.stderr.write(
+                  `Scanning project at: ${opts.root}${opts.full ? ' (full scan)' : ' (incremental)'}\n`,
+                );
+              } else {
+                output.info(
+                  `Scanning project at: ${opts.root}${opts.full ? ' (full scan)' : ' (incremental)'}`,
+                );
+              }
               let result;
               if (opts.profile) {
                 const profile = await scale.scanProjectWithProfile(opts.root, opts.full);
@@ -40,26 +48,21 @@ export function createScanCommand(): Command {
               } else {
                 result = await scale.scanProject(opts.root, opts.full);
                 const skipped = result.totalFiles - result.scanned;
-                output.info(
-                  `Scanned: ${result.scanned} files, ${result.errors} errors${skipped > 0 ? ` (${skipped} unchanged, skipped)` : ''}`,
-                );
+                const summary = `Scanned: ${result.scanned} files, ${result.errors} errors${skipped > 0 ? ` (${skipped} unchanged, skipped)` : ''}`;
+                if (opts.json) process.stderr.write(`${summary}\n`);
+                else output.info(summary);
               }
 
               if (opts.json) {
                 const report = scale.getScaleReport();
-                console.log(
-                  JSON.stringify(
-                    {
-                      scanned: result?.scanned ?? 0,
-                      errors: result?.errors ?? 0,
-                      totalFiles: report.totalFiles,
-                      agentCoverage: report.agentCoverage,
-                      avgCognitiveLoad: report.avgCognitiveLoad,
-                    },
-                    null,
-                    2,
-                  ),
-                );
+                output.json({
+                  protocolVersion: 1,
+                  scanned: result?.scanned ?? 0,
+                  errors: result?.errors ?? 0,
+                  totalFiles: report.totalFiles,
+                  agentCoverage: report.agentCoverage,
+                  avgCognitiveLoad: report.avgCognitiveLoad,
+                });
               } else {
                 const report = scale.getScaleReport();
                 output.kv('Total files', report.totalFiles);

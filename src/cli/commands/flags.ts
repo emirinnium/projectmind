@@ -119,7 +119,7 @@ export function createFlagsCommand(): Command {
                 writeFileSync(opts.output, content);
                 output.success(`Written to ${opts.output}`);
               } else {
-                console.log(content);
+                output.raw(content);
               }
               return;
             }
@@ -130,7 +130,7 @@ export function createFlagsCommand(): Command {
                 writeFileSync(opts.output, content);
                 output.success(`Written to ${opts.output}`);
               } else {
-                console.log(content);
+                output.raw(content);
               }
               return;
             }

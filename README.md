@@ -1,8 +1,31 @@
+<pre>
+██████╗ ██████╗  ██████╗      ██╗███████╗ ██████╗████████╗███╗   ███╗██╗███╗   ██╗██████╗
+██╔══██╗██╔══██╗██╔═══██╗     ██║██╔════╝██╔════╝╚══██╔══╝████╗ ████║██║████╗  ██║██╔══██╗
+██████╔╝██████╔╝██║   ██║     ██║█████╗  ██║        ██║   ██╔████╔██║██║██╔██╗ ██║██║  ██║
+██╔═══╝ ██╔══██╗██║   ██║██   ██║██╔══╝  ██║        ██║   ██║╚██╔╝██║██║██║╚██╗██║██║  ██║
+██║     ██║  ██║╚██████╔╝╚█████╔╝███████╗╚██████╗   ██║   ██║ ╚═╝ ██║██║██║ ╚████║██████╔╝
+╚═╝     ╚═╝  ╚═╝ ╚═════╝  ╚════╝ ╚══════╝ ╚═════╝   ╚═╝   ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═════╝
+</pre>
+
 # ProjectMind
 
 Living Codebase Intelligence Layer for AI Agents.
 
+[![npm](https://img.shields.io/npm/v/@emirhanturker/projectmind?logo=npm)](https://npmjs.com/package/@emirhanturker/projectmind)
+[![GitHub](https://img.shields.io/github/stars/emirinnium/projectmind?style=social)](https://github.com/emirinnium/projectmind)
+
+**v1.0.0** · [npm package](https://npmjs.com/package/@emirhanturker/projectmind) · [GitHub repository](https://github.com/emirinnium/projectmind)
+
 ProjectMind scans your codebase, builds a knowledge graph, and exposes it through a CLI and an MCP server so agents can reason about architecture, debt, dependencies, embeddings, taint, and runtime traces.
+
+## Platform and deployment support
+
+- Node.js `>=22.13.0` is required.
+- Windows, Linux, and macOS are supported; persisted project paths use `/` separators while native filesystem calls use the host path API.
+- Windows drive-letter/UNC paths and POSIX absolute paths are validated before project-scoped reads, writes, or CLI child execution.
+- Run the web dashboard from `web/` for the repository layout, or set `PROJECTMIND_ROOT` and `PROJECTMIND_CLI_PATH` in packaged/CI deployments.
+- Set `PROJECTMIND_API_PROXY` only when an external API proxy is intentionally required; Next App Router handlers are the default.
+- Set `NEXT_PUBLIC_SITE_URL` in production so Open Graph and Twitter metadata use the deployed origin.
 
 ## Quick Start
 
@@ -12,6 +35,21 @@ npm run build
 projectmind scan
 projectmind health
 ```
+
+### Connect your coding agent
+
+Generate a project-local MCP configuration and agent instructions with one command:
+
+```bash
+pm mcp-init codex       # .codex/config.toml + AGENTS.md
+pm mcp-init claude-code # .mcp.json + CLAUDE.md
+pm mcp-init opencode    # opencode.json + AGENTS.md
+pm mcp-init devin       # .devin/mcp.json + DEVIN.md
+pm mcp-init antigravity # .agent/mcp_config.json + rule
+pm mcp-init kilo-code   # .kilo/kilo.jsonc + AGENTS.md
+```
+
+Supported aliases also include Cursor, Windsurf, VS Code MCP, and Claude Desktop. Existing configuration is preserved unless `--force` is explicitly supplied.
 
 ## CLI Commands
 
@@ -74,7 +112,7 @@ projectmind health
 ### Advanced Intelligence
 - `projectmind trace` — Runtime call tracing: ingest test traces and dynamic call data
   - `trace ingest <file>` — Ingest a trace JSON file
-  - `trace convert` — Convert another trace format into ProjectMind trace JSON
+  - `trace convert` — Convert JSON or CSV trace data into ProjectMind trace JSON (`cgr`/`pprof` are explicitly unsupported)
   - `trace show` — Show dynamic call trace data
   - `trace clear` — Clear dynamic call trace data
 - `projectmind project` — Multi-project management
@@ -104,6 +142,8 @@ projectmind health
 - `projectmind heatmap` — Show coverage heatmap
 - `projectmind ownership` — Show agent file ownership from session data
 - `projectmind pr-preview` — Preview PR impact
+- `projectmind review` — Diff-first review alias for PR impact/coherence analysis
+- `projectmind parser-capabilities --format json` — Machine-readable parser capability contract
 - `projectmind deps-fresh` — Monitor dependency freshness
 - `projectmind adr` — Architecture Decision Records management
 

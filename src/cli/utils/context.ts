@@ -4,6 +4,7 @@ import { initDatabase, closeDatabase } from '@/storage/database.js';
 import { KnowledgeGraph } from '@/storage/kg/graph.js';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { globalCacheRegistry } from '@/core/cache/index.js';
 
 export type ContextFn<T> = (ctx: CLIContext, service: T) => Promise<void>;
 
@@ -30,6 +31,10 @@ export async function createContext(overrideRoot?: string): Promise<CLIContext> 
 }
 
 export function closeContext(ctx: CLIContext): void {
+  // Services such as DebtTracker may create persistent caches with interval
+  // timers. Release them before closing the database so one-shot CLI commands
+  // terminate cleanly and do not retain stale handles between invocations.
+  globalCacheRegistry.destroyAll();
   if (ctx?.db) {
     closeDatabase();
   }

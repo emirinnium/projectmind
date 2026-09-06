@@ -46,6 +46,9 @@ export function classifyPath(p: string): 'posix-absolute' | 'windows-absolute' |
  * {@link PathEscapesProjectError}.
  */
 export function confineToProject(filePath: string, projectRoot: string): string {
+  if (filePath.includes('\0') || projectRoot.includes('\0')) {
+    throw new PathEscapesProjectError(filePath, projectRoot);
+  }
   const kind = classifyPath(filePath);
   if (kind !== 'relative') {
     const convention = kind === 'windows-absolute' ? 'windows' : 'posix';
@@ -73,6 +76,22 @@ const PATH_VALUE_FLAGS = new Set([
   '--root',
   '--dir',
 ]);
+
+/** Validate CLI file arguments while leaving `--root` as the explicit scope. */
+export function confineOutputPathFlags(argv: readonly string[], projectRoot: string): void {
+  const filtered: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    const eq = token.indexOf('=');
+    const flag = eq === -1 ? token : token.slice(0, eq);
+    if (flag === '--root') {
+      if (eq === -1) i++;
+      continue;
+    }
+    filtered.push(token);
+  }
+  confinePathValueFlags(filtered, projectRoot);
+}
 
 /**
  * K4: Reject path-valued CLI flags whose value would read/write OUTSIDE the

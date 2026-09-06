@@ -1,4 +1,4 @@
-import { readFileSync, statSync } from 'node:fs';
+import { readFile, stat } from 'node:fs/promises';
 import { relative } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { getDatabase, getStatement } from '../../../storage/database.js';
@@ -29,12 +29,17 @@ export class ProjectScanner {
   async scanProject(
     rootPath?: string,
     full?: boolean,
+    signal?: AbortSignal,
   ): Promise<{ scanned: number; errors: number }> {
-    const profile = await this.scanProjectWithProfile(rootPath, full);
+    const profile = await this.scanProjectWithProfile(rootPath, full, signal);
     return { scanned: profile.scannedFiles, errors: profile.errorFiles };
   }
 
-  async scanProjectWithProfile(rootPath?: string, full?: boolean): Promise<ScanProfile> {
+  async scanProjectWithProfile(
+    rootPath?: string,
+    full?: boolean,
+    signal?: AbortSignal,
+  ): Promise<ScanProfile> {
     const startTime = Date.now();
     const startMemory = process.memoryUsage().heapUsed;
 
@@ -81,7 +86,7 @@ export class ProjectScanner {
     this.pruneDeletedFiles(files, root);
 
     // Incremental scanning: only process files that have changed since last scan
-    const changedFiles = full ? files : this.filterChangedFiles(files, root);
+    const changedFiles = full ? files : await this.filterChangedFiles(files, root);
 
     let scanned = 0;
     let errors = 0;
@@ -91,16 +96,18 @@ export class ProjectScanner {
     // Process files in batches for better performance
     const batchSize = 50;
     for (let i = 0; i < changedFiles.length; i += batchSize) {
+      if (signal?.aborted) throw new Error('Project scan aborted');
       const batch = changedFiles.slice(i, i + batchSize);
 
       this.db.exec('BEGIN');
       try {
         for (const filePath of batch) {
+          if (signal?.aborted) throw new Error('Project scan aborted');
           try {
-            if (statSync(filePath).size > MAX_SCAN_FILE_BYTES) {
+            if ((await stat(filePath)).size > MAX_SCAN_FILE_BYTES) {
               continue;
             }
-            const content = readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, '');
+            const content = (await readFile(filePath, 'utf-8')).replace(/^\uFEFF/, '');
             const fileStruct = parseFile(filePath, content);
             if (!fileStruct) {
               errors++;
@@ -173,7 +180,7 @@ export class ProjectScanner {
    * Filter files to only include those that have changed since last scan.
    * Uses batch query for efficiency - fetches all last_scanned timestamps in a single query.
    */
-  private filterChangedFiles(files: string[], root: string): string[] {
+  private async filterChangedFiles(files: string[], root: string): Promise<string[]> {
     if (files.length === 0) return [];
 
     const changed: string[] = [];
@@ -195,8 +202,8 @@ export class ProjectScanner {
 
     for (const filePath of files) {
       try {
-        const stat = statSync(filePath);
-        const mtime = stat.mtimeMs;
+        const fileStat = await stat(filePath);
+        const mtime = fileStat.mtimeMs;
         const relPath = relative(root, filePath).replace(/\\/g, '/');
 
         const lastScanned = lastScannedMap.get(relPath);

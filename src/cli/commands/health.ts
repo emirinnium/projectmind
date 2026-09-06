@@ -77,7 +77,7 @@ class HealthCommand extends BaseCommand {
           }
 
           if (opts.json) {
-            console.log(JSON.stringify(health, null, 2));
+            output.json(health);
           } else {
             output.section('ProjectMind Health Check');
             output.kv('Status', health.status.toUpperCase());

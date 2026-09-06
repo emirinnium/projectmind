@@ -174,15 +174,16 @@ export const coreMigrations: Migration[] = [
           key TEXT NOT NULL,
           value TEXT NOT NULL,
           is_public BOOLEAN DEFAULT 1,
+          project_id INTEGER DEFAULT 1,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(scope, key)
+          UNIQUE(project_id, scope, key)
         );
-        INSERT OR REPLACE INTO team_memories_migrated (id, agent_name, scope, key, value, is_public, created_at, updated_at)
-          SELECT id, agent_name, scope, key, value, is_public, created_at, updated_at FROM team_memories
+        INSERT OR REPLACE INTO team_memories_migrated (id, agent_name, scope, key, value, is_public, project_id, created_at, updated_at)
+          SELECT id, agent_name, scope, key, value, is_public, COALESCE(project_id, 1), created_at, updated_at FROM team_memories
           WHERE id IN (
             SELECT id FROM (
-              SELECT id, ROW_NUMBER() OVER (PARTITION BY scope, key ORDER BY updated_at DESC, id DESC) AS rn FROM team_memories
+              SELECT id, ROW_NUMBER() OVER (PARTITION BY project_id, scope, key ORDER BY updated_at DESC, id DESC) AS rn FROM team_memories
             ) WHERE rn = 1
           );
         DROP TABLE team_memories;

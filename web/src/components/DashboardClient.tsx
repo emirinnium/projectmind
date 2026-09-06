@@ -32,12 +32,13 @@ const emptyData: ReportData = {
 }
 
 /** Pure component that renders the dashboard UI given report data */
-function DashboardReport({ data, scanning, scanProgress, error, lastScanTime }: {
+function DashboardReport({ data, scanning, scanProgress, error, lastScanTime, onScan }: {
   data: ReportData;
   scanning: boolean;
   scanProgress: string | null;
   error: string | null;
   lastScanTime: Date | null;
+  onScan: () => void;
 }):
   JSX.Element {
   return (
@@ -55,7 +56,7 @@ function DashboardReport({ data, scanning, scanProgress, error, lastScanTime }: 
             </span>
           )}
           <button
-            onClick={/* onScan will be provided by parent */}
+            onClick={onScan}
             disabled={scanning}
             className="rounded-lg bg-primary-600 px-4 py-2 text-white hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -169,7 +170,12 @@ export default function DashboardClient() {
   useEffect(() => {
     const eventsSource = new EventSource('/api/events');
     eventsSource.addEventListener('report', (ev) => {
-      try { setData(JSON.parse((ev as MessageEvent).data)); setError(null); } catch {}
+      try {
+        setData(JSON.parse((ev as MessageEvent).data));
+        setError(null);
+      } catch {
+        setError('Received an invalid dashboard event.');
+      }
     });
     eventsSource.onerror = () => eventsSource.close();
     return () => eventsSource.close();
@@ -213,5 +219,6 @@ export default function DashboardClient() {
     scanning={scanning}
     scanProgress={scanProgress}
     error={error}
-    lastScanTime={lastScanTime} />;
+    lastScanTime={lastScanTime}
+    onScan={handleScan} />;
 }

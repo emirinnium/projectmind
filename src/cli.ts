@@ -5,20 +5,37 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { currentModuleDir, resolvePackageVersion } from './cli/utils/version.js';
 import { buildProgram } from './cli/program.js';
+import { confineOutputPathFlags } from './mcp/tools/_shared.js';
 
 const pkgVersion = resolvePackageVersion(currentModuleDir(import.meta.url));
+const cliArgs = process.argv.slice(2);
+const machineOutput =
+  cliArgs[0] === 'mcp' ||
+  cliArgs.includes('--json') ||
+  cliArgs.includes('--format=json') ||
+  (cliArgs.includes('--format') && cliArgs[cliArgs.indexOf('--format') + 1] === 'json');
+logger.setMachineMode(machineOutput);
 
 // Display ASCII banner on startup
 try {
   const logoPath = join(currentModuleDir(import.meta.url), '..', 'assets', 'cli-logo.txt');
   const logo = readFileSync(logoPath, 'utf-8');
-  console.log(logo);
-  console.log('');
+  if (!machineOutput) {
+    console.log(logo);
+    console.log('');
+  }
 } catch {
   // Logo file not found, skip banner
 }
 
 const program = new Command();
+
+try {
+  confineOutputPathFlags(process.argv.slice(2), process.env.PROJECTMIND_ROOT || process.cwd());
+} catch (error: unknown) {
+  logger.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
 
 program
   .name('projectmind')

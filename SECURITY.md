@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | ✅        |
+| 1.0.x   | ✅        |
+| < 1.0   | Best effort only |
 
 ## Reporting a Vulnerability
 
@@ -36,7 +37,7 @@ ProjectMind includes the following security analysis capabilities:
 
 ## Dependencies
 
-ProjectMind regularly audits its dependencies for known vulnerabilities. Run `npm audit` to check the current status.
+ProjectMind regularly audits its dependencies for known vulnerabilities. Run `npm audit --omit=dev` for the production dependency set and `pm mcp-init <agent>` only in a trusted repository because generated MCP servers execute with the selected agent's permissions.
 
 ## Best Practices
 

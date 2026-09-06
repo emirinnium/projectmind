@@ -1,6 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
-
-import { dirname, join, resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 import type { SQLOutputValue } from 'node:sqlite';
 
@@ -12,7 +10,7 @@ import { getVecIndex } from '../../../core/embeddings/vector-index.js';
 
 import { FileStructure } from '../../../parser/ast-parser.js';
 
-import { AliasResolver, getDefaultAliasResolver } from '../../../parser/alias-resolver.js';
+import { getDefaultAliasResolver } from '../../../parser/alias-resolver.js';
 
 import { codeToEmbedding, cosineSimilarity } from '../../../parser/embeddings.js';
 
@@ -270,9 +268,6 @@ export async function storeFileDetails(
         );
         const fromFile = getFileByPath(ctx, fileStruct.filePath);
         const fromDir = fromFile ? dirname(fromFile.relativePath).replace(/\\/g, '/') : '';
-
-        const config = loadConfig();
-        const projectRoot = config.projectRoot;
 
         // Use the AliasResolver for tsconfig path alias resolution
         const aliasResolver = getDefaultAliasResolver();

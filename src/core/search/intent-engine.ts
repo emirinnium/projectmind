@@ -9,7 +9,6 @@ import { DEFAULT_DIMENSION } from '../llm/types.js';
 
 const SIMILARITY_THRESHOLD = 0.5;
 const RANK_DECAY_FACTOR = 0.15;
-const SEMANTIC_THRESHOLD = 0.72;
 const MAX_SIMILAR_RESULTS = 10;
 
 export interface KGGraphLike {

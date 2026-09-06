@@ -112,9 +112,11 @@ function getProjectConfigPath(): string {
 function checkSecretHygiene(projectRaw: unknown, projectPath: string): void {
   if (!projectRaw || typeof projectRaw !== 'object') return;
 
-  const raw = projectRaw as Record<string, any>;
+  const raw = projectRaw as Record<string, unknown>;
+  const llm = isPlainObject(raw.llm) ? raw.llm : undefined;
+  const embeddings = isPlainObject(raw.embeddings) ? raw.embeddings : undefined;
   for (const key of SECRET_KEYS) {
-    if (raw.llm?.[key] || raw.embeddings?.[key]) {
+    if (llm?.[key] || embeddings?.[key]) {
       logger.warn(
         `apiKey found in project config (${projectPath}). ` +
           `This file may be git-tracked. Use 'pm config set --global' or environment variables instead.`,

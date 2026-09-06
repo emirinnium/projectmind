@@ -20,7 +20,6 @@ import { GenomeComputer as GenomeComputerImpl } from './detection/genome.js';
 import { collectGitChurn, type GitChurnEntry } from './git-churn.js';
 import { COGNITIVE_LOAD_THRESHOLD } from './index.js';
 import { readFileSync } from 'node:fs';
-import type { FileInfo } from '../../storage/knowledge-graph.js';
 
 /** Window (in days) for the git change-frequency analysis. */
 const CHANGE_FREQUENCY_WINDOW_DAYS = 30;
@@ -75,17 +74,23 @@ export class DebtTracker {
 
     // Batch read all file contents
     const fileContents = new Map<string, string>();
-    const readPromises = files.map(async (file) => {
-      try {
-        const content = readFileSync(file.path, 'utf-8');
-        fileContents.set(file.path, content);
-      } catch (e) {
-        logger.warn(`Failed to read file contents for debt analysis: ${file.path}`, {
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
-    });
-    await Promise.all(readPromises);
+    // Bound concurrent filesystem reads; a repository with thousands of files
+    // must not create one promise per file at once.
+    const readBatchSize = 32;
+    for (let i = 0; i < files.length; i += readBatchSize) {
+      await Promise.all(
+        files.slice(i, i + readBatchSize).map(async (file) => {
+          try {
+            const content = readFileSync(file.path, 'utf-8');
+            fileContents.set(file.path, content);
+          } catch (e) {
+            logger.warn(`Failed to read file contents for debt analysis: ${file.path}`, {
+              error: e instanceof Error ? e.message : String(e),
+            });
+          }
+        }),
+      );
+    }
 
     // Change-frequency signal from git history — collected ONCE per run and
     // shared across all per-file checks. collectGitChurn never throws (not a
@@ -94,7 +99,7 @@ export class DebtTracker {
     let churn = new Map<string, GitChurnEntry>();
     try {
       churn = collectGitChurn(loadConfig().projectRoot, CHANGE_FREQUENCY_WINDOW_DAYS);
-    } catch (e) {
+    } catch {
       // skip change-frequency analysis gracefully
     }
 
@@ -107,6 +112,22 @@ export class DebtTracker {
       for (const file of batch) {
         const content = fileContents.get(file.path);
         if (!content) continue;
+
+        const churnEntry = churn.get(file.relativePath.replace(/\\/g, '/'));
+        if (churnEntry && churnEntry.count >= HIGH_CHURN_THRESHOLD) {
+          items.push(
+            this.persistence.createDebtItem({
+              type: 'change_frequency',
+              description: `High change frequency in ${file.relativePath} (${churnEntry.count} commits in ${CHANGE_FREQUENCY_WINDOW_DAYS} days)`,
+              severity: 'medium',
+              suggestion: 'Review recently changed code for regression risk and missing safeguards',
+              reasoningTrace: [
+                `Git history recorded ${churnEntry.count} changes by ${churnEntry.authors.size} author(s)`,
+              ],
+              filePath: file.path,
+            }),
+          );
+        }
 
         // Reuse stored embedding from the batch fetch instead of recomputing
         const targetEmbedding = embeddings.get(file.id);

@@ -1,4 +1,11 @@
-Next steps:
-1. Address the 2 high-severity debt items identified in the debt report.
-2. Hunt for new features or improvements, such as refactoring redundant code or improving architectural coherence.
-3. Run health checks to ensure the project remains stable and performant.
+# ProjectMind v1.0.0 — Release status
+
+The v1.0.0 production checklist is complete. The remaining work is post-release
+maintenance and must be tracked as a new issue or TODO item with an owner.
+
+## Post-release maintenance
+
+- Monitor npm install, MCP initialization, and first-run scan reports.
+- Review user-reported agent configuration differences as clients evolve.
+- Keep dependencies and supported MCP client documentation current.
+- Add regression coverage before changing migration or protocol contracts.

@@ -1,16 +1,10 @@
-import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import type { SQLOutputValue } from 'node:sqlite';
 import { getStatement } from '../../../storage/database.js';
 import { KnowledgeGraph, FileInfo } from '../../../storage/knowledge-graph.js';
 import { loadConfig } from '../../../utils/config.js';
-import {
-  round2,
-  countMatches,
-  classifyErrorHandling,
-  dominantNaming,
-  computeFingerprint,
-} from './utils.js';
+import { computeFingerprint } from './utils.js';
 import type { ModuleInfo, ScaleReport, AgentProfile, ScanProfile } from './types.js';
 
 /**
@@ -25,6 +19,7 @@ export class ScaleReporter {
 
   getScaleReport(): ScaleReport {
     const allFiles = this.kg.getAllFiles();
+    const projectRoot = loadConfig().projectRoot;
 
     const languages: Record<string, { files: number; bytes: number }> = {};
     const modules = new Map<string, ModuleInfo>();
@@ -61,7 +56,12 @@ export class ScaleReporter {
       mod.cognitiveLoad += file.cognitiveLoad;
       mod.files.push(file);
 
-      totalLines += Math.round(file.sizeBytes / 20);
+      try {
+        const content = readFileSync(join(projectRoot, file.relativePath), 'utf8');
+        totalLines += content.length === 0 ? 0 : content.split(/\r\n|\r|\n/).length;
+      } catch {
+        // A deleted/unreadable file contributes no fabricated line estimate.
+      }
     }
 
     for (const mod of modules.values()) {
@@ -83,7 +83,7 @@ export class ScaleReporter {
 
     const fingerprints = allFiles
       .filter((f) => f.agentTouched)
-      .map((f) => computeFingerprint([f.relativePath], loadConfig().projectRoot));
+      .map((f) => computeFingerprint([f.relativePath], projectRoot));
 
     return {
       totalFiles: allFiles.length,
@@ -135,7 +135,11 @@ export class ScaleReporter {
 
   getModuleInfo(modulePath: string): ModuleInfo | null {
     const files = this.kg.getAllFiles();
-    const moduleFiles = files.filter((f) => f.relativePath.startsWith(modulePath));
+    const normalizedModule = modulePath.replace(/\\/g, '/').replace(/\/$/, '');
+    const moduleFiles = files.filter((f) => {
+      const relativePath = f.relativePath.replace(/\\/g, '/');
+      return relativePath === normalizedModule || relativePath.startsWith(`${normalizedModule}/`);
+    });
     if (moduleFiles.length === 0) return null;
 
     const agentTouched = moduleFiles.filter((f) => f.agentTouched).length;
@@ -232,6 +236,3 @@ const UNMEASURED_FINGERPRINT: AgentProfile['fingerprint'] = {
   testPattern: 'none',
   favoriteAbstractions: ['none'],
 };
-
-const FINGERPRINT_MAX_FILES = 30;
-const FINGERPRINT_MAX_BYTES = 512 * 1024;

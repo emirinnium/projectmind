@@ -154,7 +154,7 @@ export function createWorkspaceCommand(): Command {
         };
 
         if (opts.format === 'json') {
-          console.log(JSON.stringify(result, null, 2));
+          output.json(result);
           return;
         }
 

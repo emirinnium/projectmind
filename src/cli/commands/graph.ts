@@ -25,7 +25,7 @@ export function createGraphCommand(): Command {
               writeFileSync(opts.output, content);
               output.success(`Graph written to ${opts.output}`);
             } else {
-              console.log(content);
+              output.raw(content);
             }
           } else if (format === 'svg') {
             const content = renderModuleSvg(report);
@@ -33,7 +33,7 @@ export function createGraphCommand(): Command {
               writeFileSync(opts.output, content);
               output.success(`Graph written to ${opts.output}`);
             } else {
-              console.log(content);
+              output.raw(content);
             }
           } else if (format === 'png') {
             const buf = renderModulePng(report);
@@ -65,7 +65,7 @@ export function createGraphCommand(): Command {
               writeFileSync(opts.output, content);
               output.success(`Graph written to ${opts.output}`);
             } else {
-              console.log(content);
+              output.raw(content);
             }
           }
 

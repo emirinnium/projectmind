@@ -1,7 +1,10 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output, logger } from '@/cli/utils/shared.js';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import type { ScaleManager } from '../../core/scale/manager.js';
+import { getDatabase } from '../../storage/database.js';
 
 interface PrImpact {
   baseRef: string;
@@ -13,10 +16,25 @@ interface PrImpact {
   estimatedReviewTime: number; // minutes
   breakingChanges: string[];
   coherenceIssues: { file: string; verdict: string; issues: string[] }[];
+  findings: ReviewFinding[];
+  reviewerConsensus: {
+    reviewers: Array<{ name: string; findingCount: number }>;
+    consolidatedFindingCount: number;
+  };
+}
+
+interface ReviewFinding {
+  fingerprint: string;
+  rule: string;
+  severity: 'high' | 'medium' | 'low';
+  file: string;
+  line: number;
+  message: string;
 }
 
 export function createPrPreviewCommand(): Command {
   const prCmd = new Command('pr-preview')
+    .alias('review')
     .description(
       'Preview PR impact: changed files, affected modules, test selection, coherence risk',
     )
@@ -26,6 +44,7 @@ export function createPrPreviewCommand(): Command {
     .option('-o, --output <file>', 'Write to file')
     .option('--no-tests', 'Skip test selection')
     .option('--no-coherence', 'Skip coherence check')
+    .option('--history', 'Persist findings and reconcile resolved findings')
     .action(
       asyncHandler(
         async (opts: {
@@ -35,6 +54,7 @@ export function createPrPreviewCommand(): Command {
           output: string;
           tests: boolean;
           coherence: boolean;
+          history?: boolean;
         }) => {
           await withService(['scale', 'coherence'], async (_ctx, services) => {
             const scale = services.scale!;
@@ -50,6 +70,16 @@ export function createPrPreviewCommand(): Command {
             const changedFiles = await getChangedFiles(opts.base, opts.head, config.projectRoot);
 
             if (changedFiles.length === 0) {
+              if (opts.history) {
+                const history = persistReviewHistory(
+                  _ctx.kg.getCurrentProjectId(),
+                  opts.base,
+                  opts.head,
+                  changedFiles,
+                  [],
+                );
+                output.kv('Review history', `${history.open} open, ${history.resolved} resolved`);
+              }
               output.success('No changes detected.');
               return;
             }
@@ -107,6 +137,15 @@ export function createPrPreviewCommand(): Command {
             // Breaking changes detection
             const breakingChanges = detectBreakingChanges(changedFiles, scale);
 
+            // Fast deterministic review baseline. These findings are line-level
+            // and require no LLM, so they remain reproducible in CI.
+            const findings = collectReviewFindings(changedFiles, config.projectRoot);
+            const reviewerConsensus = buildReviewerConsensus(
+              findings,
+              coherenceIssues,
+              breakingChanges,
+            );
+
             // Estimated review time
             const estimatedReviewTime = estimateReviewTime(
               changedFiles.length,
@@ -124,7 +163,21 @@ export function createPrPreviewCommand(): Command {
               estimatedReviewTime,
               breakingChanges,
               coherenceIssues,
+              findings,
+              reviewerConsensus,
             };
+
+            if (opts.history) {
+              const history = persistReviewHistory(
+                _ctx.kg.getCurrentProjectId(),
+                opts.base,
+                opts.head,
+                changedFiles,
+                findings,
+                changedFiles,
+              );
+              output.kv('Review history', `${history.open} open, ${history.resolved} resolved`);
+            }
 
             if (opts.format === 'json') {
               const content = JSON.stringify(impact, null, 2);
@@ -132,7 +185,7 @@ export function createPrPreviewCommand(): Command {
                 writeFileSync(opts.output, content);
                 output.success(`Written to ${opts.output}`);
               } else {
-                console.log(content);
+                process.stdout.write(`${content}\n`);
               }
               return;
             }
@@ -143,7 +196,7 @@ export function createPrPreviewCommand(): Command {
                 writeFileSync(opts.output, content);
                 output.success(`Written to ${opts.output}`);
               } else {
-                console.log(content);
+                process.stdout.write(`${content}\n`);
               }
               return;
             }
@@ -167,7 +220,7 @@ export function createPrPreviewCommand(): Command {
                 writeFileSync(opts.output, summary);
                 output.success(`GitHub comment markdown written to ${opts.output}`);
               } else {
-                console.log(summary);
+                process.stdout.write(`${summary}\n`);
               }
               return;
             }
@@ -191,6 +244,21 @@ export function createPrPreviewCommand(): Command {
               coherenceRisk === 'high' ? '🔴' : coherenceRisk === 'medium' ? '🟡' : '🟢';
             output.kv(`${riskIcon} Overall Risk`, coherenceRisk.toUpperCase());
             output.kv('Files with issues', coherenceIssues.length);
+            output.kv('Deterministic findings', findings.length);
+            output.kv(
+              'Reviewer consensus',
+              `${reviewerConsensus.consolidatedFindingCount} consolidated finding(s)`,
+            );
+
+            if (findings.length > 0) {
+              output.section('Deterministic Review Findings');
+              for (const finding of findings.slice(0, 30)) {
+                output.kv(
+                  `  [${finding.severity.toUpperCase()}] ${finding.file}:${finding.line}`,
+                  `${finding.rule}: ${finding.message}`,
+                );
+              }
+            }
 
             if (coherenceIssues.length > 0) {
               for (const issue of coherenceIssues.slice(0, 10)) {
@@ -353,6 +421,161 @@ function detectBreakingChanges(changedFiles: string[], scale: ScaleManager): str
   return [...new Set(breaking)];
 }
 
+function collectReviewFindings(changedFiles: string[], projectRoot: string): ReviewFinding[] {
+  const rules: Array<{
+    rule: string;
+    severity: ReviewFinding['severity'];
+    pattern: RegExp;
+    message: string;
+  }> = [
+    {
+      rule: 'dangerous-eval',
+      severity: 'high',
+      pattern: /\b(?:eval|new\s+Function)\s*\(/,
+      message: 'Dynamic code execution requires explicit security review.',
+    },
+    {
+      rule: 'possible-secret',
+      severity: 'high',
+      pattern: /(?:api[_-]?key|secret|password|token)\s*[:=]\s*['"][^'"]{8,}/i,
+      message: 'Possible hard-coded credential or secret.',
+    },
+    {
+      rule: 'todo-marker',
+      severity: 'low',
+      pattern: /\b(?:TODO|FIXME|HACK)\b/i,
+      message: 'Unresolved work marker in changed code.',
+    },
+    {
+      rule: 'explicit-any',
+      severity: 'medium',
+      pattern: /\bany\b/,
+      message: 'Explicit any weakens the static contract at a changed line.',
+    },
+    {
+      rule: 'console-output',
+      severity: 'low',
+      pattern: /\bconsole\.(?:log|error|warn|debug)\s*\(/,
+      message: 'Ad-hoc console output should be reviewed for production behavior.',
+    },
+  ];
+  const findings: ReviewFinding[] = [];
+  for (const file of changedFiles) {
+    let lines: string[];
+    try {
+      lines = readFileSync(join(projectRoot, file), 'utf-8').split(/\r?\n/);
+    } catch {
+      continue;
+    }
+    lines.forEach((line, index) => {
+      for (const rule of rules) {
+        if (rule.pattern.test(line)) {
+          findings.push({
+            fingerprint: `${rule.rule}:${file}:${stableFindingIdentity(lines, index)}`,
+            rule: rule.rule,
+            severity: rule.severity,
+            file,
+            line: index + 1,
+            message: rule.message,
+          });
+        }
+        rule.pattern.lastIndex = 0;
+      }
+    });
+  }
+  return findings;
+}
+
+function stableFindingIdentity(lines: string[], index: number): string {
+  const context = lines
+    .slice(Math.max(0, index - 1), Math.min(lines.length, index + 2))
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .join('\n');
+  return createHash('sha256').update(context).digest('hex').slice(0, 16);
+}
+
+function persistReviewHistory(
+  projectId: number,
+  baseRef: string,
+  headRef: string,
+  changedFiles: string[],
+  findings: ReviewFinding[],
+  reconciliationFiles: string[] = changedFiles,
+): { open: number; resolved: number } {
+  const db = getDatabase();
+  const run = db
+    .prepare(
+      'INSERT INTO review_runs (project_id, base_ref, head_ref, changed_files) VALUES (?, ?, ?, ?)',
+    )
+    .run(projectId, baseRef, headRef, changedFiles.length);
+  const runId = Number(run.lastInsertRowid);
+  const upsert = db.prepare(`
+    INSERT INTO review_findings
+      (run_id, project_id, fingerprint, rule, severity, file, line, message, status, last_seen_at, resolved_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', CURRENT_TIMESTAMP, NULL)
+    ON CONFLICT(project_id, fingerprint) DO UPDATE SET
+      run_id=excluded.run_id, severity=excluded.severity, file=excluded.file,
+      line=excluded.line, message=excluded.message, status='open',
+      last_seen_at=CURRENT_TIMESTAMP, resolved_at=NULL
+  `);
+  for (const finding of findings) {
+    upsert.run(
+      runId,
+      projectId,
+      finding.fingerprint,
+      finding.rule,
+      finding.severity,
+      finding.file,
+      finding.line,
+      finding.message,
+    );
+  }
+  if (reconciliationFiles.length > 0) {
+    const filePlaceholders = reconciliationFiles.map(() => '?').join(', ');
+    const findingPlaceholders = findings.length > 0 ? findings.map(() => '?').join(', ') : "''";
+    const findingParams = findings.map((finding) => finding.fingerprint);
+    db.prepare(
+      `UPDATE review_findings SET status='resolved', resolved_at=CURRENT_TIMESTAMP
+       WHERE project_id = ? AND status='open'
+         AND file IN (${filePlaceholders})
+         AND fingerprint NOT IN (${findingPlaceholders})`,
+    ).run(projectId, ...reconciliationFiles, ...findingParams);
+  }
+  const counts = db
+    .prepare(
+      'SELECT status, COUNT(*) AS count FROM review_findings WHERE project_id = ? GROUP BY status',
+    )
+    .all(projectId) as Array<{ status: string; count: number }>;
+  return {
+    open: counts.find((row) => row.status === 'open')?.count ?? 0,
+    resolved: counts.find((row) => row.status === 'resolved')?.count ?? 0,
+  };
+}
+
+/**
+ * Coordinates the independent deterministic, coherence, and impact reviewers.
+ * Findings remain keyed by fingerprint, so consensus never creates duplicates.
+ */
+function buildReviewerConsensus(
+  findings: ReviewFinding[],
+  coherenceIssues: PrImpact['coherenceIssues'],
+  breakingChanges: string[],
+): PrImpact['reviewerConsensus'] {
+  const reviewers = [
+    { name: 'deterministic-rules', findingCount: findings.length },
+    { name: 'coherence-engine', findingCount: coherenceIssues.length },
+    { name: 'impact-engine', findingCount: breakingChanges.length },
+  ];
+  return {
+    reviewers,
+    consolidatedFindingCount: new Set([
+      ...findings.map((finding) => finding.fingerprint),
+      ...coherenceIssues.map((issue) => `coherence:${issue.file}`),
+      ...breakingChanges.map((change) => `impact:${change}`),
+    ]).size,
+  };
+}
+
 function estimateReviewTime(fileCount: number, coherenceRisk: string, testCount: number): number {
   let time = fileCount * 3; // 3 minutes per file base
 
@@ -377,6 +600,7 @@ function generateMarkdownPrPreview(impact: PrImpact): string {
     `- **Coherence Risk:** ${impact.coherenceRisk.toUpperCase()}`,
     `- **Suggested Tests:** ${impact.testSelection.length}`,
     `- **Breaking Changes:** ${impact.breakingChanges.length}`,
+    `- **Deterministic Findings:** ${impact.findings.length}`,
     `- **Estimated Review Time:** ${impact.estimatedReviewTime} minutes`,
     '',
     `## Changed Files`,
@@ -396,6 +620,12 @@ function generateMarkdownPrPreview(impact: PrImpact): string {
     `## Breaking Changes`,
     '',
     ...impact.breakingChanges.map((b) => `- ⚠️ ${b}`),
+    '',
+    `## Deterministic Review Findings`,
+    '',
+    ...impact.findings.map(
+      (f) => `- **${f.severity.toUpperCase()}** [${f.rule}] \`${f.file}:${f.line}\`: ${f.message}`,
+    ),
     '',
     `## Suggested Tests`,
     '',

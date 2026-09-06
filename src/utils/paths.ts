@@ -29,3 +29,15 @@ export function normalizePathNoTrailing(p: string): string {
   if (/^[A-Z]:\/$/.test(normalized)) return normalized;
   return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
 }
+
+/** Canonical string identity used for persisted project-relative paths. */
+export function canonicalPath(p: string): string {
+  return normalizePathNoTrailing(p.trim());
+}
+
+/** Compare paths using the host filesystem's case policy. */
+export function pathsEqual(a: string, b: string): boolean {
+  const left = canonicalPath(a);
+  const right = canonicalPath(b);
+  return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
+}

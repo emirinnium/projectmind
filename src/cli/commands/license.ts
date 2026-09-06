@@ -60,7 +60,7 @@ export function createLicenseCommand(): Command {
           }
 
           if (opts.format === 'json') {
-            console.log(JSON.stringify(pkg, null, 2));
+            output.json(pkg);
           }
         } catch (e) {
           output.error(`Failed to parse package.json: ${e}`);
@@ -121,7 +121,7 @@ export function createLicenseCommand(): Command {
             writeFileSync(opts.output, content);
             output.success(`Written to ${opts.output}`);
           } else {
-            console.log(content);
+            output.raw(content);
           }
           return;
         }

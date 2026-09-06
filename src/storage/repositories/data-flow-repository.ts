@@ -28,16 +28,23 @@ export interface DataFlowEntry {
 export class DataFlowRepository {
   constructor(private readonly db: DatabaseSync = getDatabase()) {}
 
-  getOrCreateResource(qualifiedName: string, kind: ResourceKind, identity: string): Resource {
+  getOrCreateResource(
+    qualifiedName: string,
+    kind: ResourceKind,
+    identity: string,
+    projectId = 1,
+  ): Resource {
     const existing = this.db
-      .prepare('SELECT id FROM resources WHERE qualified_name = ?')
-      .get(qualifiedName) as { id: number } | undefined;
+      .prepare('SELECT id FROM resources WHERE qualified_name = ? AND project_id = ?')
+      .get(qualifiedName, projectId) as { id: number } | undefined;
     if (existing) {
       return { id: existing.id, qualifiedName, kind, identity };
     }
     const result = this.db
-      .prepare('INSERT INTO resources (qualified_name, kind, identity) VALUES (?, ?, ?)')
-      .run(qualifiedName, kind, identity);
+      .prepare(
+        'INSERT INTO resources (qualified_name, kind, identity, project_id) VALUES (?, ?, ?, ?)',
+      )
+      .run(qualifiedName, kind, identity, projectId);
     return { id: Number(result.lastInsertRowid), qualifiedName, kind, identity };
   }
 
@@ -58,11 +65,13 @@ export class DataFlowRepository {
       params.fromResourceQualifiedName,
       params.fromResourceKind,
       params.fromResourceIdentity,
+      params.projectId,
     );
     const toResource = this.getOrCreateResource(
       params.toResourceQualifiedName,
       params.toResourceKind,
       params.toResourceIdentity,
+      params.projectId,
     );
 
     const sourceFunctionId = this.resolveFunctionId(params.sourceFunctionName);
@@ -134,7 +143,10 @@ export class DataFlowRepository {
     }));
   }
 
-  getResourceFlows(resourceQualifiedName: string): Array<{
+  getResourceFlows(
+    resourceQualifiedName: string,
+    projectId: number = 1,
+  ): Array<{
     id: number;
     direction: 'from' | 'to';
     resource: Resource;
@@ -142,8 +154,8 @@ export class DataFlowRepository {
     via: string | null;
   }> {
     const resource = this.db
-      .prepare('SELECT id FROM resources WHERE qualified_name = ?')
-      .get(resourceQualifiedName) as { id: number } | undefined;
+      .prepare('SELECT id FROM resources WHERE qualified_name = ? AND project_id = ?')
+      .get(resourceQualifiedName, projectId) as { id: number } | undefined;
     if (!resource) return [];
 
     const flows: Array<{
@@ -160,10 +172,10 @@ export class DataFlowRepository {
       SELECT df.*, r2.qualified_name as other_qn, r2.kind as other_kind, r2.identity as other_identity
       FROM data_flows df
       JOIN resources r2 ON df.to_resource_id = r2.id
-      WHERE df.from_resource_id = ?
+      WHERE df.from_resource_id = ? AND df.project_id = ?
     `,
       )
-      .all(resource.id) as Record<string, SQLOutputValue>[];
+      .all(resource.id, projectId) as Record<string, SQLOutputValue>[];
 
     for (const r of fromRows) {
       flows.push({
@@ -186,10 +198,10 @@ export class DataFlowRepository {
       SELECT df.*, r1.qualified_name as other_qn, r1.kind as other_kind, r1.identity as other_identity
       FROM data_flows df
       JOIN resources r1 ON df.from_resource_id = r1.id
-      WHERE df.to_resource_id = ?
+      WHERE df.to_resource_id = ? AND df.project_id = ?
     `,
       )
-      .all(resource.id) as Record<string, SQLOutputValue>[];
+      .all(resource.id, projectId) as Record<string, SQLOutputValue>[];
 
     for (const r of toRows) {
       flows.push({

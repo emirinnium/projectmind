@@ -387,9 +387,7 @@ export function adaptiveCoherenceCheck(
   content: string,
   agentName?: string,
 ): { verdict: 'pass' | 'warn' | 'fail'; message: string; styleMismatch?: boolean } {
-  const result = agentName
-    ? loadAgentProfile(agentName)
-    : { success: true, value: null as unknown as AgentFingerprint };
+  const result = agentName ? loadAgentProfile(agentName) : { success: false as const };
   if (!result.success) {
     return {
       verdict: 'pass',

@@ -1,21 +1,20 @@
 import { Command } from 'commander';
 import { asyncHandler, output } from '@/cli/utils/shared.js';
-import { writeFileSync, existsSync, readFileSync, mkdirSync, appendFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { writeClaudeSkill } from '@/cli/generators/agent-configs.js';
 
-function addToGitignore(gitignorePath: string, entry: string): void {
-  if (!existsSync(gitignorePath)) return;
-  const content = readFileSync(gitignorePath, 'utf-8');
-  if (content.split('\n').some((line) => line.trim() === entry)) return;
-  appendFileSync(gitignorePath, `\n${entry}\n`);
-}
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+type JsonObject = { [key: string]: JsonValue };
+type AgentKind = 'json-mcp' | 'opencode' | 'portable' | 'kilo' | 'codex';
 
 interface AgentProfile {
   name: string;
   configPath: string;
+  kind: AgentKind;
   note: string;
+  instructionPath: string;
   absolute?: boolean;
 }
 
@@ -41,105 +40,240 @@ const AGENTS: Record<string, AgentProfile> = {
   'claude-code': {
     name: 'Claude Code',
     configPath: '.mcp.json',
-    note: 'Picks up .mcp.json automatically on next session.',
+    kind: 'json-mcp',
+    instructionPath: 'CLAUDE.md',
+    note: 'Project .mcp.json is loaded by the next Claude Code session.',
+  },
+  claude: {
+    name: 'Claude Code',
+    configPath: '.mcp.json',
+    kind: 'json-mcp',
+    instructionPath: 'CLAUDE.md',
+    note: 'Alias for claude-code.',
   },
   'claude-desktop': {
     name: 'Claude Desktop',
     configPath: claudeDesktopConfigPath(),
-    note: 'Global GUI-app config. PROJECTMIND_ROOT pinned to cwd.',
+    kind: 'json-mcp',
+    instructionPath: 'CLAUDE.md',
     absolute: true,
+    note: 'Global desktop config; PROJECTMIND_ROOT is pinned to this project.',
+  },
+  codex: {
+    name: 'Codex',
+    configPath: '.codex/config.toml',
+    kind: 'codex',
+    instructionPath: 'AGENTS.md',
+    note: 'Project-local Codex MCP block and instructions generated.',
+  },
+  opencode: {
+    name: 'OpenCode',
+    configPath: 'opencode.json',
+    kind: 'opencode',
+    instructionPath: 'AGENTS.md',
+    note: 'OpenCode v2 mcp.servers configuration generated.',
   },
   cursor: {
     name: 'Cursor',
     configPath: '.cursor/mcp.json',
-    note: 'Reads .cursor/mcp.json from the workspace root.',
+    kind: 'json-mcp',
+    instructionPath: 'AGENTS.md',
+    note: 'Workspace Cursor MCP config generated.',
   },
   windsurf: {
     name: 'Windsurf',
     configPath: join(homedir(), '.codeium', 'windsurf', 'mcp_config.json'),
-    note: 'Global config (~/.codeium/windsurf/mcp_config.json). PROJECTMIND_ROOT pinned.',
+    kind: 'json-mcp',
+    instructionPath: 'AGENTS.md',
     absolute: true,
+    note: 'Global Windsurf config generated; refresh the MCP panel.',
   },
   vscode: {
-    name: 'VS Code Copilot / any stdio-MCP extension',
+    name: 'VS Code MCP',
     configPath: '.vscode/mcp.json',
-    note: 'VS Code MCP-compatible extensions read this.',
+    kind: 'json-mcp',
+    instructionPath: 'AGENTS.md',
+    note: 'Workspace VS Code MCP config generated.',
+  },
+  devin: {
+    name: 'Devin',
+    configPath: '.devin/mcp.json',
+    kind: 'portable',
+    instructionPath: 'DEVIN.md',
+    note: 'Portable manifest; import it in Devin MCP settings if auto-discovery is unavailable.',
+  },
+  antigravity: {
+    name: 'Google Antigravity',
+    configPath: '.agent/mcp_config.json',
+    kind: 'json-mcp',
+    instructionPath: '.agent/rules/projectmind.md',
+    note: 'Project-local Antigravity MCP config and rule generated.',
+  },
+  kilo: {
+    name: 'Kilo Code',
+    configPath: '.kilo/kilo.jsonc',
+    kind: 'kilo',
+    instructionPath: 'AGENTS.md',
+    note: 'Project-local Kilo config generated under .kilo/kilo.jsonc.',
+  },
+  'kilo-code': {
+    name: 'Kilo Code',
+    configPath: '.kilo/kilo.jsonc',
+    kind: 'kilo',
+    instructionPath: 'AGENTS.md',
+    note: 'Alias for kilo.',
   },
 };
 
-const SERVER_ENTRY = {
-  type: 'stdio' as const,
-  command: 'projectmind',
-  args: ['mcp'],
-  env: { PROJECTMIND_ROOT: '.' },
-};
+function packageVersion(root: string): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      version?: unknown;
+    };
+    return typeof pkg.version === 'string' ? pkg.version : 'latest';
+  } catch {
+    return 'latest';
+  }
+}
 
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-type JsonObject = { [key: string]: JsonValue };
+function serverEntry(root: string): JsonObject {
+  return {
+    command: 'npx',
+    args: ['--yes', `@emirhanturker/projectmind@${packageVersion(root)}`, 'mcp'],
+    env: { PROJECTMIND_ROOT: '.' },
+  };
+}
+
+function readJson(path: string, force: boolean): JsonObject {
+  if (!existsSync(path)) return {};
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as JsonObject;
+  } catch {
+    if (force) return {};
+    throw new Error(`Existing config is not valid JSON: ${path}. Use --force after backing it up.`);
+  }
+}
+
+function mergeConfig(path: string, root: string, kind: AgentKind, force: boolean): JsonObject {
+  const config = readJson(path, force);
+  const entry = serverEntry(root);
+  if (kind === 'opencode') {
+    const mcp = (
+      config.mcp && typeof config.mcp === 'object' && !Array.isArray(config.mcp) ? config.mcp : {}
+    ) as JsonObject;
+    const servers = (
+      mcp.servers && typeof mcp.servers === 'object' && !Array.isArray(mcp.servers)
+        ? mcp.servers
+        : {}
+    ) as JsonObject;
+    servers.projectmind = { type: 'local', command: ['npx', ...(entry.args as string[])] };
+    config.mcp = { ...mcp, servers };
+  } else if (kind === 'kilo') {
+    const mcp = (
+      config.mcp && typeof config.mcp === 'object' && !Array.isArray(config.mcp) ? config.mcp : {}
+    ) as JsonObject;
+    mcp.projectmind = {
+      type: 'local',
+      command: ['npx', ...(entry.args as string[])],
+      enabled: true,
+    };
+    config.mcp = mcp;
+  } else {
+    const servers = (
+      config.mcpServers &&
+      typeof config.mcpServers === 'object' &&
+      !Array.isArray(config.mcpServers)
+        ? config.mcpServers
+        : {}
+    ) as JsonObject;
+    config.mcpServers = { ...servers, projectmind: entry };
+  }
+  return config;
+}
+
+function codexConfig(root: string): string {
+  const args = (serverEntry(root).args as string[]).map((arg) => JSON.stringify(arg)).join(', ');
+  return [
+    '# Generated by `pm mcp-init codex`',
+    '# If your Codex installation only reads ~/.codex/config.toml, merge this table there.',
+    '',
+    '[mcp_servers.projectmind]',
+    'command = "npx"',
+    `args = [${args}]`,
+    'enabled = true',
+    '',
+  ].join('\n');
+}
+
+function instructions(agent: string): string {
+  return [
+    `# ProjectMind instructions (${agent})`,
+    '',
+    'ProjectMind is this repository’s codebase knowledge graph and MCP intelligence layer.',
+    '',
+    'Before editing: call `get_context` and `analyze_impact` for the target file.',
+    'After editing: call `check_coherence` and resolve warnings before continuing.',
+    'Before committing: call `debt_report`, `find_circular_deps`, and `genome_score`.',
+    'Keep PROJECTMIND_ROOT pinned to this repository and never expose secrets in tool output.',
+    'Use `scan_project` after adding files and `store_memory` for durable architectural decisions.',
+    '',
+  ].join('\n');
+}
+
+function writeInstructions(path: string, agent: string, force: boolean): boolean {
+  const body = instructions(agent);
+  if (existsSync(path) && !force) {
+    const current = readFileSync(path, 'utf8');
+    if (current.includes('# ProjectMind instructions')) return false;
+    writeFileSync(path, `${current.trimEnd()}\n\n${body}`, 'utf8');
+    return true;
+  }
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, body, 'utf8');
+  return true;
+}
 
 export function createInitMcpCommand(): Command {
   return new Command('init-mcp')
-    .description('Generate MCP server config for a coding agent')
+    .alias('mcp-init')
+    .description('Generate a production-ready ProjectMind MCP config and agent instructions')
     .argument('<agent>', `Target agent: ${Object.keys(AGENTS).join('|')}`)
-    .option('--force', 'Overwrite existing config file')
+    .option('--force', 'Replace the generated ProjectMind config section/file')
     .option('--claude-skills', 'Also generate .claude/skills/<name>/SKILL.md')
     .action(
       asyncHandler(async (agent: string, opts: { force?: boolean; claudeSkills?: boolean }) => {
-        const profile = AGENTS[agent];
+        const profile = AGENTS[agent.toLowerCase()];
         if (!profile) {
           output.error(`Unknown agent "${agent}". Supported: ${Object.keys(AGENTS).join(', ')}`);
           throw new Error('MCP initialization failed');
         }
-
-        const filePath = profile.absolute
-          ? profile.configPath
-          : join(process.cwd(), profile.configPath);
-        if (!profile.absolute) {
-          const configDir =
-            profile.configPath.substring(0, profile.configPath.lastIndexOf('/')) || '.';
-          if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true });
-        } else {
-          const absDir = filePath.substring(
-            0,
-            Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\')),
+        const root = process.cwd();
+        const filePath = profile.absolute ? profile.configPath : join(root, profile.configPath);
+        if (existsSync(filePath) && !opts.force)
+          output.warn(`Config already exists at ${filePath}. Use --force to update it.`);
+        else {
+          mkdirSync(dirname(filePath), { recursive: true });
+          writeFileSync(
+            filePath,
+            profile.kind === 'codex'
+              ? codexConfig(root)
+              : `${JSON.stringify(mergeConfig(filePath, root, profile.kind, !!opts.force), null, 2)}\n`,
+            'utf8',
           );
-          if (!existsSync(absDir)) mkdirSync(absDir, { recursive: true });
+          output.success(`✓ ${profile.name} MCP config written to ${filePath}`);
         }
-
-        if (existsSync(filePath) && !opts.force) {
-          output.warn(`Config already exists at ${filePath}. Use --force to overwrite.`);
-          return;
+        const instructionPath = join(root, profile.instructionPath);
+        if (writeInstructions(instructionPath, agent, !!opts.force))
+          output.success(`✓ Agent instructions written to ${instructionPath}`);
+        else output.info(`Agent instructions already present in ${instructionPath}`);
+        if (opts.claudeSkills || agent === 'claude' || agent === 'claude-code') {
+          const skill = writeClaudeSkill(root, !!opts.force);
+          if (skill.written) output.success(`✓ Claude Code skill written to ${skill.path}`);
         }
-
-        const entry = profile.absolute
-          ? { ...SERVER_ENTRY, env: { PROJECTMIND_ROOT: process.cwd() } }
-          : SERVER_ENTRY;
-        let config: JsonObject = { mcpServers: { projectmind: entry } };
-
-        if (existsSync(filePath)) {
-          try {
-            const existing = JSON.parse(readFileSync(filePath, 'utf-8')) as JsonObject;
-            const prev = (existing['mcpServers'] as JsonObject) ?? {};
-            existing['mcpServers'] = { ...prev, projectmind: entry };
-            config = existing;
-          } catch {
-            /* overwrite */
-          }
-        }
-
-        writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n');
-        output.success(`✓ ${profile.name} MCP config written to ${filePath}`);
         output.kv('Note', profile.note);
-        output.info('Make sure the CLI is installed: npm install -g @emirhanturker/projectmind');
-
-        if (opts.claudeSkills) {
-          const skill = writeClaudeSkill(process.cwd(), !!opts.force);
-          if (!skill.written) {
-            output.warn(`Skill already exists at ${skill.path}. Use --force to overwrite.`);
-          } else {
-            output.success(`✓ Claude Code skill written to ${skill.path}`);
-          }
-        }
+        output.info(
+          `MCP server uses @emirhanturker/projectmind@${packageVersion(root)} via npx and PROJECTMIND_ROOT=.`,
+        );
       }),
     );
 }

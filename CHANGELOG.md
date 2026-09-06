@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+No unreleased changes.
+
+## [1.0.0] - 2026-09-06
+
+Production-ready stable release: hardened migrations, deterministic review
+history, cross-platform path handling, complete MCP initialization for major
+coding agents, and verified CLI/MCP/web release gates.
+
+- Centralized multi-language parser registration with capability reporting.
+- Added versioned review history with deterministic finding fingerprints and resolved/open lifecycle.
+- Standardized CLI raw and JSON output through the output abstraction.
+- Added web quality CI coverage and cross-platform path confinement safeguards.
+
 ## [0.9.0] - 2026-08-31
 
 v0.9.0 — intent-driven search, predictive impact, hardening & coverage expansion (F1–F7).

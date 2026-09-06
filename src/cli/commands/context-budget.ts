@@ -107,22 +107,16 @@ class ContextBudgetCommand extends BaseCommand {
             const plan = optimizer.optimize(items, budget, taskType);
 
             if (opts.format === 'json') {
-              console.log(
-                JSON.stringify(
-                  {
-                    task: task ?? null,
-                    taskType: taskType ?? null,
-                    strategy,
-                    totalTokens: plan.totalTokens,
-                    allocatedTokens: plan.allocatedTokens,
-                    compressionStrategy: plan.compressionStrategy,
-                    files: plan.files,
-                    excludedFiles: plan.excludedFiles,
-                  },
-                  null,
-                  2,
-                ),
-              );
+              output.json({
+                task: task ?? null,
+                taskType: taskType ?? null,
+                strategy,
+                totalTokens: plan.totalTokens,
+                allocatedTokens: plan.allocatedTokens,
+                compressionStrategy: plan.compressionStrategy,
+                files: plan.files,
+                excludedFiles: plan.excludedFiles,
+              });
               return;
             }
 

@@ -8,6 +8,7 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 class Logger {
   private minLevel: LogLevel;
   private isMcpMode: boolean;
+  private isMachineMode = false;
   private contextPrefix: string | null = null;
 
   constructor() {
@@ -21,6 +22,11 @@ class Logger {
 
   setMcpMode(enabled: boolean): void {
     this.isMcpMode = enabled;
+  }
+
+  /** Route diagnostics away from stdout when a command emits a protocol document. */
+  setMachineMode(enabled: boolean): void {
+    this.isMachineMode = enabled;
   }
 
   setContext(prefix: string): void {
@@ -44,7 +50,7 @@ class Logger {
   }
 
   private output(level: LogLevel, formatted: string): void {
-    if (this.isMcpMode) {
+    if (this.isMcpMode || this.isMachineMode) {
       process.stderr.write(formatted + '\n');
     } else {
       switch (level) {

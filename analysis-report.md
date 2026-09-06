@@ -1,4 +1,11 @@
-# ProjectMind Codebase Analysis Report
+# ProjectMind Codebase Analysis Report (Historical + Remediation Status)
+
+> This file contains the original static review findings. The remediation work
+> is tracked in `TODO_CODEBASE_REMEDIATION.md`; do not treat the historical
+> 65/100 score or its line numbers as the current health state. As of the last
+> live verification, typecheck and ESLint pass, web production build pass,
+> package import smoke pass, circular dependencies were not found, debt was 0,
+> and the genome score was 91.8%.
 
 ## Summary
 

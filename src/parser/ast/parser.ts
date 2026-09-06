@@ -2,6 +2,7 @@ import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import type { Language, FileStructure, FunctionInfo, ClassInfo } from '../types.js';
+import { assertSourceSize, assertSourceTextSize } from '../source-limits.js';
 
 /** JSON module import extensions recognized during parsing */
 const JSON_EXTENSIONS = ['.json'];
@@ -56,7 +57,9 @@ export function parseTypeScriptFile(
   content?: string,
   language?: Language,
 ): FileStructure {
+  if (content === undefined) assertSourceSize(filePath);
   const sourceText = content ?? readFileSync(filePath, 'utf-8');
+  assertSourceTextSize(filePath, sourceText);
   const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true);
 
   const functions: FunctionInfo[] = [];

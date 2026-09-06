@@ -86,8 +86,15 @@ export class PatternExtractor {
   /**
    * Extract patterns from multiple files (batch mode).
    */
-  async extractFromFiles(filePaths: string[]): Promise<ExtractionResult[]> {
-    return Promise.all(filePaths.map((fp) => this.extractFromFile(fp)));
+  async extractFromFiles(filePaths: string[], signal?: AbortSignal): Promise<ExtractionResult[]> {
+    const results: ExtractionResult[] = [];
+    const batchSize = 32;
+    for (let i = 0; i < filePaths.length; i += batchSize) {
+      if (signal?.aborted) throw new Error('Pattern extraction aborted');
+      const batch = filePaths.slice(i, i + batchSize);
+      results.push(...(await Promise.all(batch.map((fp) => this.extractFromFile(fp)))));
+    }
+    return results;
   }
 
   /**

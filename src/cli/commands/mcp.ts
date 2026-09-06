@@ -5,10 +5,8 @@ export function createMcpCommand(): Command {
   return (
     new Command('mcp')
       .description('Start ProjectMind as an MCP server (stdio mode)')
-      // Deliberately NOT wrapped in asyncHandler: it calls process.exit(0) on
-      // success, which killed the long-running stdio server the moment it
-      // became ready. Errors are handled explicitly with exit(1) instead;
-      // success falls through to stdin.resume inside the server module.
+      // Deliberately NOT wrapped in asyncHandler: the long-running stdio
+      // server must keep the process alive after initialization.
       .action(async () => {
         try {
           logger.setMcpMode(true);
@@ -18,7 +16,7 @@ export function createMcpCommand(): Command {
           logger.error(
             `Failed to start MCP server: ${error instanceof Error ? error.message : String(error)}`,
           );
-          process.exit(1);
+          throw error;
         }
       })
   );

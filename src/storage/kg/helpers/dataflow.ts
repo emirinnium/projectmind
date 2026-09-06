@@ -8,14 +8,16 @@ export function getOrCreateResource(
   identity: string,
 ): { id: number; qualifiedName: string; kind: string; identity: string } {
   const existing = ctx.db
-    .prepare('SELECT id FROM resources WHERE qualified_name = ?')
-    .get(qualifiedName) as { id: number } | undefined;
+    .prepare('SELECT id FROM resources WHERE qualified_name = ? AND project_id = ?')
+    .get(qualifiedName, ctx.currentProjectId) as { id: number } | undefined;
   if (existing) {
     return { id: existing.id, qualifiedName, kind, identity };
   }
   const result = ctx.db
-    .prepare('INSERT INTO resources (qualified_name, kind, identity) VALUES (?, ?, ?)')
-    .run(qualifiedName, kind, identity);
+    .prepare(
+      'INSERT INTO resources (qualified_name, kind, identity, project_id) VALUES (?, ?, ?, ?)',
+    )
+    .run(qualifiedName, kind, identity, ctx.currentProjectId);
   return { id: Number(result.lastInsertRowid), qualifiedName, kind, identity };
 }
 
@@ -55,21 +57,45 @@ export function recordDataFlow(
   let targetFunctionId: number | null = null;
   if (params.sourceFunctionName) {
     const fn = ctx.db
-      .prepare('SELECT id FROM functions WHERE name = ? LIMIT 1')
-      .get(params.sourceFunctionName) as { id: number } | undefined;
+      .prepare(
+        'SELECT fn.id, f.language FROM functions fn JOIN files f ON f.id = fn.file_id WHERE fn.name = ? AND f.project_id = ? LIMIT 1',
+      )
+      .get(params.sourceFunctionName, ctx.currentProjectId) as
+      { id: number; language: string | null } | undefined;
     if (fn) sourceFunctionId = fn.id;
   }
   if (params.targetFunctionName) {
     const fn = ctx.db
-      .prepare('SELECT id FROM functions WHERE name = ? LIMIT 1')
-      .get(params.targetFunctionName) as { id: number } | undefined;
+      .prepare(
+        'SELECT fn.id, f.language FROM functions fn JOIN files f ON f.id = fn.file_id WHERE fn.name = ? AND f.project_id = ? LIMIT 1',
+      )
+      .get(params.targetFunctionName, ctx.currentProjectId) as
+      { id: number; language: string | null } | undefined;
     if (fn) targetFunctionId = fn.id;
   }
 
+  const sourceLanguage = sourceFunctionId
+    ? (
+        ctx.db
+          .prepare(
+            'SELECT f.language FROM functions fn JOIN files f ON f.id = fn.file_id WHERE fn.id = ?',
+          )
+          .get(sourceFunctionId) as { language: string | null } | undefined
+      )?.language
+    : null;
+  const targetLanguage = targetFunctionId
+    ? (
+        ctx.db
+          .prepare(
+            'SELECT f.language FROM functions fn JOIN files f ON f.id = fn.file_id WHERE fn.id = ?',
+          )
+          .get(targetFunctionId) as { language: string | null } | undefined
+      )?.language
+    : null;
   const result = ctx.db
     .prepare(
-      `INSERT INTO data_flows (from_resource_id, to_resource_id, kind, via, source_function_id, target_function_id, project_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO data_flows (from_resource_id, to_resource_id, kind, via, source_function_id, target_function_id, project_id, source_language, target_language)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       fromResource.id,
@@ -79,6 +105,8 @@ export function recordDataFlow(
       sourceFunctionId,
       targetFunctionId,
       ctx.currentProjectId,
+      sourceLanguage ?? null,
+      targetLanguage ?? null,
     );
 
   return {
@@ -109,6 +137,8 @@ export function getDataFlows(
   via: string | null;
   sourceFunctionName: string | null;
   targetFunctionName: string | null;
+  sourceLanguage: string | null;
+  targetLanguage: string | null;
 }[] {
   const pid = projectId || ctx.currentProjectId;
   const rows = ctx.db
@@ -147,6 +177,8 @@ export function getDataFlows(
     via: (r.via as string | null) ?? null,
     sourceFunctionName: (r.source_fn as string | null) ?? null,
     targetFunctionName: (r.target_fn as string | null) ?? null,
+    sourceLanguage: (r.source_language as string | null) ?? null,
+    targetLanguage: (r.target_language as string | null) ?? null,
   }));
 }
 
@@ -161,8 +193,8 @@ export function getResourceFlows(
   via: string | null;
 }[] {
   const resource = ctx.db
-    .prepare('SELECT id FROM resources WHERE qualified_name = ?')
-    .get(resourceQualifiedName) as { id: number } | undefined;
+    .prepare('SELECT id FROM resources WHERE qualified_name = ? AND project_id = ?')
+    .get(resourceQualifiedName, ctx.currentProjectId) as { id: number } | undefined;
   if (!resource) return [];
 
   const flows: {
@@ -179,10 +211,10 @@ export function getResourceFlows(
     SELECT df.*, r2.qualified_name as other_qn, r2.kind as other_kind, r2.identity as other_identity
     FROM data_flows df
     JOIN resources r2 ON df.to_resource_id = r2.id
-    WHERE df.from_resource_id = ?
+    WHERE df.from_resource_id = ? AND df.project_id = ?
   `,
     )
-    .all(resource.id) as Record<string, SQLOutputValue>[];
+    .all(resource.id, ctx.currentProjectId) as Record<string, SQLOutputValue>[];
 
   for (const r of fromRows) {
     flows.push({
@@ -205,10 +237,10 @@ export function getResourceFlows(
     SELECT df.*, r1.qualified_name as other_qn, r1.kind as other_kind, r1.identity as other_identity
     FROM data_flows df
     JOIN resources r1 ON df.from_resource_id = r1.id
-    WHERE df.to_resource_id = ?
+    WHERE df.to_resource_id = ? AND df.project_id = ?
   `,
     )
-    .all(resource.id) as Record<string, SQLOutputValue>[];
+    .all(resource.id, ctx.currentProjectId) as Record<string, SQLOutputValue>[];
 
   for (const r of toRows) {
     flows.push({

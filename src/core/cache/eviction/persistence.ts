@@ -98,6 +98,9 @@ export class CachePersistence<K, V> {
         this.persistToDisk(this.cacheMap);
       }
     }, PERSIST_INTERVAL_MS);
+    // Persistent cache flushing is background maintenance; it must never keep
+    // a one-shot CLI or MCP shutdown alive if a caller misses destroy().
+    this.persistTimer.unref?.();
   }
 
   destroy(): void {

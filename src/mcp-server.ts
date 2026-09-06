@@ -26,10 +26,8 @@ import {
   MCP_ACCESS_SCOPE,
   getOauthRegistry,
   getOauthTokens,
-  extractBearerOrHeaderToken,
   isStaticTokenValid,
   isHttpAuthorized,
-  safeTokenEqual,
   httpRateLimiter,
   jsonError,
 } from './mcp/http-security.js';

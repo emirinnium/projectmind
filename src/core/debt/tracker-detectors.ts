@@ -1,5 +1,4 @@
 import type { DebtItem } from './detection/persistence.js';
-import type { FileInfo } from '../../storage/knowledge-graph.js';
 import type { GitChurnEntry } from './git-churn.js';
 import { COGNITIVE_LOAD_THRESHOLD } from './index.js';
 

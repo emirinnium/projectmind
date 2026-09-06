@@ -102,7 +102,6 @@ export function findSymbolDefinitionForTool(
   try {
     const targetFile = ls.norm(absPath);
     const sourceText = ts.sys.readFile(targetFile) ?? '';
-    const sourceFile = ts.createSourceFile(targetFile, sourceText, ts.ScriptTarget.Latest, true);
 
     // Find all occurrences of the symbol in the source file
     const escapedSymbol = args.symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -113,11 +112,9 @@ export function findSymbolDefinitionForTool(
 
     while ((match = wordRegex.exec(sourceText)) !== null) {
       const start = match.index!;
-      const { line, column, snippet } = defineDescribeSpan(sourceText, start);
+      const { line, column } = defineDescribeSpan(sourceText, start);
 
       // Check if this occurrence is a declaration (has a kind we can identify)
-      const nodeAtPosition = null;
-
       // Try to find the node kind at this position
       const kind = guessSymbolKind(sourceText, start);
 
@@ -137,7 +134,7 @@ export function findSymbolDefinitionForTool(
       file: args.file,
       definition,
     };
-  } catch (e) {
+  } catch {
     return {
       symbol: args.symbol,
       file: args.file,

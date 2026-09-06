@@ -1,52 +1,23 @@
 import { readFileSync } from 'node:fs';
 import Parser from 'tree-sitter';
-import TypeScript from 'tree-sitter-typescript';
-import Python from 'tree-sitter-python';
-import Go from 'tree-sitter-go';
-import Rust from 'tree-sitter-rust';
-import Java from 'tree-sitter-java';
-import CSharp from 'tree-sitter-c-sharp';
-import CPP from 'tree-sitter-cpp';
-import Ruby from 'tree-sitter-ruby';
 import { logger } from '../utils/logger.js';
 import { getParserFor } from './language-service.js';
+import { getParserDefinition } from './parser-registry.js';
 import type { Language, FileStructure, FunctionInfo, ClassInfo } from './types.js';
-
-const LANGUAGE_MAP: Record<string, { language: Parser.Language; name: Language }> = {
-  '.ts': { language: TypeScript.typescript, name: 'typescript' },
-  '.tsx': { language: TypeScript.tsx, name: 'typescript' },
-  '.js': { language: TypeScript.typescript, name: 'javascript' },
-  '.jsx': { language: TypeScript.tsx, name: 'javascript' },
-  '.mjs': { language: TypeScript.typescript, name: 'javascript' },
-  '.cjs': { language: TypeScript.typescript, name: 'javascript' },
-  '.py': { language: Python, name: 'python' },
-  '.go': { language: Go, name: 'go' },
-  '.rs': { language: Rust, name: 'rust' },
-  '.java': { language: Java, name: 'java' },
-  '.cs': { language: CSharp, name: 'csharp' },
-  '.csx': { language: CSharp, name: 'csharp' },
-  '.c': { language: CPP, name: 'cpp' }, // tree-sitter-cpp grammar covers plain C
-  '.cpp': { language: CPP, name: 'cpp' },
-  '.cc': { language: CPP, name: 'cpp' },
-  '.cxx': { language: CPP, name: 'cpp' },
-  '.hpp': { language: CPP, name: 'cpp' },
-  '.h': { language: CPP, name: 'cpp' },
-  '.rb': { language: Ruby, name: 'ruby' },
-  '.rake': { language: Ruby, name: 'ruby' },
-  '.gemspec': { language: Ruby, name: 'ruby' },
-};
+import { assertSourceSize, assertSourceTextSize } from './source-limits.js';
 
 export function parseFileMultilang(filePath: string, content?: string): FileStructure | null {
-  const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
-  const entry = LANGUAGE_MAP[ext];
+  const definition = getParserDefinition(filePath);
 
-  if (!entry) {
+  if (!definition) {
     return null;
   }
 
   let sourceText: string;
   try {
+    if (content === undefined) assertSourceSize(filePath);
     sourceText = content ?? readFileSync(filePath, 'utf-8');
+    assertSourceTextSize(filePath, sourceText);
   } catch {
     logger.warn(`Failed to read file: ${filePath}`);
     return null;
@@ -55,8 +26,7 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
   // K12/R14: reuse the pooled parser per grammar instead of allocating a new
   // Parser per file (each carries an expensive native grammar — pooling fixed
   // the RSS leak for language-service and applies to this hot path too).
-  const parser = getParserFor(entry.language);
-  parser.setLanguage(entry.language);
+  const parser = getParserFor(definition.grammar);
 
   let tree: Parser.Tree;
   try {
@@ -78,7 +48,7 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
 
   const visit = (node: Parser.SyntaxNode): void => {
     const nodeType = node.type;
-    const lang = entry.name;
+    const lang = definition.language;
 
     // Functions - different node types per language
     const functionTypes: Record<string, string[]> = {
@@ -145,7 +115,7 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
       functions.push({
         name,
         signature: `${name}${params}`,
-        returnType: typeNode?.text ?? 'any',
+        returnType: typeNode?.text ?? 'unknown',
         startLine: node.startPosition.row + 1,
         endLine: node.endPosition.row + 1,
         complexity,
@@ -222,7 +192,7 @@ export function parseFileMultilang(filePath: string, content?: string): FileStru
 
   return {
     filePath,
-    language: entry.name,
+    language: definition.language as Language,
     sizeBytes: sourceText.length,
     functions,
     classes,

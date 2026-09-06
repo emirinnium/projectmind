@@ -12,37 +12,32 @@ export function createScaleCommand(): Command {
           const report = scale.getScaleReport();
 
           if (opts.json) {
-            console.log(
-              JSON.stringify(
-                {
-                  totalFiles: report.totalFiles,
-                  totalLines: report.totalLines,
-                  totalBytes: report.totalBytes,
-                  agentCoverage: report.agentCoverage,
-                  avgCognitiveLoad: report.avgCognitiveLoad,
-                  languages: report.languages,
-                  modules: report.modules.map((m) => ({
-                    path: m.path,
-                    name: m.name,
-                    fileCount: m.fileCount,
-                    totalBytes: m.totalBytes,
-                    cognitiveLoad: m.cognitiveLoad,
-                    agentCoverage: m.agentCoverage,
-                  })),
-                  topHotspots: report.topHotspots.map((f) => ({
-                    path: f.relativePath,
-                    cognitiveLoad: f.cognitiveLoad,
-                    agentTouched: f.agentTouched,
-                  })),
-                  uncoveredFiles: report.uncoveredFiles.map((f) => ({
-                    path: f.relativePath,
-                    cognitiveLoad: f.cognitiveLoad,
-                  })),
-                },
-                null,
-                2,
-              ),
-            );
+            output.json({
+              protocolVersion: 1,
+              totalFiles: report.totalFiles,
+              totalLines: report.totalLines,
+              totalBytes: report.totalBytes,
+              agentCoverage: report.agentCoverage,
+              avgCognitiveLoad: report.avgCognitiveLoad,
+              languages: report.languages,
+              modules: report.modules.map((m) => ({
+                path: m.path,
+                name: m.name,
+                fileCount: m.fileCount,
+                totalBytes: m.totalBytes,
+                cognitiveLoad: m.cognitiveLoad,
+                agentCoverage: m.agentCoverage,
+              })),
+              topHotspots: report.topHotspots.map((f) => ({
+                path: f.relativePath,
+                cognitiveLoad: f.cognitiveLoad,
+                agentTouched: f.agentTouched,
+              })),
+              uncoveredFiles: report.uncoveredFiles.map((f) => ({
+                path: f.relativePath,
+                cognitiveLoad: f.cognitiveLoad,
+              })),
+            });
             return;
           }
 

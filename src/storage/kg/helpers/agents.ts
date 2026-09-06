@@ -64,8 +64,10 @@ export function storeTeamMemory(
   params: { agentName: string; scope: string; key: string; value: string; isPublic: boolean },
 ): TeamMemoryStoreComputation {
   const existingRow = ctx.db
-    .prepare('SELECT value, base_value FROM team_memories WHERE scope = ? AND key = ?')
-    .get(params.scope, params.key) as
+    .prepare(
+      'SELECT value, base_value FROM team_memories WHERE project_id = ? AND scope = ? AND key = ?',
+    )
+    .get(ctx.currentProjectId, params.scope, params.key) as
     { value: SQLOutputValue; base_value: SQLOutputValue | null } | undefined;
 
   const existing = existingRow
@@ -81,9 +83,9 @@ export function storeTeamMemory(
     // Single atomic UPSERT: value + base_value (the ancestor for the next write).
     ctx.db
       .prepare(
-        `INSERT INTO team_memories (agent_name, scope, key, value, base_value, is_public)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(scope, key) DO UPDATE SET
+        `INSERT INTO team_memories (agent_name, scope, key, value, base_value, is_public, project_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(project_id, scope, key) DO UPDATE SET
          value = excluded.value,
          base_value = excluded.base_value,
          agent_name = excluded.agent_name,
@@ -97,6 +99,7 @@ export function storeTeamMemory(
         decision.storedValue,
         decision.nextBaseValue,
         params.isPublic ? 1 : 0,
+        ctx.currentProjectId,
       );
   }
 
@@ -110,10 +113,10 @@ export function getTeamMemories(
   const rows = ctx.db
     .prepare(
       `SELECT * FROM team_memories
-     WHERE scope = ? AND (is_public = 1 OR agent_name = ?)
+     WHERE project_id = ? AND scope = ? AND (is_public = 1 OR agent_name = ?)
      ORDER BY updated_at DESC`,
     )
-    .all(params.scope, params.agentName) as Record<string, SQLOutputValue>[];
+    .all(ctx.currentProjectId, params.scope, params.agentName) as Record<string, SQLOutputValue>[];
 
   return rows.map(mapTeamMemoryRow);
 }
@@ -123,11 +126,11 @@ export function getAllTeamMemories(ctx: KgContext, viewerAgentName: string): Tea
   const rows = ctx.db
     .prepare(
       `SELECT * FROM team_memories
-     WHERE is_public = 1 OR agent_name = ?
+     WHERE project_id = ? AND (is_public = 1 OR agent_name = ?)
      ORDER BY updated_at DESC
      LIMIT 2000`,
     )
-    .all(viewerAgentName) as Record<string, SQLOutputValue>[];
+    .all(ctx.currentProjectId, viewerAgentName) as Record<string, SQLOutputValue>[];
   return rows.map(mapTeamMemoryRow);
 }
 

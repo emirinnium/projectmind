@@ -2,8 +2,10 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { confineToProject } from './_shared.js';
-import { registerCheckCoherenceTool } from './coherence.js';
-import { spawnSync } from 'child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 /** npm audit --json output structure */
 interface NpmAuditVulnerability {
@@ -72,20 +74,20 @@ export function registerScanCvesTool(server: McpServer, deps: McpDependencies): 
         const projectRoot = confineToProject(deps.projectRoot, deps.projectRoot);
 
         // Run `npm audit --json` confined to the project root
-        const npmAudit = spawnSync('npm', ['audit', '--json'], {
-          cwd: projectRoot,
-          env: { ...process.env, PATH: process.env.PATH },
-          timeout: 120_000,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        });
-
         let auditOutput: string;
-        if (npmAudit.status === 0) {
-          auditOutput = npmAudit.stdout.toString('utf8');
-        } else {
-          // npm audit may return non-zero when vulnerabilities are found;
-          // still try to parse partial output
-          auditOutput = npmAudit.stdout.toString('utf8');
+        try {
+          const result = await execFileAsync('npm', ['audit', '--json'], {
+            cwd: projectRoot,
+            env: { ...process.env, PATH: process.env.PATH },
+            timeout: 120_000,
+            maxBuffer: 10 * 1024 * 1024,
+          });
+          auditOutput = result.stdout;
+        } catch (error) {
+          // npm audit returns non-zero when vulnerabilities are found; its
+          // stdout is still the structured report we need to parse.
+          const auditError = error as { stdout?: string };
+          auditOutput = auditError.stdout ?? '';
         }
 
         let parsed: NpmAuditOutput;

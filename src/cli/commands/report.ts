@@ -15,38 +15,33 @@ export function createReportCommand(): Command {
           const debtReport = debt.getReport();
 
           if (opts.json) {
-            console.log(
-              JSON.stringify(
-                {
-                  totalFiles: scaleReport.totalFiles,
-                  totalLines: scaleReport.totalLines,
-                  totalBytes: scaleReport.totalBytes,
-                  agentCoverage: scaleReport.agentCoverage,
-                  avgCognitiveLoad: scaleReport.avgCognitiveLoad,
-                  languages: scaleReport.languages,
-                  modules: scaleReport.modules.map((m) => ({
-                    path: m.path,
-                    fileCount: m.fileCount,
-                    cognitiveLoad: m.cognitiveLoad,
-                    agentCoverage: m.agentCoverage,
-                  })),
-                  topHotspots: scaleReport.topHotspots.map((f) => ({
-                    path: f.relativePath,
-                    cognitiveLoad: f.cognitiveLoad,
-                    agentTouched: f.agentTouched,
-                  })),
-                  debtItems: [
-                    { severity: 'high', count: debtReport.bySeverity.high },
-                    { severity: 'medium', count: debtReport.bySeverity.medium },
-                    { severity: 'low', count: debtReport.bySeverity.low },
-                  ],
-                  debtTotal: debtReport.totalItems,
-                  genomeScore: genome.coherenceScore,
-                },
-                null,
-                2,
-              ),
-            );
+            output.json({
+              protocolVersion: 1,
+              totalFiles: scaleReport.totalFiles,
+              totalLines: scaleReport.totalLines,
+              totalBytes: scaleReport.totalBytes,
+              agentCoverage: scaleReport.agentCoverage,
+              avgCognitiveLoad: scaleReport.avgCognitiveLoad,
+              languages: scaleReport.languages,
+              modules: scaleReport.modules.map((m) => ({
+                path: m.path,
+                fileCount: m.fileCount,
+                cognitiveLoad: m.cognitiveLoad,
+                agentCoverage: m.agentCoverage,
+              })),
+              topHotspots: scaleReport.topHotspots.map((f) => ({
+                path: f.relativePath,
+                cognitiveLoad: f.cognitiveLoad,
+                agentTouched: f.agentTouched,
+              })),
+              debtItems: [
+                { severity: 'high', count: debtReport.bySeverity.high },
+                { severity: 'medium', count: debtReport.bySeverity.medium },
+                { severity: 'low', count: debtReport.bySeverity.low },
+              ],
+              debtTotal: debtReport.totalItems,
+              genomeScore: genome.coherenceScore,
+            });
             return;
           }
 

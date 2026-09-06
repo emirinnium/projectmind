@@ -24,13 +24,16 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
         }
 
         const analyzer = new TaintAnalyzer(deps.kg);
-        const { readFileSync, existsSync } = await import('node:fs');
+        const { readFile } = await import('node:fs/promises');
 
         // K5: never read outside the project root — relative paths resolve
         // against the project; `../` and absolute escapes are rejected.
         const absPath = confineToProject(args.filePath, deps.projectRoot);
 
-        if (!existsSync(absPath)) {
+        let content: string;
+        try {
+          content = await readFile(absPath, 'utf-8');
+        } catch {
           return {
             content: [
               {
@@ -44,8 +47,6 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
             ],
           };
         }
-
-        const content = readFileSync(absPath, 'utf-8');
         const lang = detectLanguageFromPath(absPath) ?? 'typescript';
         const flows = analyzer.analyzeSource(absPath, content, lang);
 
@@ -108,12 +109,15 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
         }
 
         const analyzer = new TaintAnalyzer(deps.kg);
-        const { readFileSync, existsSync } = await import('node:fs');
+        const { readFile } = await import('node:fs/promises');
 
         // K5: confine to the project root before reading.
         const absPath = confineToProject(args.filePath, deps.projectRoot);
 
-        if (!existsSync(absPath)) {
+        let content: string;
+        try {
+          content = await readFile(absPath, 'utf-8');
+        } catch {
           return {
             content: [
               {
@@ -127,8 +131,6 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
             ],
           };
         }
-
-        const content = readFileSync(absPath, 'utf-8');
         const lang = detectLanguageFromPath(absPath) ?? 'typescript';
         const recorded = analyzer.recordFlows(absPath, content, lang);
 

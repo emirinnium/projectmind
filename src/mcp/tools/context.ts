@@ -2,11 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { trackAgentAccess } from './types.js';
-import {
-  assembleUserContext,
-  UserContextItem,
-  UserContextResult,
-} from '../../core/context/smart-assembler.js';
+import { assembleUserContext } from '../../core/context/smart-assembler.js';
 import { getSharedBroadcastService } from './intelligence.js';
 import type { ExpectedChanges } from '../../core/collaboration/types.js';
 

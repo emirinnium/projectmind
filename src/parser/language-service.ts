@@ -1,11 +1,7 @@
 import { readFileSync } from 'node:fs';
 import Parser from 'tree-sitter';
-import TypeScript from 'tree-sitter-typescript';
-import Python from 'tree-sitter-python';
-import Go from 'tree-sitter-go';
-import Rust from 'tree-sitter-rust';
-import Java from 'tree-sitter-java';
 import { logger } from '../utils/logger.js';
+import { getParserDefinition, type ParserLanguage } from './parser-registry.js';
 
 /**
  * Structural languages supported by ProjectMind's parser layer.
@@ -14,6 +10,7 @@ import { logger } from '../utils/logger.js';
  * other languages go through tree-sitter grammars. This is the shared contract
  * used by taint analysis and structural search.
  */
+/** Languages with semantic structural-search/taint adapters. */
 export type StructuralLanguage = 'typescript' | 'javascript' | 'python' | 'go' | 'rust' | 'java';
 
 /**
@@ -36,27 +33,13 @@ export interface LangSyntaxNode {
   childForFieldName(fieldName: string): LangSyntaxNode | null;
 }
 
-const LANGUAGE_MAP: Record<string, { grammar: Parser.Language; language: StructuralLanguage }> = {
-  '.ts': { grammar: TypeScript.typescript, language: 'typescript' },
-  '.tsx': { grammar: TypeScript.tsx, language: 'typescript' },
-  '.js': { grammar: TypeScript.typescript, language: 'javascript' },
-  '.jsx': { grammar: TypeScript.tsx, language: 'javascript' },
-  '.mjs': { grammar: TypeScript.typescript, language: 'javascript' },
-  '.cjs': { grammar: TypeScript.typescript, language: 'javascript' },
-  '.py': { grammar: Python, language: 'python' },
-  '.go': { grammar: Go, language: 'go' },
-  '.rs': { grammar: Rust, language: 'rust' },
-  '.java': { grammar: Java, language: 'java' },
-};
-
 /**
  * Detect the structural language of a file from its extension.
  * Returns null for unsupported extensions.
  */
 export function detectLanguageFromPath(filePath: string): StructuralLanguage | null {
-  const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
-  const entry = LANGUAGE_MAP[ext];
-  return entry ? entry.language : null;
+  const entry = getParserDefinition(filePath);
+  return entry && isStructuralLanguage(entry.language) ? entry.language : null;
 }
 
 /**
@@ -91,9 +74,9 @@ export function createLangParser(
   filePath: string,
   content?: string,
 ): { language: StructuralLanguage; root: LangSyntaxNode } | null {
-  const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
-  const entry = LANGUAGE_MAP[ext];
+  const entry = getParserDefinition(filePath);
   if (!entry) return null;
+  if (!isStructuralLanguage(entry.language)) return null;
 
   let sourceText: string;
   try {
@@ -114,5 +97,9 @@ export function createLangParser(
     return null;
   }
 
-  return { language: entry.language, root: tree.rootNode as LangSyntaxNode };
+  return { language: entry.language as StructuralLanguage, root: tree.rootNode as LangSyntaxNode };
+}
+
+function isStructuralLanguage(language: ParserLanguage): language is StructuralLanguage {
+  return ['typescript', 'javascript', 'python', 'go', 'rust', 'java'].includes(language);
 }

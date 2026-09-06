@@ -1,6 +1,6 @@
-/**
- * Utility functions for scale reporting
- */
+/** Utility functions for scale reporting. */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 /** Round a value to 2 decimal places. */
 export function round2(value: number): number {
@@ -78,10 +78,6 @@ export function computeFingerprint(
   let read = 0;
   const FINGERPRINT_MAX_FILES = 30;
   const FINGERPRINT_MAX_BYTES = 512 * 1024;
-
-  // Import fs and path inline to avoid top-level circular deps
-  const { readFileSync } = require('node:fs');
-  const { join } = require('node:path');
 
   for (const rel of relativePaths) {
     if (read >= FINGERPRINT_MAX_FILES) break;

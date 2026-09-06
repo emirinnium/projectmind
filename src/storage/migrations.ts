@@ -3,6 +3,8 @@ import { logger } from '../utils/logger.js';
 import { coreMigrations } from './migrations/core-migrations.js';
 import { collaborationMigrations } from './migrations/collaboration-migrations.js';
 import { debtMigrations } from './migrations/debt-migrations.js';
+import { reviewMigrations } from './migrations/review-migrations.js';
+import { graphMigrations } from './migrations/graph-migrations.js';
 import type { Migration } from './migrations/types.js';
 
 const SCHEMA_VERSION_TABLE = `
@@ -18,6 +20,8 @@ export const migrations: Migration[] = [
   ...coreMigrations,
   ...collaborationMigrations,
   ...debtMigrations,
+  ...reviewMigrations,
+  ...graphMigrations,
 ].sort((a, b) => a.version - b.version);
 
 export function getCurrentSchemaVersion(db: DatabaseSync): number {

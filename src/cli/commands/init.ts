@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import { withContext, asyncHandler, output } from '@/cli/utils/shared.js';
 import { join } from '@/cli/utils/shared.js';
 import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync } from 'node:fs';
-import { join as pathJoin } from 'node:path';
 
 function addToGitignore(gitignorePath: string, entry: string): void {
   if (!existsSync(gitignorePath)) return;
@@ -26,8 +25,8 @@ export function createInitCommand(): Command {
           mkdirSync(configDir, { recursive: true });
         }
 
-        // .mcp.json at project root is the universal MCP config file.
-        // All MCP-aware agents (Claude Code, Cursor, Codex, etc.) read it automatically.
+        // .mcp.json is the Claude Code/Cursor-compatible project config. Other
+        // agents have dedicated layouts exposed by `pm mcp-init <agent>`.
         const mcpPath = join(process.cwd(), '.mcp.json');
         if (!existsSync(mcpPath)) {
           const mcpConfig = {

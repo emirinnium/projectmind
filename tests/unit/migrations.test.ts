@@ -203,7 +203,7 @@ describe('Legacy DB upgrades', () => {
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
 
     // last_synced added as a NULLABLE column (no non-constant default —
     // SQLite forbids DEFAULT CURRENT_TIMESTAMP in ADD COLUMN)
@@ -261,7 +261,7 @@ describe('Legacy DB upgrades', () => {
     // New-style rows (already hashed) are untouched — idempotent re-runs safe.
     setSchemaVersion(db, 10, 'hash_oauth_tokens');
     runMigrations(db);
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     expect(db.prepare('SELECT COUNT(*) AS n FROM oauth_tokens').get()).toEqual({ n: 0 });
     db.close();
   });
@@ -364,7 +364,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
 
     // Canonical column set + INTEGER timestamp types.
     const cols = tableInfo(db);
@@ -416,7 +416,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     const row = db
       .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
       .get('agent-c') as Record<string, unknown>;
@@ -459,7 +459,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     const cols = tableInfo(db);
     expect(cols.find((c) => c.name === 'expires_at')?.type.toUpperCase()).toBe('INTEGER');
     expect(cols.find((c) => c.name === 'broadcast_at')?.type.toUpperCase()).toBe('INTEGER');
@@ -512,7 +512,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-g') as Record<string, unknown>;
     expect(row.expires_at).toBe(Date.parse('2026-01-01T00:00:00Z'));
     expect(row.broadcast_at).toBe(Date.parse('2025-12-31T23:55:00Z'));
@@ -546,7 +546,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     const rowSec = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-sec') as Record<string, unknown>;
     expect(rowSec.broadcast_at).toBe(1767225600 * 1000);
     expect(rowSec.expires_at).toBe(1767225900 * 1000);
@@ -572,7 +572,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     const cols = tableInfo(db);
     expect(cols.map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
     expect(cols.find((c) => c.name === 'expires_at')?.type.toUpperCase()).toBe('INTEGER');
@@ -610,7 +610,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     expect(() => runMigrations(db)).not.toThrow();
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     expect(tableInfo(db).map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
     const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-combo') as Record<string, unknown>;
     expect(row.target_files).toBe('["src/combo.ts"]');
@@ -636,7 +636,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db); // only v93 + v94 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     expect(tableInfo(db).map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
     const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-v92') as Record<string, unknown>;
     expect(row.broadcast_at).toBe(1767225600 * 1000);
@@ -653,7 +653,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     expect(tableInfo(db).map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
     expect((db.prepare('SELECT COUNT(*) AS n FROM pending_intents').get() as { n: number }).n).toBe(0);
     db.close();
@@ -683,7 +683,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     const rows = db.prepare('SELECT id, agent_id, expected_changes FROM pending_intents ORDER BY agent_id').all() as Array<Record<string, unknown>>;
     expect(rows.length).toBe(2);
     expect(rows[0].agent_id).toBe('agent-dup-1');
@@ -705,7 +705,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-garbage') as Record<string, unknown>;
     expect(row.expires_at).toBe(0);
     expect(row.broadcast_at).toBe(0);
@@ -741,7 +741,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     expect(() => runMigrations(db)).not.toThrow();
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     const rows = db.prepare('SELECT agent_id FROM pending_intents').all() as Array<{ agent_id: string | null }>;
     expect(rows).toHaveLength(1); // junk row dropped…
     expect(rows[0].agent_id).toBe('agent-valid'); // …valid row kept
@@ -758,7 +758,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     expect(() => runMigrations(db)).not.toThrow();
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     // Final table matches schema.ts columns EXACTLY (no timestamp).
     expect(tableInfo(db).map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
     const indexes = db
@@ -782,7 +782,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     expect(tableInfo(db).map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
     const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-stray') as Record<string, unknown>;
     expect(row.expires_at).toBe(305000); // row data untouched
@@ -819,7 +819,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     const cols = tableInfo(db);
     expect(cols.map((c) => c.name)).toContain('broadcast_at');
     const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-nb') as Record<string, unknown>;
@@ -859,7 +859,7 @@ describe('Migration 94 — debt_items change_frequency + project_id backfill', (
 
     runMigrations(db); // only v94 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
 
     // The new type is accepted and round-trips through the rebuilt table.
     db.prepare('INSERT INTO debt_items (file_id, type, description, severity, suggestion) VALUES (?, ?, ?, ?, ?)')
@@ -886,7 +886,7 @@ describe('Migration 94 — debt_items change_frequency + project_id backfill', (
 
     runMigrations(db); // only v94 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     const filesCols = db.prepare('PRAGMA table_info(files)').all() as Array<{ name: string }>;
     expect(filesCols.some((c) => c.name === 'project_id')).toBe(true);
     const dataFlowsCols = db.prepare('PRAGMA table_info(data_flows)').all() as Array<{ name: string }>;
@@ -980,7 +980,7 @@ describe('Migration 95 — FK cascades + imports resolved_path index', () => {
 
     runMigrations(db); // only v95 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
 
     // Rows survive the rebuild itself.
     expect((db.prepare('SELECT COUNT(*) AS n FROM pattern_violations').get() as { n: number }).n).toBe(1);
@@ -1008,7 +1008,7 @@ describe('Migration 95 — FK cascades + imports resolved_path index', () => {
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(95);
+    expect(getCurrentSchemaVersion(db)).toBe(98);
     const { fileId } = seedParentAndChildren(db);
 
     db.prepare('DELETE FROM files WHERE id = ?').run(fileId);

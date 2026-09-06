@@ -128,6 +128,7 @@ export class VecIndex {
   private readonly db: DatabaseSync;
   private readonly dim: number;
   private readonly _available: boolean;
+  private readonly dimensionChanged: boolean;
 
   /**
    * @param db  An **already-opened** DatabaseSync with `allowExtension: true`.
@@ -135,9 +136,15 @@ export class VecIndex {
    *            default embedding model).
    */
   constructor(db: DatabaseSync, dim: number = DEFAULT_DIMENSION) {
+    if (!Number.isInteger(dim) || dim <= 0) {
+      throw new RangeError(`Vector dimension must be a positive integer; received ${dim}`);
+    }
     this.db = db;
     this.dim = dim;
-    this._available = this.tryInit();
+    const init = this.tryInit();
+    this._available = init.available;
+    this.dimensionChanged = init.dimensionChanged;
+    if (this._available && this.dimensionChanged) this.rebuild();
   }
 
   /** Whether sqlite-vec loaded successfully and the virtual table exists. */
@@ -153,7 +160,12 @@ export class VecIndex {
    * sqlite-vec requires BigInt rowids on Node 26.
    */
   upsert(id: number, embedding: number[]): void {
-    if (!this._available || embedding.length !== this.dim) return;
+    if (embedding.length !== this.dim) {
+      throw new RangeError(
+        `Embedding dimension mismatch for file ${id}: expected ${this.dim}, received ${embedding.length}`,
+      );
+    }
+    if (!this._available) return;
     try {
       const vec = new Float32Array(embedding);
       const bigId = BigInt(id);
@@ -227,7 +239,12 @@ export class VecIndex {
     limit: number = 10,
     projectId?: number,
   ): Array<{ id: number; distance: number }> {
-    if (!this._available || queryEmbedding.length !== this.dim) return [];
+    if (queryEmbedding.length !== this.dim) {
+      throw new RangeError(
+        `Query embedding dimension mismatch: expected ${this.dim}, received ${queryEmbedding.length}`,
+      );
+    }
+    if (!this._available) return [];
     try {
       const vec = new Float32Array(queryEmbedding);
       const sql =
@@ -304,17 +321,30 @@ export class VecIndex {
    * Attempt to load sqlite-vec and create the virtual table.
    * Returns `true` on success, `false` if anything fails (graceful degradation).
    */
-  private tryInit(): boolean {
+  private tryInit(): { available: boolean; dimensionChanged: boolean } {
     try {
       // Dynamic import so the module never crashes when sqlite-vec is
       // unavailable or the native binary is missing.
       const vec = esmRequire('sqlite-vec') as { load: (db: DatabaseSync) => void };
       vec.load(this.db);
 
+      const existing = this.db
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .get(VEC_TABLE_NAME) as { sql?: string } | undefined;
+      const existingDimension = existing?.sql?.match(/float\[(\d+)\]/i)?.[1];
+      const dimensionChanged =
+        existingDimension !== undefined && Number(existingDimension) !== this.dim;
+
+      if (dimensionChanged) {
+        logger.warn(
+          `Vector index dimension changed (${existingDimension} -> ${this.dim}); rebuilding ${VEC_TABLE_NAME}.`,
+        );
+        this.db.exec(`DROP TABLE IF EXISTS ${VEC_TABLE_NAME}`);
+      }
       this.db.exec(
         `CREATE VIRTUAL TABLE IF NOT EXISTS ${VEC_TABLE_NAME} USING vec0(embedding float[${this.dim}])`,
       );
-      return true;
+      return { available: true, dimensionChanged };
     } catch (e) {
       // sqlite-vec unavailable or extension loading disabled – degrade.
       // Log a clear ONE-TIME warning with the real reason (previously the
@@ -326,7 +356,7 @@ export class VecIndex {
           `sqlite-vec unavailable — vector search falls back to brute-force: ${e instanceof Error ? e.message : String(e)}`,
         );
       }
-      return false;
+      return { available: false, dimensionChanged: false };
     }
   }
 }

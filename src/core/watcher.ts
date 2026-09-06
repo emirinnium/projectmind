@@ -1,8 +1,10 @@
-import { readdirSync, statSync, watch as fsWatch, type Dirent, type FSWatcher } from 'node:fs';
+import { watch as fsWatch, type Dirent, type FSWatcher } from 'node:fs';
+import { readdir, stat, readFile } from 'node:fs/promises';
 import { extname, relative, resolve } from 'node:path';
 import { loadConfig } from '../utils/config.js';
 import { parseFile, type FileStructure } from '../parser/ast-parser.js';
 import { logger } from '../utils/logger.js';
+import { canonicalPath } from '../utils/paths.js';
 
 /**
  * Incremental project watcher.
@@ -136,7 +138,7 @@ export class ProjectWatcher {
         // Linux: recursive fs.watch is unavailable — fall back to a
         // dependency-free per-directory watcher walk.
         this.recursiveWatcher = null;
-        this.watchTree(this.root);
+        void this.watchTree(this.root);
       } else {
         throw e;
       }
@@ -174,11 +176,11 @@ export class ProjectWatcher {
     this.scheduleFlush();
   }
 
-  private watchTree(dir: string): void {
+  private async watchTree(dir: string): Promise<void> {
     this.watchDirectory(dir);
     let entries: Dirent[];
     try {
-      entries = readdirSync(dir, { withFileTypes: true });
+      entries = await readdir(dir, { withFileTypes: true });
     } catch (e) {
       // Directory unreadable (permissions or deleted) — skip subtree.
       logger.warn('Failed to read directory for watcher tree walk, skipping subtree', {
@@ -189,7 +191,7 @@ export class ProjectWatcher {
     }
     for (const entry of entries) {
       if (!entry.isDirectory() || IGNORED_DIR_PARTS.has(entry.name)) continue;
-      this.watchTree(resolve(dir, entry.name));
+      await this.watchTree(resolve(dir, entry.name));
     }
   }
 
@@ -198,7 +200,7 @@ export class ProjectWatcher {
     const w = fsWatch(d, (eventType, filename) => {
       this.handleFsEvent(filename, d);
       if (eventType === 'rename' && filename) {
-        this.reconcileRenamed(resolve(d, filename.toString()));
+        void this.reconcileRenamed(resolve(d, filename.toString()));
       }
     });
     w.on('error', (error) => {
@@ -211,9 +213,9 @@ export class ProjectWatcher {
     this.dirWatchers.set(d, w);
   }
 
-  private reconcileRenamed(abs: string): void {
+  private async reconcileRenamed(abs: string): Promise<void> {
     try {
-      if (statSync(abs).isDirectory()) this.watchTree(abs);
+      if ((await stat(abs)).isDirectory()) await this.watchTree(abs);
     } catch (e) {
       // deleted path — its watcher (if any) cleans itself up on error
       logger.warn('Failed to stat renamed path in watcher, assuming deleted', {
@@ -250,9 +252,9 @@ export class ProjectWatcher {
 
     for (const abs of batch) {
       try {
-        // parseFile reads from disk; returns null for unparseable content.
-        const struct = parseFile(abs);
-        const rel = relative(this.root, abs).split('\\').join('/');
+        // File I/O is asynchronous so a slow disk cannot block event delivery.
+        const struct = parseFile(abs, await readFile(abs, 'utf-8'));
+        const rel = canonicalPath(relative(this.root, abs));
         if (!struct) {
           // Deleted or unreadable → count as failure honestly; tombstone
           // handling (removing the row) belongs to a future full scan.
@@ -267,7 +269,7 @@ export class ProjectWatcher {
         logger.warn(`Watcher failed to index ${abs}:`, {
           error: e instanceof Error ? e.message : String(e),
         });
-        failed.push(relative(this.root, abs));
+        failed.push(canonicalPath(relative(this.root, abs)));
       }
     }
 

@@ -42,8 +42,7 @@ export function createTraceCommand(): Command {
           const workloadId = opts.workloadId || `trace-${Date.now()}`;
 
           if (!existsSync(file)) {
-            output.error(`Trace file not found: ${file}`);
-            process.exit(1);
+            throw new Error(`Trace file not found: ${file}`);
           }
 
           let raw: TraceInputFile | TraceRawEvent[] = [];
@@ -51,8 +50,7 @@ export function createTraceCommand(): Command {
             const content = readFileSync(file, 'utf-8');
             raw = JSON.parse(content) as TraceInputFile | TraceRawEvent[];
           } catch (e) {
-            output.error(`Invalid trace file: ${e instanceof Error ? e.message : e}`);
-            process.exit(1);
+            throw new Error(`Invalid trace file: ${e instanceof Error ? e.message : e}`);
           }
 
           const parsed = Array.isArray(raw) ? raw : raw.calls || raw.events || [];
@@ -60,8 +58,7 @@ export function createTraceCommand(): Command {
           for (const item of parsed) {
             const result = TraceCallSchema.safeParse(item);
             if (!result.success) {
-              output.error(`Invalid trace event: ${result.error.message}`);
-              process.exit(1);
+              throw new Error(`Invalid trace event: ${result.error.message}`);
             }
             calls.push(result.data);
           }
@@ -102,7 +99,7 @@ export function createTraceCommand(): Command {
   traceCmd
     .command('convert <input>')
     .description('Normalize a trace-events file into ProjectMind ingest format')
-    .option('--format <fmt>', 'Input format: json|csv (cgr|pprof planned)', 'json')
+    .option('--format <fmt>', 'Input format: json|csv (cgr|pprof unsupported)', 'json')
     .option('-o, --output <file>', 'Output file path')
     .action(
       asyncHandler(async (input: string, opts: { format: string; output?: string }) => {
@@ -193,7 +190,7 @@ export function createTraceCommand(): Command {
             `Converted ${normalized.length} events (${opts.format}) -> ${opts.output}`,
           );
         } else {
-          console.log(out);
+          output.raw(out);
         }
       }),
     );

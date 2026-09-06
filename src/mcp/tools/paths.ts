@@ -2,17 +2,19 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { resolve, dirname } from 'node:path';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFile, access } from 'node:fs/promises';
 import { loadConfig } from '../../utils/config.js';
+import { canonicalPath } from '../../utils/paths.js';
+import { confineToProject, PathEscapesProjectError } from './_shared.js';
 
 interface PathAlias {
   prefix: string;
   paths: string[];
 }
 
-function parseTsconfigAliases(tsconfigPath: string): PathAlias[] {
+async function parseTsconfigAliases(tsconfigPath: string): Promise<PathAlias[]> {
   try {
-    const content = readFileSync(tsconfigPath, 'utf-8');
+    const content = await readFile(tsconfigPath, 'utf-8');
     const config = JSON.parse(content);
     const aliases: PathAlias[] = [];
 
@@ -30,11 +32,11 @@ function parseTsconfigAliases(tsconfigPath: string): PathAlias[] {
   }
 }
 
-function resolveWithAliases(
+async function resolveWithAliases(
   importPath: string,
   aliases: PathAlias[],
   baseDir: string,
-): string | null {
+): Promise<string | null> {
   for (const alias of aliases) {
     if (importPath.startsWith(alias.prefix)) {
       const remainder = importPath.slice(alias.prefix.length);
@@ -42,13 +44,22 @@ function resolveWithAliases(
         const candidate = resolve(baseDir, targetPath + remainder);
         // Only accept candidates that actually exist on disk — otherwise
         // fall through to remaining alias targets and later strategies.
-        if (existsSync(candidate)) {
-          return candidate.replace(/\\/g, '/');
+        if (await pathExists(candidate)) {
+          return canonicalPath(candidate);
         }
       }
     }
   }
   return null;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function registerResolvePathTool(server: McpServer, deps: McpDependencies): void {
@@ -86,20 +97,32 @@ export function registerResolvePathTool(server: McpServer, deps: McpDependencies
 
       // Handle path aliases from tsconfig
       let aliases: PathAlias[] = [];
-      if (args.tsconfigPath && existsSync(args.tsconfigPath)) {
-        aliases = parseTsconfigAliases(args.tsconfigPath);
+      if (args.tsconfigPath) {
+        let confinedTsconfig: string;
+        try {
+          confinedTsconfig = confineToProject(args.tsconfigPath, deps.projectRoot);
+        } catch (error) {
+          if (error instanceof PathEscapesProjectError) {
+            return {
+              content: [{ type: 'text', text: JSON.stringify({ error: error.message }) }],
+            };
+          }
+          throw error;
+        }
+        if (await pathExists(confinedTsconfig))
+          aliases = await parseTsconfigAliases(confinedTsconfig);
       } else {
         // Try to find tsconfig.json in project root
         const config = deps.kg.getFileByPath('tsconfig.json');
         if (config) {
-          aliases = parseTsconfigAliases(config.path);
+          aliases = await parseTsconfigAliases(config.path);
         }
       }
 
       // Try alias resolution first
       if (aliases.length > 0) {
         // Alias targets are relative to the project root, not the importing file's dir.
-        const aliasResolved = resolveWithAliases(
+        const aliasResolved = await resolveWithAliases(
           importPath,
           aliases,
           loadConfig().projectRoot.replace(/\\/g, '/'),
@@ -114,8 +137,8 @@ export function registerResolvePathTool(server: McpServer, deps: McpDependencies
 
       if (!resolved) {
         // Try manual resolution
-        const fromDir = dirname(fromFile.relativePath).replace(/\\/g, '/');
-        const resolvedPath = resolve(fromDir, importPath).replace(/\\/g, '/');
+        const fromDir = canonicalPath(dirname(fromFile.relativePath));
+        const resolvedPath = canonicalPath(resolve(fromDir, importPath));
         resolved = deps.kg.resolveImportSource(resolvedPath);
       }
 

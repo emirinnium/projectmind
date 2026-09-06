@@ -1,21 +1,24 @@
-# ProjectMind v0.9.0 Hardening Plan
+# ProjectMind historical hardening plan
 
-## 🔴 CRITICAL PRIORITY (Today – 27 August 2026)
+This document records the pre-v1.0 hardening work. It is retained for audit
+history; the current release checklist is `TODO_CODEBASE_REMEDIATION.md`.
+Sensitive examples and destructive history-rewrite commands have intentionally
+been removed from this historical document.
 
-### K2: API Key Leak
-**Risk**: Live API key committed in `opencode.json:35` (public GitHub repo).
-**Files**: `opencode.json`, `.gitignore`
-**Changes**:
-```bash
-# 1. Revoke the key immediately via TokenRouter dashboard.
-# 2. Remove from Git history:
-git filter-repo --replace-text <(echo "sk-RtytAH4o4HoK41B0LcCQTBz5gwUG8uzXypjO9L9AQAbrLhgv== tokenrouter_api_key")
-# 3. Add to .gitignore:
-echo "opencode.json" >> .gitignore
-# 4. Replace with env reference:
-echo '{"apiKey": "${TOKENROUTER_API_KEY}"}' > opencode.json
-```
-**Validation**: `git grep sk-RtytAH4o4` → 0 results.
+The v1.0.0 hardening items below are complete and validated by the release
+checks documented in the repository.
+
+---
+
+## Archived notes
+
+## Archived findings
+
+The original findings included a credential exposure in an agent configuration.
+That credential was revoked and removed from the working tree/history process;
+the literal secret and destructive rewrite commands are deliberately not
+reproduced here. Use the repository security policy and secret-scanning tools
+for current incidents.
 
 ---
 

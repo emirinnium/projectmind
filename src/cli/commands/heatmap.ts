@@ -15,7 +15,7 @@ export function createHeatmapCommand(): Command {
           const heatmap = scale.getCoverageHeatmap();
 
           if (opts.format === 'json') {
-            console.log(JSON.stringify(heatmap, null, 2));
+            output.json(heatmap);
             return;
           }
 

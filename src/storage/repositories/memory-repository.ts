@@ -27,7 +27,10 @@ export interface AgentSession {
  * Repository for agent memory and session operations.
  */
 export class MemoryRepository {
-  constructor(private readonly db: DatabaseSync = getDatabase()) {}
+  constructor(
+    private readonly db: DatabaseSync = getDatabase(),
+    private readonly projectId: number = 1,
+  ) {}
 
   startSession(agentName: string): number {
     const result = this.db
@@ -110,8 +113,10 @@ export class MemoryRepository {
     isPublic?: boolean;
   }): TeamMemoryStoreComputation {
     const existingRow = this.db
-      .prepare('SELECT value, base_value FROM team_memories WHERE scope = ? AND key = ?')
-      .get(params.scope, params.key) as
+      .prepare(
+        'SELECT value, base_value FROM team_memories WHERE project_id = ? AND scope = ? AND key = ?',
+      )
+      .get(this.projectId, params.scope, params.key) as
       { value: SQLOutputValue; base_value: SQLOutputValue | null } | undefined;
 
     const existing = existingRow
@@ -126,9 +131,9 @@ export class MemoryRepository {
     if (decision.shouldWrite) {
       this.db
         .prepare(
-          `INSERT INTO team_memories (agent_name, scope, key, value, base_value, is_public)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(scope, key) DO UPDATE SET
+          `INSERT INTO team_memories (agent_name, scope, key, value, base_value, is_public, project_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(project_id, scope, key) DO UPDATE SET
            value = excluded.value,
            base_value = excluded.base_value,
            agent_name = excluded.agent_name,
@@ -142,6 +147,7 @@ export class MemoryRepository {
           decision.storedValue,
           decision.nextBaseValue,
           params.isPublic ? 1 : 0,
+          this.projectId,
         );
     }
 
@@ -152,10 +158,10 @@ export class MemoryRepository {
     const rows = this.db
       .prepare(
         `SELECT * FROM team_memories
-       WHERE scope = ? AND (is_public = 1 OR agent_name = ?)
+       WHERE project_id = ? AND scope = ? AND (is_public = 1 OR agent_name = ?)
        ORDER BY updated_at DESC`,
       )
-      .all(params.scope, params.agentName) as Record<string, SQLOutputValue>[];
+      .all(this.projectId, params.scope, params.agentName) as Record<string, SQLOutputValue>[];
 
     return rows.map((r) => ({
       id: r.id as number,

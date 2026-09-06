@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS team_memories (
   project_id INTEGER,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(scope, key)
+  UNIQUE(project_id, scope, key)
 );
 
 CREATE TABLE IF NOT EXISTS test_failure_log (
@@ -45,7 +45,7 @@ CREATE INDEX IF NOT EXISTS idx_team_memories_agent ON team_memories(agent_name);
 
 CREATE TABLE IF NOT EXISTS files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  path TEXT UNIQUE NOT NULL,
+  path TEXT NOT NULL,
   relative_path TEXT NOT NULL,
   language TEXT,
   size_bytes INTEGER,
@@ -56,7 +56,9 @@ CREATE TABLE IF NOT EXISTS files (
   agent_touched_by TEXT,
   agent_touched_at TIMESTAMP,
   cognitive_load REAL DEFAULT 0,
-  last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  project_id INTEGER NOT NULL DEFAULT 1,
+  UNIQUE(project_id, path)
 );
 
 CREATE TABLE IF NOT EXISTS functions (
@@ -254,7 +256,8 @@ CREATE TABLE IF NOT EXISTS resources (
   qualified_name TEXT UNIQUE NOT NULL,
   kind TEXT NOT NULL CHECK(kind IN ('FILE', 'NETWORK', 'DATABASE', 'ENV', 'STDIN', 'STDOUT', 'STDERR', 'SOCKET')),
   identity TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  project_id INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS data_flows (
