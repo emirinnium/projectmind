@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 No unreleased changes.
 
+## [1.0.1] - 2026-09-06
+
+- Fixed web lockfile synchronization for clean CI installs.
+- Fixed VS Code Marketplace packaging by including the license and snippets.
+
 ## [1.0.0] - 2026-09-06
 
 Production-ready stable release: hardened migrations, deterministic review
