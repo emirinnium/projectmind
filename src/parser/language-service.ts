@@ -1,37 +1,11 @@
-import { readFileSync } from 'node:fs';
-import Parser from 'tree-sitter';
-import { logger } from '../utils/logger.js';
 import { getParserDefinition, type ParserLanguage } from './parser-registry.js';
 
 /**
- * Structural languages supported by ProjectMind's parser layer.
- *
- * TypeScript/JavaScript use the TypeScript Compiler API for precision; all
- * other languages go through tree-sitter grammars. This is the shared contract
- * used by taint analysis and structural search.
+ * Languages supported by the structural analysis layer.
+ * TypeScript and JavaScript share the TypeScript Compiler API, which gives both
+ * languages one precise AST implementation and keeps the package lightweight.
  */
-/** Languages with semantic structural-search/taint adapters. */
-export type StructuralLanguage = 'typescript' | 'javascript' | 'python' | 'go' | 'rust' | 'java';
-
-/**
- * Minimal structural interface for tree-sitter syntax nodes.
- *
- * Consumers (taint analysis, structural search) only rely on these members,
- * which keeps them decoupled from tree-sitter's concrete types and makes the
- * multi-language layer swappable.
- */
-export interface LangSyntaxNode {
-  readonly type: string;
-  readonly text: string;
-  readonly startPosition: { row: number; column: number };
-  readonly endPosition: { row: number; column: number };
-  readonly startIndex: number;
-  readonly endIndex: number;
-  readonly isNamed: boolean;
-  readonly children: readonly LangSyntaxNode[];
-  readonly namedChildren: readonly LangSyntaxNode[];
-  childForFieldName(fieldName: string): LangSyntaxNode | null;
-}
+export type StructuralLanguage = 'typescript' | 'javascript';
 
 /**
  * Detect the structural language of a file from its extension.
@@ -42,64 +16,6 @@ export function detectLanguageFromPath(filePath: string): StructuralLanguage | n
   return entry && isStructuralLanguage(entry.language) ? entry.language : null;
 }
 
-/**
- * Parser pool — one tree-sitter Parser per grammar, reused across every
- * `createLangParser` call.
- *
- * Constructing a Parser + `setLanguage` loads/copies the grammar into the
- * parser; doing it per file creates needless churn (allocation + grammar
- * wiring) on every scan of a multi-language project. tree-sitter parsers are
- * synchronous single-threaded objects, so pooling is safe: `parse()` is
- * re-entrant, each call returns a fresh independent Tree.
- */
-const PARSER_POOL = new Map<Parser.Language, Parser>();
-
-export function getParserFor(grammar: Parser.Language): Parser {
-  let parser = PARSER_POOL.get(grammar);
-  if (!parser) {
-    parser = new Parser();
-    parser.setLanguage(grammar);
-    PARSER_POOL.set(grammar, parser);
-  }
-  return parser;
-}
-
-/**
- * Create a tree-sitter parser for the given file path (or explicit content).
- *
- * Returns null when the extension is unsupported or parsing fails — callers
- * treat unparseable files as "no results" rather than errors.
- */
-export function createLangParser(
-  filePath: string,
-  content?: string,
-): { language: StructuralLanguage; root: LangSyntaxNode } | null {
-  const entry = getParserDefinition(filePath);
-  if (!entry) return null;
-  if (!isStructuralLanguage(entry.language)) return null;
-
-  let sourceText: string;
-  try {
-    sourceText = content ?? readFileSync(filePath, 'utf-8');
-  } catch {
-    logger.debug(`Failed to read file for parsing: ${filePath}`);
-    return null;
-  }
-
-  const parser = getParserFor(entry.grammar);
-
-  let tree: Parser.Tree;
-  try {
-    tree = parser.parse(sourceText);
-    if (!tree) return null;
-  } catch {
-    logger.debug(`Failed to parse file: ${filePath}`);
-    return null;
-  }
-
-  return { language: entry.language as StructuralLanguage, root: tree.rootNode as LangSyntaxNode };
-}
-
 function isStructuralLanguage(language: ParserLanguage): language is StructuralLanguage {
-  return ['typescript', 'javascript', 'python', 'go', 'rust', 'java'].includes(language);
+  return language === 'typescript' || language === 'javascript';
 }

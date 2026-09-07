@@ -78,7 +78,7 @@ const TASK_KEYWORD_HINTS: Record<string, string[]> = {
   'coherence-checking': ['coherence', 'quality gate', 'pattern consistency'],
   'debt-detection': ['debt', 'redundancy', 'drift', 'duplication'],
   'embedding-generation': ['embedding', 'vector', 'similarity', 'semantic search'],
-  'ast-parsing': ['ast', 'parse', 'parser', 'tree-sitter', 'syntax', 'codemod'],
+  'ast-parsing': ['ast', 'parse', 'parser', 'typescript', 'javascript', 'syntax', 'codemod'],
   'knowledge-graph': ['graph', 'import', 'index', 'circular', 'pagerank', 'kg'],
   'sqlite-persistence': ['sqlite', 'database', 'schema', 'migration', 'query', 'sql'],
   'mcp-protocol': ['mcp', 'tool', 'server', 'protocol', 'transport'],

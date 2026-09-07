@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { getDatabase } from '../../../storage/database.js';
 import { getVecIndex, type VecIndex } from '../../embeddings/vector-index.js';
 import { logger } from '../../../utils/logger.js';
+import { isTestPath } from '../../../utils/test-detection.js';
 
 // Canonical debt type declarations live in persistence.ts — re-exported here
 // to keep this module's public surface unchanged (no duplicate declarations).
@@ -103,6 +104,19 @@ export class RedundancyDetector {
     embeddings: Map<number, number[]>,
   ): Promise<FileInfo[]> {
     const THRESHOLD = 0.95;
+    const MIN_FILE_BYTES = 256;
+    if (isTestPath(target.relativePath)) return [];
+    if (target.sizeBytes < MIN_FILE_BYTES) return [];
+
+    // Debt redundancy is a production-code signal. Test fixtures frequently
+    // repeat setup/assertion scaffolding by design, so comparing them with
+    // source files produces noisy low-severity findings. Also exclude the
+    // target itself because ANN indexes can return an exact self-match.
+    const candidateFiles = allFiles.filter(
+      (file) =>
+        file.id !== target.id && file.sizeBytes >= MIN_FILE_BYTES && !isTestPath(file.relativePath),
+    );
+    const candidateIds = new Set(candidateFiles.map((file) => file.id));
 
     // Fast path: sqlite-vec ANN via the shared VecIndex.
     if (this.vecIndex.isAvailable()) {
@@ -112,11 +126,13 @@ export class RedundancyDetector {
       }
 
       const rawMatches = this.vecIndex.findSimilar(targetEmbedding, 20);
-      const matchIds = rawMatches.filter((m) => 1 - m.distance >= THRESHOLD).map((m) => m.id);
+      const matchIds = rawMatches
+        .filter((m) => candidateIds.has(m.id) && 1 - m.distance >= THRESHOLD)
+        .map((m) => m.id);
 
       if (matchIds.length > 0) {
         const idSet = new Set(matchIds);
-        return allFiles.filter((f) => idSet.has(f.id));
+        return candidateFiles.filter((f) => idSet.has(f.id));
       }
       return [];
     }
@@ -125,10 +141,10 @@ export class RedundancyDetector {
     const targetFileId = target.id;
     const results: FileInfo[] = [];
     for (const [id, emb] of embeddings) {
-      if (id === targetFileId) continue;
+      if (id === targetFileId || !candidateIds.has(id)) continue;
       const score = cosineSimilarity(targetEmbedding, emb);
       if (score >= THRESHOLD) {
-        const file = allFiles.find((f) => f.id === id);
+        const file = candidateFiles.find((f) => f.id === id);
         if (file) results.push(file);
       }
     }

@@ -7,6 +7,7 @@ import { loadConfig } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 import { watch as fsWatch, type FSWatcher } from 'node:fs';
 import { toolCacheHintMeta } from './tools/list.js';
+import { getProjectIgnorePatterns, isIgnoredRelativePath } from '../utils/ignore.js';
 
 /**
  * Manages resource subscriptions and notifications.
@@ -72,13 +73,17 @@ class ResourceSubscriptionManager {
    */
   startFileWatch(rootDir: string): void {
     if (this.watchers.length > 0) return; // already watching
-    const ignored = /(?:^|[\\/])(?:node_modules|\.git|dist|coverage)(?:[\\/]|$)/;
+    const ignorePatterns = getProjectIgnorePatterns(rootDir);
     try {
       const watcher = fsWatch(
         rootDir,
         { recursive: true, persistent: false },
         (_event: string, filename: string | Buffer | null) => {
-          if (!filename || ignored.test(String(filename))) return;
+          if (
+            !filename ||
+            isIgnoredRelativePath(String(filename).replace(/\\/g, '/'), ignorePatterns)
+          )
+            return;
           const now = Date.now();
           if (now - this.lastNotifyAt < ResourceSubscriptionManager.WATCH_THROTTLE_MS) return;
           this.lastNotifyAt = now;

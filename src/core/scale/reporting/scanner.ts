@@ -8,6 +8,7 @@ import { parseFile } from '../../../parser/ast-parser.js';
 import { PatternLibrary } from '../../../parser/pattern-extractor.js';
 import fg from 'fast-glob';
 import { loadConfig } from '../../../utils/config.js';
+import { getProjectIgnorePatterns } from '../../../utils/ignore.js';
 import type { ScanProfile } from './types.js';
 
 /** Files larger than this are skipped (not counted as errors). */
@@ -44,40 +45,12 @@ export class ProjectScanner {
     const startMemory = process.memoryUsage().heapUsed;
 
     const root = rootPath ?? loadConfig().projectRoot;
-    const config = loadConfig();
-    const ignorePatterns = [
-      ...new Set([
-        '**/node_modules/**',
-        '**/dist/**',
-        '**/dist-tests/**',
-        '**/.git/**',
-        '**/*.min.*',
-        '**/*.map',
-        '**/*.d.ts',
-        '**/package-lock.json',
-        '**/yarn.lock',
-        '**/.next/**',
-        '**/.turbo/**',
-        '**/coverage/**',
-        '**/.cache/**',
-        '**/tmp/**',
-        '**/temp/**',
-        '**/.vscode/**',
-        '**/.idea/**',
-        '**/build/**',
-        '**/out/**',
-        '**/target/**',
-        '**/__pycache__/**',
-        '**/.venv/**',
-        '**/vendor/**',
-        ...config.ignorePatterns.map((p) => (p.startsWith('**') ? p : '**/' + p)),
-      ]),
-    ];
+    const ignorePatterns = getProjectIgnorePatterns(root);
 
-    // Note: only extensions with a registered parser in multilang-parser
-    // LANGUAGE_MAP are included; unsupported ones (e.g. php) would otherwise
-    // be counted as scan errors.
-    const files = await fg(['**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,rb,c,cpp,h,hpp}'], {
+    // Only JavaScript/TypeScript files are indexed. Keeping the scan scope
+    // aligned with the parser registry prevents unsupported source trees from
+    // inflating the graph or appearing as parse failures.
+    const files = await fg(['**/*.{ts,tsx,js,jsx,mjs,cjs}'], {
       cwd: root,
       ignore: ignorePatterns,
       absolute: true,
@@ -156,7 +129,6 @@ export class ProjectScanner {
    * Best-effort: a prune failure must never abort the scan.
    */
   private pruneDeletedFiles(files: string[], root: string): void {
-    if (files.length === 0) return;
     try {
       const scanned = new Set(files.map((f) => relative(root, f).replace(/\\/g, '/')));
       const rows = getStatement('SELECT relative_path FROM files WHERE project_id = ?').all(

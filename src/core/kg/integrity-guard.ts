@@ -18,6 +18,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { getDatabase } from '../../storage/database.js';
 import { parseFile } from '../../parser/ast-parser.js';
 import type { IntegrityViolation, IntegrityReport } from './types.js';
+import { getProjectIgnorePatterns, isIgnoredRelativePath } from '../../utils/ignore.js';
 
 /** Directories the filesystem fallback never enters (F26). */
 export const INTEGRITY_EXCLUDED_DIRS = new Set([
@@ -28,7 +29,6 @@ export const INTEGRITY_EXCLUDED_DIRS = new Set([
   'build',
   'out',
   '.cache',
-  '.vscode',
   '.idea',
   'tmp',
   'temp',
@@ -114,9 +114,11 @@ export function parseGitRenameLog(output: string, startPath: string): ParsedRena
 
 export class IntegrityGuard {
   private root: string;
+  private ignorePatterns: string[];
 
   constructor(root = process.cwd()) {
     this.root = root;
+    this.ignorePatterns = getProjectIgnorePatterns(root);
   }
 
   /**
@@ -129,10 +131,12 @@ export class IntegrityGuard {
     const missingPaths = new Set<string>();
 
     // 1. Missing / moved files
-    const fileRows = db.prepare('SELECT id, relative_path FROM files').all() as Array<{
-      id: number;
-      relative_path: string;
-    }>;
+    const fileRows = (
+      db.prepare('SELECT id, relative_path FROM files').all() as Array<{
+        id: number;
+        relative_path: string;
+      }>
+    ).filter((row) => !isIgnoredRelativePath(row.relative_path, this.ignorePatterns));
 
     for (const row of fileRows) {
       const fullPath = join(this.root, row.relative_path);
@@ -505,7 +509,7 @@ export class IntegrityGuard {
   /**
    * F26: bounded recursive filesystem search for a file with the same
    * basename. Excludes node_modules/.git/dist/coverage/build/out/.cache/
-   * .vscode/.idea/tmp/temp and ALL dot-directories, caps recursion depth and
+   * .idea/tmp/temp and ALL dot-directories, caps recursion depth and
    * total visited entries, and prefers matches under src/. Never returns a
    * path inside an excluded directory.
    */
@@ -526,12 +530,15 @@ export class IntegrityGuard {
       for (const entry of entries) {
         if (++visited > FS_SEARCH_MAX_CANDIDATES) break;
         const full = join(dir, entry.name);
+        const rel = normalizePosix(relative(this.root, full));
+        if (isIgnoredRelativePath(rel + (entry.isDirectory() ? '/' : ''), this.ignorePatterns)) {
+          continue;
+        }
         if (entry.isDirectory()) {
           if (depth + 1 > FS_SEARCH_MAX_DEPTH) continue;
           if (INTEGRITY_EXCLUDED_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
           stack.push({ dir: full, depth: depth + 1 });
         } else if (entry.isFile() && entry.name === basename) {
-          const rel = normalizePosix(relative(this.root, full));
           if (rel === originalPath) continue;
           const segments = rel.split('/');
           if (segments.some((s) => INTEGRITY_EXCLUDED_DIRS.has(s) || s.startsWith('.'))) continue;
@@ -577,6 +584,7 @@ export class IntegrityGuard {
     for (const cand of candidates) {
       const rel = normalizePosix(relative(this.root, cand));
       if (rel.startsWith('..')) continue;
+      if (isIgnoredRelativePath(rel, this.ignorePatterns)) continue;
       if (rel.split('/').some((s) => INTEGRITY_EXCLUDED_DIRS.has(s) || s.startsWith('.'))) continue;
       try {
         if (existsSync(cand) && statSync(cand).isFile()) {

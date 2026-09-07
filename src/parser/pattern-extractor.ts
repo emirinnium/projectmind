@@ -166,12 +166,9 @@ export class PatternExtractor {
     lang: Language,
   ): Promise<FileStructure | null> {
     try {
-      if (lang === 'typescript' || lang === 'javascript') {
-        const { parseTypeScriptFile } = await import('./ast/parser.js');
-        return parseTypeScriptFile(filePath, content, lang);
-      }
-      const { parseFileMultilang } = await import('./multilang-parser.js');
-      return parseFileMultilang(filePath, content);
+      if (lang !== 'typescript' && lang !== 'javascript') return null;
+      const { parseTypeScriptFile } = await import('./ast/parser.js');
+      return parseTypeScriptFile(filePath, content, lang);
     } catch {
       return null;
     }

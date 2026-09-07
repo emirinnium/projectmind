@@ -76,7 +76,7 @@ export function parseTypeScriptFile(
       const fnIsExported = isExported(node) || ts.isExportAssignment(node);
       const params = node.parameters.map((p) => ({
         name: p.name?.getText() ?? '',
-        type: p.type ? p.type.getText() : 'any',
+        type: p.type ? p.type.getText() : 'unknown',
       }));
       const sig = `${name}(${params.map((p) => `${p.name}: ${p.type}`).join(', ')})`;
       const retType = node.type ? node.type.getText() : 'void';

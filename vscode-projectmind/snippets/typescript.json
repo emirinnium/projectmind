@@ -1,7 +1,0 @@
-{
-  "ProjectMind MCP context": {
-    "prefix": "pm-context",
-    "body": ["// ProjectMind: ${1:describe the relevant context}"],
-    "description": "Mark a code location for ProjectMind context review"
-  }
-}

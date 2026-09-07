@@ -7,6 +7,7 @@ import type { McpDependencies } from './types.js';
 import { ContractEngine } from '@/core/contracts/engine.js';
 import type { ContractViolation } from '@/core/contracts/engine.js';
 import { confineToProject } from './_shared.js';
+import { getProjectIgnorePatterns, isIgnoredRelativePath } from '@/utils/ignore.js';
 
 /** Real severity domain of the ContractEngine violations. */
 export type ContractSeverity = 'error' | 'warning';
@@ -41,20 +42,8 @@ export interface CheckContractsResult {
   filesScanned: number;
 }
 
-/** Glob patterns + ignores used to enumerate project source files (same as the CLI). */
+/** Glob used to enumerate the supported project source files. */
 const SOURCE_GLOBS = ['**/*.{ts,tsx,js,jsx,mjs,cjs}'];
-const SOURCE_IGNORES = [
-  '**/node_modules/**',
-  '**/dist/**',
-  '**/dist-tests/**',
-  '**/.git/**',
-  '**/coverage/**',
-  '**/build/**',
-  '**/out/**',
-  '**/.next/**',
-  '**/*.min.*',
-  '**/*.d.ts',
-];
 
 /**
  * Evaluate the project's architectural contracts against a single file or the
@@ -85,12 +74,16 @@ export async function evaluateContracts(
       throw new Error('filePath is required when scope is "file"');
     }
     const absPath = confineToProject(target, deps.projectRoot);
-    files.push({ absPath, relPath: relative(deps.projectRoot, absPath).replace(/\\/g, '/') });
+    const relPath = relative(deps.projectRoot, absPath).replace(/\\/g, '/');
+    if (isIgnoredRelativePath(relPath, getProjectIgnorePatterns(deps.projectRoot))) {
+      throw new Error(`File is ignored by .pmignore: ${relPath}`);
+    }
+    files.push({ absPath, relPath });
   } else {
     // scope 'project' (or default): scan the whole project.
     const matches = fg.sync(SOURCE_GLOBS, {
       cwd: deps.projectRoot,
-      ignore: SOURCE_IGNORES,
+      ignore: getProjectIgnorePatterns(deps.projectRoot),
       absolute: false,
     });
     for (const relPath of matches) {

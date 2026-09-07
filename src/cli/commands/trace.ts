@@ -99,7 +99,7 @@ export function createTraceCommand(): Command {
   traceCmd
     .command('convert <input>')
     .description('Normalize a trace-events file into ProjectMind ingest format')
-    .option('--format <fmt>', 'Input format: json|csv (cgr|pprof unsupported)', 'json')
+    .option('--format <fmt>', 'Input format: json|csv', 'json')
     .option('-o, --output <file>', 'Output file path')
     .action(
       asyncHandler(async (input: string, opts: { format: string; output?: string }) => {
@@ -179,7 +179,7 @@ export function createTraceCommand(): Command {
         } else {
           throw new Error(
             `Converter for '${opts.format}' is not implemented. Supported input formats: json, csv. ` +
-              '(cgr/pprof converters are planned but not yet available.)',
+              'Use --format json or --format csv.',
           );
         }
 

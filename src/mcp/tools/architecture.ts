@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { readFile } from 'node:fs/promises';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
-import { getStatement } from '../../storage/database.js'; // TODO: migrate to KnowledgeGraph abstraction
 import { confineToProject } from './_shared.js';
+import { logger } from '../../utils/logger.js';
 
 export function registerCheckArchitectureTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -123,8 +123,11 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
               `Marker count reached limit of ${markerLimit}; further markers were not reported.`,
             );
           }
-        } catch {
-          // File unreadable or outside the project root — skip the scan.
+        } catch (error) {
+          logger.warn('Architecture marker scan skipped because the file could not be read.', {
+            filePath: file.relativePath,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
 
@@ -404,24 +407,21 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
           // (debt_items type='redundancy'), which compares real code bodies via
           // embeddings — far beyond same-file signature matching above.
           try {
-            const cols = (
-              getStatement('PRAGMA table_info(debt_items)').all() as Array<{ name: string }>
-            ).map((c) => c.name);
-            if (cols.includes('type') && cols.includes('description')) {
-              const fileCol = cols.includes('file_path')
-                ? 'file_path'
-                : cols.includes('filePath')
-                  ? 'filePath'
-                  : null;
-              const rows = (
-                fileCol
-                  ? getStatement(
-                      `SELECT description, ${fileCol} AS loc FROM debt_items WHERE type='redundancy' AND (${fileCol} = ? OR description LIKE ?) ORDER BY rowid DESC LIMIT 5`,
-                    ).all(file.relativePath, `%${file.relativePath}%`)
-                  : getStatement(
-                      `SELECT description, '' AS loc FROM debt_items WHERE type='redundancy' AND description LIKE ? ORDER BY rowid DESC LIMIT 5`,
-                    ).all(`%${file.relativePath}%`)
-              ) as Array<{ description: string; loc: string }>;
+            if (deps.db) {
+              const rows = deps.db
+                .prepare(
+                  `SELECT d.description, f.relative_path AS loc
+                   FROM debt_items d
+                   LEFT JOIN files f ON f.id = d.file_id
+                   WHERE d.type = 'redundancy'
+                     AND (f.relative_path = ? OR d.description LIKE ?)
+                   ORDER BY d.rowid DESC
+                   LIMIT 5`,
+                )
+                .all(file.relativePath, `%${file.relativePath}%`) as Array<{
+                description: string;
+                loc: string | null;
+              }>;
               for (const row of rows) {
                 suggestions.push({
                   type: 'duplication',
@@ -432,7 +432,9 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
               }
             }
           } catch {
-            // debt_items not available in this database — skip silently.
+            logger.warn('Failed to load persisted redundancy findings for architecture analysis.', {
+              filePath: file.relativePath,
+            });
           }
         }
       }

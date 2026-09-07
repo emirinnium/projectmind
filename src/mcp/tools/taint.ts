@@ -12,7 +12,7 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
     {
       title: 'Analyze Taint',
       description:
-        'Analyze a file for taint flows from sources to sinks (TypeScript, JavaScript, Python, Go, Rust, Java) using AST patterns.',
+        'Analyze a TypeScript or JavaScript file for taint flows from sources to sinks using AST patterns.',
       inputSchema: {
         filePath: z.string().describe('Path to the file to analyze'),
       },
@@ -47,7 +47,24 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
             ],
           };
         }
-        const lang = detectLanguageFromPath(absPath) ?? 'typescript';
+        const lang = detectLanguageFromPath(absPath);
+        if (!lang) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    error: 'Taint analysis supports only TypeScript and JavaScript files.',
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
         const flows = analyzer.analyzeSource(absPath, content, lang);
 
         return {
@@ -97,7 +114,7 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
     {
       title: 'Record Taint',
       description:
-        'Analyze a file and record detected taint flows to the knowledge graph (TypeScript, JavaScript, Python, Go, Rust, Java).',
+        'Analyze a TypeScript or JavaScript file and record detected taint flows to the knowledge graph.',
       inputSchema: {
         filePath: z.string().describe('Path to the file to analyze'),
       },
@@ -131,7 +148,24 @@ export function registerTaintTools(server: McpServer, deps: McpDependencies): vo
             ],
           };
         }
-        const lang = detectLanguageFromPath(absPath) ?? 'typescript';
+        const lang = detectLanguageFromPath(absPath);
+        if (!lang) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    success: false,
+                    error: 'Taint analysis supports only TypeScript and JavaScript files.',
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
         const recorded = analyzer.recordFlows(absPath, content, lang);
 
         return {

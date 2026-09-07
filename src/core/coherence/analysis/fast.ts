@@ -218,15 +218,25 @@ export class FastCoherenceAnalyzer {
     const suggestions: string[] = [];
     let issues = 0;
 
-    // Check for naming conventions
-    const functionMatches = code.match(/function\s+([a-zA-Z0-9_]+)\s*\(/g) || [];
-    const arrowFunctionMatches = code.match(/([a-zA-Z0-9_]+)\s*=\s*\(?[^)]*\)?\s*=>/g) || [];
-    const allFunctions = [...functionMatches, ...arrowFunctionMatches];
-
-    const camelCaseFunctions = allFunctions.filter(
-      (f) => /function\s+[a-z][a-zA-Z0-9]*\(/.test(f) || /^[a-z][a-zA-Z0-9]*\s*=/.test(f),
+    // Check for naming conventions. Keep these expressions deliberately
+    // narrow: a broad arrow-function regex can consume TypeScript union types
+    // (for example `Provider = 'simple' | 'openai'`) and report a false
+    // naming violation. Function declarations and variable-bound arrows are
+    // the two shapes we can identify reliably without a full AST here.
+    const functionNames = Array.from(
+      code.matchAll(/function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g),
+      (match) => match[1]!,
     );
-    const nonCamelCaseFunctions = allFunctions.length - camelCaseFunctions.length;
+    const arrowFunctionNames = Array.from(
+      code.matchAll(
+        /(?:^|[;\n])\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s*)?(?:\([^\n)]*\)|[A-Za-z_$][A-Za-z0-9_$]*)\s*=>/gm,
+      ),
+      (match) => match[1]!,
+    );
+    const allFunctionNames = [...functionNames, ...arrowFunctionNames];
+    const nonCamelCaseFunctions = allFunctionNames.filter(
+      (name) => !/^[a-z][A-Za-z0-9_$]*$/.test(name),
+    ).length;
 
     if (nonCamelCaseFunctions > 0) {
       reasoningTrace.push(

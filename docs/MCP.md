@@ -86,6 +86,14 @@ Point at the local build instead of npm:
 
 Without an LLM key the server runs fully functional **fast-tier** analysis.
 
+### Project file boundary
+
+All project-source discovery uses the root `.pmignore` file plus ProjectMind's
+built-in safety exclusions. The same boundary is applied by CLI scans, MCP
+tools, watchers, coherence/contract checks, and integrity checks. Keep these
+rules in `.pmignore`; `.projectmindrc.json` is for runtime configuration and
+does not define file ignores.
+
 ### Agent setup notes
 
 - `pm init-mcp claude-desktop` writes the GUI app's global config
@@ -162,7 +170,7 @@ CLI-only capabilities reachable through the bridge (no dedicated tool):
 
 ## Recommended agent workflow
 
-1. `scan_project` once after cloning (or let the extension auto-scan)
+1. `scan_project` once after cloning
 2. Before editing: `get_context` + `analyze_impact`
 3. After editing: `check_coherence` (fast) or `run_cli ["doctor","scan-health"]`
 4. Periodically: `debt_report` + `genome_score`; `find_circular_deps`

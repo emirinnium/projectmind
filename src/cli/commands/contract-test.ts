@@ -3,6 +3,7 @@ import { withService, asyncHandler, output, loadConfig, join } from '@/cli/utils
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { ContractEngine } from '@/index.js';
 import fg from 'fast-glob';
+import { getProjectIgnorePatterns } from '@/utils/ignore.js';
 
 export interface ContractTest {
   contractId: string;
@@ -349,18 +350,7 @@ function runContractEvaluation(
 
   const sourceFiles = fg.sync(['**/*.{ts,tsx,js,jsx,mjs,cjs}'], {
     cwd: projectRoot,
-    ignore: [
-      '**/node_modules/**',
-      '**/dist/**',
-      '**/dist-tests/**',
-      '**/.git/**',
-      '**/coverage/**',
-      '**/build/**',
-      '**/out/**',
-      '**/.next/**',
-      '**/*.min.*',
-      '**/*.d.ts',
-    ],
+    ignore: getProjectIgnorePatterns(projectRoot),
     absolute: false,
   });
 

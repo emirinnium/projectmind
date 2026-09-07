@@ -382,6 +382,9 @@ const isMainModule = (() => {
   }
 })();
 if (isMainModule) {
+  // Direct `node dist/mcp-server.js` launches must keep stdout reserved for
+  // JSON-RPC frames just like the CLI's `projectmind mcp` command does.
+  logger.setMcpMode(true);
   logger.info('ProjectMind MCP Server: detected as main module, starting...');
 
   (async () => {

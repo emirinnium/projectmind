@@ -44,6 +44,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { SCHEMA_SQL } from '../../storage/schema.js';
+import { getProjectIgnorePatterns, isIgnoredRelativePath } from '../../utils/ignore.js';
 
 /**
  * F34 mapping: legacy enum values -> spec values. Documented and stable so
@@ -125,20 +126,22 @@ export function buildPattern(init: PatternInit): LearnedPattern {
   };
 }
 
-const SCAN_EXCLUDED_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage', 'build']);
-
-function scanTsFiles(dir: string): string[] {
+function scanTsFiles(
+  dir: string,
+  projectRoot: string,
+  ignorePatterns: readonly string[],
+): string[] {
   const results: string[] = [];
   try {
     const entries = readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const full = join(dir, entry.name);
-      if (
-        entry.isDirectory() &&
-        !SCAN_EXCLUDED_DIRS.has(entry.name) &&
-        !entry.name.startsWith('.')
-      ) {
-        results.push(...scanTsFiles(full));
+      const relativePath = relative(projectRoot, full).replace(/\\/g, '/');
+      if (isIgnoredRelativePath(relativePath + (entry.isDirectory() ? '/' : ''), ignorePatterns)) {
+        continue;
+      }
+      if (entry.isDirectory() && !entry.name.startsWith('.')) {
+        results.push(...scanTsFiles(full, projectRoot, ignorePatterns));
       } else if (entry.isFile() && extname(entry.name) === '.ts' && !entry.name.endsWith('.d.ts')) {
         results.push(full);
       }
@@ -244,7 +247,7 @@ function extractMethodSignatures(
       if (ts.isMethodDeclaration(member) || ts.isMethodSignature(member)) {
         const paramStrs = member.parameters.map((p) => {
           const pName = (p.name as ts.Identifier)?.text ?? p.name?.getText(sourceFile) ?? 'p';
-          const pType = p.type ? p.type.getText(sourceFile) : 'any';
+          const pType = p.type ? p.type.getText(sourceFile) : 'unknown';
           params.push(`${pName}: ${pType}`);
           return `${pName}: ${pType}`;
         });
@@ -253,7 +256,7 @@ function extractMethodSignatures(
         sig += `: ${ret}`;
         if (returnType === 'void' && ret !== 'void') returnType = ret;
       } else if (ts.isPropertySignature(member)) {
-        const propType = member.type ? member.type.getText(sourceFile) : 'any';
+        const propType = member.type ? member.type.getText(sourceFile) : 'unknown';
         sig += `: ${propType}`;
         params.push(`${name}: ${propType}`);
         if (returnType === 'void' && propType !== 'void') returnType = propType;
@@ -320,7 +323,7 @@ export class CrossProjectPatternEngine {
    */
   extractPatterns(projectId: string, projectRoot?: string): LearnedPattern[] {
     const root = projectRoot ?? '.';
-    const files = scanTsFiles(root);
+    const files = scanTsFiles(root, root, getProjectIgnorePatterns(root));
     const patterns: LearnedPattern[] = [];
     for (const filePath of files) {
       try {

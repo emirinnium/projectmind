@@ -4,6 +4,16 @@
 // Project Config
 export { loadConfig, getConfigPath, type ProjectMindConfig } from './config.js';
 
+// Project source boundary
+export {
+  DEFAULT_PMIGNORE_CONTENT,
+  DEFAULT_PMIGNORE_PATTERNS,
+  getProjectIgnorePatterns,
+  isIgnoredPath,
+  isIgnoredRelativePath,
+  readPmignore,
+} from './ignore.js';
+
 // Error handling utilities
 export {
   tryCatch,

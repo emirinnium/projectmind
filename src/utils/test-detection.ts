@@ -6,5 +6,7 @@
 
 /** True when the relative path looks like a test/spec file. */
 export function isTestPath(relPath: string): boolean {
-  return /(\.(test|spec)\.[tj]sx?$)|([\\/](tests?|__tests__)[\\/])|(\.spec\.)/i.test(relPath);
+  return /(\.(test|spec)\.[tj]sx?$)|((^|[\\/])(?:tests?|__tests__)(?:[\\/]|$))|(\.spec\.)/i.test(
+    relPath,
+  );
 }

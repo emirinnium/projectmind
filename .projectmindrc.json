@@ -3,19 +3,6 @@
   "databasePath": ".projectmind/pm-knowledge.db",
   "embeddingsDir": ".projectmind/embeddings",
   "maxDepth": 10,
-  "ignorePatterns": [
-    "node_modules/**",
-    "dist/**",
-    "dist-tests/**",
-    ".git/**",
-    ".kilo/**",
-    "*.min.js",
-    "*.map",
-    "package-lock.json",
-    "yarn.lock",
-    "coverage/**",
-    ".turbo/**"
-  ],
   "llm": {
     "provider": "gemini",
     "model": "gemini-3.6-flash",

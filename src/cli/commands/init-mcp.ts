@@ -44,13 +44,6 @@ const AGENTS: Record<string, AgentProfile> = {
     instructionPath: 'CLAUDE.md',
     note: 'Project .mcp.json is loaded by the next Claude Code session.',
   },
-  claude: {
-    name: 'Claude Code',
-    configPath: '.mcp.json',
-    kind: 'json-mcp',
-    instructionPath: 'CLAUDE.md',
-    note: 'Alias for claude-code.',
-  },
   'claude-desktop': {
     name: 'Claude Desktop',
     configPath: claudeDesktopConfigPath(),
@@ -88,13 +81,6 @@ const AGENTS: Record<string, AgentProfile> = {
     absolute: true,
     note: 'Global Windsurf config generated; refresh the MCP panel.',
   },
-  vscode: {
-    name: 'VS Code MCP',
-    configPath: '.vscode/mcp.json',
-    kind: 'json-mcp',
-    instructionPath: 'AGENTS.md',
-    note: 'Workspace VS Code MCP config generated.',
-  },
   devin: {
     name: 'Devin',
     configPath: '.devin/mcp.json',
@@ -109,19 +95,12 @@ const AGENTS: Record<string, AgentProfile> = {
     instructionPath: '.agent/rules/projectmind.md',
     note: 'Project-local Antigravity MCP config and rule generated.',
   },
-  kilo: {
-    name: 'Kilo Code',
-    configPath: '.kilo/kilo.jsonc',
-    kind: 'kilo',
-    instructionPath: 'AGENTS.md',
-    note: 'Project-local Kilo config generated under .kilo/kilo.jsonc.',
-  },
   'kilo-code': {
     name: 'Kilo Code',
     configPath: '.kilo/kilo.jsonc',
     kind: 'kilo',
     instructionPath: 'AGENTS.md',
-    note: 'Alias for kilo.',
+    note: 'Project-local Kilo Code MCP config and instructions generated.',
   },
 };
 
@@ -224,7 +203,14 @@ function writeInstructions(path: string, agent: string, force: boolean): boolean
   const body = instructions(agent);
   if (existsSync(path) && !force) {
     const current = readFileSync(path, 'utf8');
-    if (current.includes('# ProjectMind instructions')) return false;
+    // Keep one canonical instruction block. Repository-level AGENTS.md files
+    // may use their own heading, so checking only the generated heading would
+    // append a duplicate block on every first-time agent setup.
+    if (
+      current.includes('# ProjectMind instructions') ||
+      current.includes('ProjectMind Codebase Intelligence Rules')
+    )
+      return false;
     writeFileSync(path, `${current.trimEnd()}\n\n${body}`, 'utf8');
     return true;
   }
@@ -266,7 +252,7 @@ export function createInitMcpCommand(): Command {
         if (writeInstructions(instructionPath, agent, !!opts.force))
           output.success(`✓ Agent instructions written to ${instructionPath}`);
         else output.info(`Agent instructions already present in ${instructionPath}`);
-        if (opts.claudeSkills || agent === 'claude' || agent === 'claude-code') {
+        if (opts.claudeSkills || agent === 'claude-code') {
           const skill = writeClaudeSkill(root, !!opts.force);
           if (skill.written) output.success(`✓ Claude Code skill written to ${skill.path}`);
         }

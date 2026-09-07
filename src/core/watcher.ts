@@ -5,6 +5,7 @@ import { loadConfig } from '../utils/config.js';
 import { parseFile, type FileStructure } from '../parser/ast-parser.js';
 import { logger } from '../utils/logger.js';
 import { canonicalPath } from '../utils/paths.js';
+import { getProjectIgnorePatterns, isIgnoredRelativePath } from '../utils/ignore.js';
 
 /**
  * Incremental project watcher.
@@ -19,46 +20,7 @@ import { canonicalPath } from '../utils/paths.js';
  */
 
 /** Extensions with a registered parser (mirrors scanner's fast-glob set). */
-const SUPPORTED_EXT = new Set([
-  '.ts',
-  '.tsx',
-  '.js',
-  '.jsx',
-  '.mjs',
-  '.cjs',
-  '.py',
-  '.go',
-  '.rs',
-  '.java',
-  '.rb',
-  '.c',
-  '.cpp',
-  '.h',
-  '.hpp',
-]);
-
-/** Directory segments never worth watching (mirrors scanner ignore list). */
-const IGNORED_DIR_PARTS = new Set([
-  'node_modules',
-  'dist',
-  'dist-tests',
-  '.git',
-  'coverage',
-  'build',
-  'out',
-  'target',
-  '__pycache__',
-  '.venv',
-  'vendor',
-  '.next',
-  '.turbo',
-  '.cache',
-  'tmp',
-  'temp',
-  '.vscode',
-  '.idea',
-  '.projectmind',
-]);
+const SUPPORTED_EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
 export interface WatcherBatchResult {
   updated: string[];
@@ -92,6 +54,7 @@ export class ProjectWatcher {
   private pending = new Map<string, number>(); // absolute path -> first queued ts
   private timer: NodeJS.Timeout | null = null;
   private root = '';
+  private ignorePatterns: string[] = [];
   private readonly debounceMs: number;
   private stats: WatcherStats = {
     startedAt: 0,
@@ -127,6 +90,7 @@ export class ProjectWatcher {
   start(): void {
     if (this.running) return; // already running
     this.root = resolve(this.options.root ?? loadConfig().projectRoot);
+    this.ignorePatterns = getProjectIgnorePatterns(this.root);
     this.stats.startedAt = Date.now();
 
     try {
@@ -190,8 +154,11 @@ export class ProjectWatcher {
       return;
     }
     for (const entry of entries) {
-      if (!entry.isDirectory() || IGNORED_DIR_PARTS.has(entry.name)) continue;
-      await this.watchTree(resolve(dir, entry.name));
+      if (!entry.isDirectory()) continue;
+      const child = resolve(dir, entry.name);
+      const childRel = relative(this.root, child).replace(/\\/g, '/') + '/';
+      if (isIgnoredRelativePath(childRel, this.ignorePatterns)) continue;
+      await this.watchTree(child);
     }
   }
 
@@ -231,7 +198,7 @@ export class ProjectWatcher {
     if (!SUPPORTED_EXT.has(extname(absPath).toLowerCase())) return false;
     const rel = relative(this.root, absPath);
     if (rel.startsWith('..')) return false;
-    return !rel.split(/[\\/]/).some((segment) => IGNORED_DIR_PARTS.has(segment));
+    return !isIgnoredRelativePath(rel, this.ignorePatterns);
   }
 
   private scheduleFlush(): void {

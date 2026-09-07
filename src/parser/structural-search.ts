@@ -1,12 +1,7 @@
 import ts from 'typescript';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { logger } from '../utils/logger.js';
-import {
-  createLangParser,
-  detectLanguageFromPath,
-  type LangSyntaxNode,
-  type StructuralLanguage,
-} from './language-service.js';
+import { detectLanguageFromPath, type StructuralLanguage } from './language-service.js';
 
 export interface StructuralMatch {
   filePath: string;
@@ -60,13 +55,8 @@ const MODIFIER_ALIASES: Record<string, string> = {
 };
 
 /**
- * Structural Search: Find AST nodes matching a pattern across the codebase.
- * Structural Search: Find AST nodes matching a pattern across the codebase.
- *
- * TypeScript/JavaScript are searched with the TypeScript Compiler API; Python,
- * Go, Rust, and Java are searched with tree-sitter node types (e.g.
- * `function_definition`, `function_declaration`, `function_item`,
- * `method_declaration`).
+ * Structural Search: Find TypeScript/JavaScript AST nodes matching a pattern
+ * across the codebase.
  */
 export class StructuralSearcher {
   /**
@@ -81,41 +71,34 @@ export class StructuralSearcher {
 
       try {
         const content = readFileSync(filePath, 'utf-8');
-        const language = options.language ?? detectLanguageFromPath(filePath) ?? 'typescript';
+        const language = options.language ?? detectLanguageFromPath(filePath);
+        if (!language) continue;
+        const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
 
-        if (language === 'typescript' || language === 'javascript') {
-          const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+        const visit = (node: ts.Node) => {
+          if (results.length >= maxResults) return;
 
-          const visit = (node: ts.Node) => {
-            if (results.length >= maxResults) return;
+          if (this.matchesTypeScriptNode(node, options)) {
+            const start = node.getStart(sourceFile);
+            const end = node.getEnd();
+            const text = content.substring(start, end);
 
-            if (this.matchesNode(node, options, language)) {
-              const start = node.getStart(sourceFile);
-              const end = node.getEnd();
-              const text = content.substring(start, end);
+            results.push({
+              filePath,
+              startLine: sourceFile.getLineAndCharacterOfPosition(start).line + 1,
+              endLine: sourceFile.getLineAndCharacterOfPosition(end).line + 1,
+              startOffset: start,
+              endOffset: end,
+              nodeKind: ts.SyntaxKind[node.kind],
+              text,
+              language,
+            });
+          }
 
-              results.push({
-                filePath,
-                startLine: sourceFile.getLineAndCharacterOfPosition(start).line + 1,
-                endLine: sourceFile.getLineAndCharacterOfPosition(end).line + 1,
-                startOffset: start,
-                endOffset: end,
-                nodeKind: ts.SyntaxKind[node.kind],
-                text,
-                language,
-              });
-            }
+          ts.forEachChild(node, visit);
+        };
 
-            ts.forEachChild(node, visit);
-          };
-
-          visit(sourceFile);
-        } else {
-          // Multi-language support (Python, Go, Rust, Java) via tree-sitter.
-          const matches = this.searchMultiLanguage(filePath, content, options, language);
-          results.push(...matches);
-          if (results.length > maxResults) results.length = maxResults;
-        }
+        visit(sourceFile);
       } catch {
         // Skip files that can't be parsed (syntax errors, encoding issues)
         logger.debug(`Skipping file in structural search: ${filePath}`);
@@ -140,12 +123,6 @@ export class StructuralSearcher {
    * into a compatible AST node (expression ↔ expression, statement ↔ statement)
    * to catch syntax errors early.
    *
-   * For multi-language files (Python/Go/Rust/Java) matches are discovered via
-   * tree-sitter and applied as direct text splices on the byte offsets reported
-   * by the grammar (no AST validation — offsets are byte-based, so non-ASCII
-   * content may only support exact splices for ASCII-identical replacements;
-   * this matches the ASCII-focused preview use case of structural replace).
-   *
    * When `dryRun` is true, no files are written; the caller receives full
    * before/after diffs in the `diffs` array.
    */
@@ -160,7 +137,8 @@ export class StructuralSearcher {
     for (const filePath of filePaths) {
       try {
         const content = readFileSync(filePath, 'utf-8');
-        const language = options.language ?? detectLanguageFromPath(filePath) ?? 'typescript';
+        const language = options.language ?? detectLanguageFromPath(filePath);
+        if (!language) continue;
 
         const applySplices = (matches: StructuralMatch[]): { next: string; applied: number } => {
           // Apply splices in reverse position order so that earlier offsets
@@ -176,27 +154,18 @@ export class StructuralSearcher {
           return { next, applied: matches.length };
         };
 
-        let matches: StructuralMatch[];
-        if (language === 'typescript' || language === 'javascript') {
-          const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+        const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
 
-          // Collect matches with their positions.
-          matches = this.findMatches(sourceFile, options);
-          if (matches.length === 0) continue;
+        // Collect matches with their positions.
+        const matches = this.findMatches(sourceFile, options);
+        if (matches.length === 0) continue;
 
-          // Validate that the replacement text can be parsed as a compatible node.
-          // Use the first match to determine node compatibility.
-          const firstMatchNode = this.findFirstMatchNode(sourceFile, matches[0]);
-          if (
-            firstMatchNode &&
-            !this.parseReplacementForNode(options.replacement, firstMatchNode)
-          ) {
-            // Replacement text is not valid for the matched node type — skip this file.
-            continue;
-          }
-        } else {
-          matches = this.searchMultiLanguage(filePath, content, options, language);
-          if (matches.length === 0) continue;
+        // Validate that the replacement text can be parsed as a compatible node.
+        // Use the first match to determine node compatibility.
+        const firstMatchNode = this.findFirstMatchNode(sourceFile, matches[0]);
+        if (firstMatchNode && !this.parseReplacementForNode(options.replacement, firstMatchNode)) {
+          // Replacement text is not valid for the matched node type — skip this file.
+          continue;
         }
 
         const { next: newContent, applied } = applySplices(matches);
@@ -250,7 +219,7 @@ export class StructuralSearcher {
       options.language ?? detectLanguageFromPath(sourceFile.fileName) ?? 'typescript';
 
     const visit = (node: ts.Node) => {
-      if (this.matchesNode(node, options, language)) {
+      if (this.matchesTypeScriptNode(node, options)) {
         const start = node.getStart(sourceFile);
         const end = node.getEnd();
         matches.push({
@@ -270,20 +239,6 @@ export class StructuralSearcher {
 
     visit(sourceFile);
     return matches;
-  }
-
-  /**
-   * Multi-language node matching
-   */
-  private matchesNode(
-    node: ts.Node | LangSyntaxNode,
-    options: StructuralSearchOptions,
-    language: StructuralLanguage,
-  ): boolean {
-    if (language === 'typescript' || language === 'javascript') {
-      return this.matchesTypeScriptNode(node as ts.Node, options);
-    }
-    return this.matchesMultiLanguageNode(node as LangSyntaxNode, options, language);
   }
 
   private matchesTypeScriptNode(node: ts.Node, options: StructuralSearchOptions): boolean {
@@ -320,92 +275,6 @@ export class StructuralSearcher {
     }
 
     return true;
-  }
-
-  private matchesMultiLanguageNode(
-    node: LangSyntaxNode,
-    options: StructuralSearchOptions,
-    language: 'python' | 'go' | 'rust' | 'java',
-  ): boolean {
-    // Match by node kind (tree-sitter node type, e.g. 'function_definition')
-    if (options.nodeKind && node.type !== options.nodeKind) {
-      return false;
-    }
-
-    // Match by name pattern
-    if (options.namePattern) {
-      const name = node.childForFieldName('name')?.text ?? '';
-      if (!name || !new RegExp(options.namePattern).test(name)) {
-        return false;
-      }
-    }
-
-    // Match by modifier — Java exposes modifiers inside a 'modifiers' node
-    // ('public static' → anonymous children 'public', 'static'); other
-    // languages have no comparable per-node modifier model, so the filter is
-    // only applied for Java (and ignored elsewhere, mirroring the previous
-    // multi-language placeholder behavior). Anonymous children must be
-    // inspected since modifier keywords are anonymous tokens in the grammar.
-    if (options.hasModifier && language === 'java') {
-      const wanted = options.hasModifier.toLowerCase();
-      const modifiersNode = node.namedChildren.find((c) => c.type === 'modifiers');
-      const hasMod = modifiersNode
-        ? modifiersNode.children.some((m) => m.type === wanted)
-        : node.children.some((c) => c.type === wanted);
-      if (!hasMod) {
-        return false;
-      }
-    }
-
-    // Match by contained text
-    if (options.containsText && !node.text.includes(options.containsText)) {
-      return false;
-    }
-
-    return true;
-  }
-
-  /**
-   * Multi-language structural search via tree-sitter.
-   *
-   * Traverses the parsed tree and matches nodes whose tree-sitter type equals
-   * `nodeKind` (when provided), plus optional name/contains-text filters.
-   * Byte offsets (`startIndex`/`endIndex`) are reported on the matches so the
-   * replace path can splice text directly.
-   */
-  private searchMultiLanguage(
-    filePath: string,
-    content: string,
-    options: StructuralSearchOptions,
-    language: 'python' | 'go' | 'rust' | 'java',
-  ): StructuralMatch[] {
-    const results: StructuralMatch[] = [];
-    const maxResults = options.maxResults || 50;
-
-    const parsed = createLangParser(filePath, content);
-    if (!parsed) return results;
-
-    const visit = (node: LangSyntaxNode): void => {
-      if (results.length >= maxResults) return;
-
-      if (this.matchesMultiLanguageNode(node, options, language)) {
-        results.push({
-          filePath,
-          startLine: node.startPosition.row + 1,
-          endLine: node.endPosition.row + 1,
-          startOffset: node.startIndex,
-          endOffset: node.endIndex,
-          nodeKind: node.type,
-          text: node.text,
-          language,
-        });
-      }
-
-      for (const child of node.namedChildren) visit(child);
-    };
-
-    visit(parsed.root);
-    return results;
   }
 
   // ---------------------------------------------------------------------------

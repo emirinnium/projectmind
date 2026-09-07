@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { withContext, asyncHandler, output } from '@/cli/utils/shared.js';
 import { join } from '@/cli/utils/shared.js';
 import { existsSync, mkdirSync, writeFileSync, appendFileSync, readFileSync } from 'node:fs';
+import { DEFAULT_PMIGNORE_CONTENT } from '@/utils/ignore.js';
 
 function addToGitignore(gitignorePath: string, entry: string): void {
   if (!existsSync(gitignorePath)) return;
@@ -49,6 +50,12 @@ export function createInitCommand(): Command {
         if (!existsSync(configFile)) {
           writeFileSync(configFile, JSON.stringify({ description: 'ProjectMind config' }, null, 2));
           output.kv('Config created', '.projectmindrc.json');
+        }
+
+        const pmignoreFile = join(process.cwd(), '.pmignore');
+        if (!existsSync(pmignoreFile)) {
+          writeFileSync(pmignoreFile, DEFAULT_PMIGNORE_CONTENT);
+          output.kv('Ignore file created', '.pmignore');
         }
 
         // .gitignore entries for project-specific configs

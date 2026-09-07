@@ -33,7 +33,7 @@ export function formatGenomeScore(score: number)
 * Format debt report for display
 
 ```typescript
-export function formatDebtReport(report: { totalItems: number; bySeverity: Record<string, number>; coherenceGenomeScore: number; items: any[] })
+export function formatDebtReport(report: { totalItems: number; bySeverity: Record<string, number>; coherenceGenomeScore: number; items: DebtItemDTO[] })
 ```
 
 ## function: `handleCliError`

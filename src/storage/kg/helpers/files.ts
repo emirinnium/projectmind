@@ -15,6 +15,7 @@ import { getDefaultAliasResolver } from '../../../parser/alias-resolver.js';
 import { codeToEmbedding, cosineSimilarity } from '../../../parser/embeddings.js';
 
 import { loadConfig } from '../../../utils/config.js';
+import { getProjectIgnorePatterns, isIgnoredRelativePath } from '../../../utils/ignore.js';
 import { runWithRetry } from '../../database.js';
 
 import type { FileInfo } from '../types.js';
@@ -37,6 +38,13 @@ export function mapFileInfo(row: Record<string, SQLOutputValue>): FileInfo {
     lastSynced: (row.last_synced as string) ?? (row.last_scanned as string),
     patterns: JSON.parse((row.patterns as string) ?? '[]') as string[],
   };
+}
+
+function visibleToProject(ctx: KgContext, file: FileInfo): boolean {
+  return (
+    !ctx.projectRoot ||
+    !isIgnoredRelativePath(file.relativePath, getProjectIgnorePatterns(ctx.projectRoot))
+  );
 }
 
 function clearFileRelations(ctx: KgContext, fileId: number): void {
@@ -68,7 +76,10 @@ export function getFileByPath(ctx: KgContext, path: string, projectId?: number):
   ];
   for (const [sql, value] of lookups) {
     const row = ctx.db.prepare(sql).get(value, pid) as Record<string, SQLOutputValue> | undefined;
-    if (row) return mapFileInfo(row);
+    if (row) {
+      const file = mapFileInfo(row);
+      if (visibleToProject(ctx, file)) return file;
+    }
   }
   return null;
 }
@@ -364,7 +375,7 @@ export function getFilesByLanguage(
   const rows = ctx.db
     .prepare('SELECT * FROM files WHERE language = ? AND project_id = ? ORDER BY last_scanned DESC')
     .all(language, pid) as Record<string, SQLOutputValue>[];
-  return rows.map((r) => mapFileInfo(r));
+  return rows.map((r) => mapFileInfo(r)).filter((file) => visibleToProject(ctx, file));
 }
 
 export function getAllFiles(ctx: KgContext, projectId?: number): FileInfo[] {
@@ -372,7 +383,7 @@ export function getAllFiles(ctx: KgContext, projectId?: number): FileInfo[] {
   const rows = ctx.db
     .prepare('SELECT * FROM files WHERE project_id = ? ORDER BY path')
     .all(pid) as Record<string, SQLOutputValue>[];
-  return rows.map((r) => mapFileInfo(r));
+  return rows.map((r) => mapFileInfo(r)).filter((file) => visibleToProject(ctx, file));
 }
 
 export function getAgentTouchedFiles(
@@ -387,7 +398,7 @@ export function getAgentTouchedFiles(
   const rows = (
     agentName ? ctx.db.prepare(sql).all(agentName, pid) : ctx.db.prepare(sql).all(pid)
   ) as Record<string, SQLOutputValue>[];
-  return rows.map((r) => mapFileInfo(r));
+  return rows.map((r) => mapFileInfo(r)).filter((file) => visibleToProject(ctx, file));
 }
 
 function findSimilarIn(

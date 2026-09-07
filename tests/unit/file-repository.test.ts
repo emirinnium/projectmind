@@ -137,9 +137,9 @@ describe('FileRepository', () => {
         embedding: null,
         cognitiveLoad: 0.1,
       }, 1);
-      repo.upsert('/test/script.py', {
-        relativePath: 'script.py',
-        language: 'python',
+      repo.upsert('/test/script.js', {
+        relativePath: 'script.js',
+        language: 'javascript',
         sizeBytes: 200,
         hash: 'py-hash',
         embedding: null,

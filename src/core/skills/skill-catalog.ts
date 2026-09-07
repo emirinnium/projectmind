@@ -132,11 +132,11 @@ export const SKILL_CATALOG: SkillDefinition[] = [
   {
     id: 'ast-parsing',
     label: 'AST parsing',
-    description: 'TypeScript AST parsing, tree-sitter multi-language parsing, symbol extraction',
+    description: 'TypeScript/JavaScript AST parsing and symbol extraction',
     whyItHelps:
-      'taint, structural-search and multi-language analysis all parse code — bugs here silently drop findings.',
+      'taint and structural-search depend on precise AST parsing — bugs here silently drop findings.',
     importance: 0.7,
-    indicators: [/(^|\/)parser\//i, /structural-search/i, /tree-sitter/i],
+    indicators: [/(^|\/)parser\//i, /structural-search/i, /typescript compiler/i],
     resources: ['TypeScript Compiler API', 'Babel Plugin Handbook'],
     suggestedCommands: ['pm taint', 'pm structural-search'],
   },

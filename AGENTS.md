@@ -98,7 +98,7 @@ returning to a file you haven't touched recently.
 
 If ProjectMind tools are not visible:
 ```bash
-npm install --legacy-peer-deps
+npm install
 npx projectmind scan
 ```
 Then reload your MCP client session.

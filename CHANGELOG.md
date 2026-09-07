@@ -7,23 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-No unreleased changes.
+- Retired obsolete UI integrations, their CI/release jobs, and the embedded
+  `pm serve` command.
+- Removed obsolete planning, temporary, and generated agent artifacts from the
+  repository surface.
+
+## [1.0.2] - 2026-09-07
+
+- Reduced the parser surface to TypeScript and JavaScript using the TypeScript
+  Compiler API; removed obsolete multi-language grammar dependencies.
+- Removed the old peer-dependency override requirement and verified clean
+  `npm ci` installation from the lockfile.
+- Deduplicated MCP initialization targets and removed the retired editor
+  integration from source, packaging, and workflows.
+- Fixed the circular-dependency command so its service context cannot create a
+  nested command-named state directory.
+- Fixed the CLI launcher packaging and Windows-safe ESM loading; global install
+  smoke tests now expose both `pm` and `projectmind` at 1.0.2.
+- Kept MCP stdio stdout protocol-safe by routing direct-server diagnostics to
+  stderr.
+- Reduced published package assets to runtime CLI assets, shrinking the
+  dry-run payload to approximately 1.1 MB.
+- Corrected fast coherence function-name matching to avoid false positives from
+  TypeScript union types.
+- Centralized project file boundaries in the root `.pmignore`; `.projectmindrc.json`
+  now contains runtime configuration only.
+- Prevented test files, self-matches, symmetric pairs, and tiny files from
+  polluting production redundancy debt reports.
 
 ## [1.0.1] - 2026-09-06
 
 - Fixed web lockfile synchronization for clean CI installs.
-- Fixed VS Code Marketplace packaging by including the license and snippets.
 
 ## [1.0.0] - 2026-09-06
 
 Production-ready stable release: hardened migrations, deterministic review
 history, cross-platform path handling, complete MCP initialization for major
-coding agents, and verified CLI/MCP/web release gates.
+coding agents, and verified CLI/MCP release gates.
 
 - Centralized multi-language parser registration with capability reporting.
 - Added versioned review history with deterministic finding fingerprints and resolved/open lifecycle.
 - Standardized CLI raw and JSON output through the output abstraction.
-- Added web quality CI coverage and cross-platform path confinement safeguards.
+- Added cross-platform path confinement safeguards.
 
 ## [0.9.0] - 2026-08-31
 
@@ -115,8 +140,8 @@ native config generation.
 From analysis to action: agents get progress feedback during long operations,
 real graph algorithms over the knowledge graph, live file watching, task-aware
 context ranking, code that actually changes (auto-fix), multi-agent file
-coordination with merge-risk prediction, a local web dashboard, and semantic
-team-memory search — plus a critical data-integrity migration.
+coordination with merge-risk prediction, and semantic team-memory search — plus
+a critical data-integrity migration.
 
 ### Added
 - **MCP progress notifications** (`notifications/progress`): throttled stage
@@ -142,8 +167,6 @@ team-memory search — plus a critical data-integrity migration.
   shared-dependency direction between competing edit sets.
 - **AST clone detection** (`pm dedup --mode ast`): Type-2 fingerprinting
   (rename-tolerant function-level clones) across indexed files.
-- **`pm serve`**: zero-dependency local web dashboard — live metrics cards,
-  PageRank list, SVG graph mini-map on http://127.0.0.1:7788.
 - **Semantic team-memory search**: `pm memory search "<query>"` and the
   `search_team_memories` MCP tool — cosine-ranked RAG v1 over team memories,
   offline-capable, auto-upgrades with stronger embedding providers.
@@ -182,7 +205,7 @@ team-memory search — plus a critical data-integrity migration.
 
 Agent workflow enforcement and editor-native intelligence: ProjectMind stops
 being documentation agents should read and becomes a gate they cannot skip,
-while the knowledge graph surfaces directly inside the editor.
+while the knowledge graph becomes part of agent workflows.
 
 ### Added
 - **`pm autopilot pre-commit`**: enforced quality gate with real exit codes —
@@ -191,23 +214,12 @@ while the knowledge graph surfaces directly inside the editor.
 - **`pm autopilot install-hooks [--uninstall]`**: installs a marked git
   `pre-commit` hook running the gate — agents AND humans cannot skip it;
   refuses to touch foreign hooks on uninstall.
-- **VSCode CodeLens**: file-level `🧠 N dependents · load X · ✍️ agent-touched`
-  lens plus cycle warnings and one-click **Show Impact**
-  (analyze_impact incl. impacted test count).
-- **VSCode Hover**: the same knowledge-graph context rendered over any line;
-  60-second per-file cache keeps typing smooth.
-- **Extension ↔ Resources/Prompts bridge**: MCP client gains
-  resources/list·read and prompts/list·get — the editor can now consume
-  `pm://schema|config|stats` and the workflow prompts the server exposes.
 - **Living Context Window (v1)**: `sync_context` pull automatically enriches
   responses with the reported current file's dependency closure and similar
   files from embeddings.
 - **Predictive refactoring signal**: refactor-roi compares 30-day vs 90-day
   churn windows and flags candidates whose churn is *accelerating* before
   they become hotspots.
-
-### Fixed
-- VSCode language-service Range construction for secondary CodeLens.
 
 ## [0.5.0] - 2026-08-25
 
@@ -291,7 +303,7 @@ fabricated/simulated metrics eliminated.
   capabilities without a dedicated tool (shell disabled, argv array only,
   cwd pinned, timeout override, recursive mcp blocked)
 - **`init-mcp <agent>` command**: generates correct MCP config file for
-  claude-code, cursor, opencode, windsurf, or vscode with merge support
+  claude-code, cursor, opencode, or windsurf with merge support
 - **Agent workflow instruction files**: `AGENTS.md`, `.cursorrules`,
   `.windsurfrules`, `.claude/instructions.md` — every major coding agent
   now uses ProjectMind tools proactively without being asked
@@ -379,10 +391,6 @@ npm vulnerabilities are resolved.
   `pm mcp` wrapped in asyncHandler; health icons/encoding repaired
 - **mcp**: server reports the real package version (was hardcoded 1.0.0);
   `get_context` structure fields fixed (were undefined via snake_case)
-- **vscode**: extension performs the mandatory MCP initialize handshake
-  (previously every command timed out); sidebar buttons wired to live data;
-  inline diagnostics activated; phantom `find_similar` call replaced with
-  `get_context includeSimilar`
 - engines raised to `node >=22.13.0` (required by `node:sqlite`)
 - CLI logo asset now ships in the published package
 
@@ -405,8 +413,9 @@ npm vulnerabilities are resolved.
 - `npm audit`: 7 vulnerabilities (1 critical) → **0**
 
 ### Install note
-Use `npm install --legacy-peer-deps` while tree-sitter grammars declare an
-older optional peer (see README "Installation Notes").
+Older 0.8.x builds needed a temporary npm peer-dependency workaround because
+of their grammar packages. Current releases use standard npm dependency
+resolution without an override.
 
 ### Added
 - Initial public release preparation

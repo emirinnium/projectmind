@@ -1,0 +1,21 @@
+# ProjectMind ignore rules (gitignore-style)
+# Add generated, vendored, or sensitive paths that ProjectMind must not read.
+node_modules/
+dist/
+dist-tests/
+.git/
+.projectmind/
+coverage/
+.cache/
+tmp/
+temp/
+build/
+out/
+target/
+vendor/
+.kilo/
+*.min.*
+*.map
+*.d.ts
+package-lock.json
+yarn.lock

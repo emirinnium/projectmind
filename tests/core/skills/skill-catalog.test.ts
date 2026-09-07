@@ -141,7 +141,7 @@ describe('SKILL_CATALOG', () => {
       // ast-parsing
       { skillId: 'ast-parsing', path: 'src/parser/ast-parser.ts', shouldMatch: true },
       { skillId: 'ast-parsing', path: 'src/utils/structural-search.ts', shouldMatch: true },
-      { skillId: 'ast-parsing', path: 'src/utils/tree-sitter.ts', shouldMatch: true },
+      { skillId: 'ast-parsing', path: 'src/parser/ast-parser.ts', shouldMatch: true },
       { skillId: 'ast-parsing', path: 'src/utils/helper.ts', shouldMatch: false },
 
       // knowledge-graph

@@ -1,24 +1,12 @@
 /**
  * Shared parser type contracts.
  *
- * Extracted from ast-parser.ts to break two real circular dependencies:
- *   ast-parser -> ast/parser -> ast-parser
- *   ast-parser -> multilang-parser -> ast-parser
- * Both parser implementations now import these types from here; ast-parser
- * re-exports them for backwards compatibility.
+ * Extracted from ast-parser.ts to break the ast-parser -> ast/parser cycle.
+ * The parser layer intentionally supports only the TypeScript and JavaScript
+ * language contracts used by the product.
  */
 
-export type Language =
-  | 'typescript'
-  | 'javascript'
-  | 'python'
-  | 'go'
-  | 'rust'
-  | 'java'
-  | 'csharp'
-  | 'cpp'
-  | 'ruby'
-  | 'unknown';
+export type Language = 'typescript' | 'javascript' | 'unknown';
 
 export interface ParameterInfo {
   name: string;

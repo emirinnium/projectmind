@@ -7,6 +7,7 @@ import type { KgContext } from './helpers/context.js';
 import { createGraphTraversal } from './graph-traversal.js';
 import { getVecIndex } from '../../core/embeddings/vector-index.js';
 import { logger } from '../../utils/logger.js';
+import { loadConfig } from '../../utils/config.js';
 
 import {
   ensureDefaultProject,
@@ -114,16 +115,18 @@ interface AgentAction {
 export class KnowledgeGraph {
   readonly db: DatabaseSync;
   protected currentProjectId: number = 1;
+  private readonly projectRoot: string;
   /** Cached in-memory traversal engine (invalidated via getGraphTraversal(true)). */
   private _traversal: ReturnType<typeof createGraphTraversal> | null = null;
   /** Injectable dependencies for FS, parser, and embedding (avoids global singletons). */
   protected deps: KnowledgeGraphDeps;
 
   private get ctx(): KgContext {
-    return { db: this.db, currentProjectId: this.currentProjectId };
+    return { db: this.db, currentProjectId: this.currentProjectId, projectRoot: this.projectRoot };
   }
 
   constructor(db?: DatabaseSync, deps?: KnowledgeGraphDeps) {
+    this.projectRoot = loadConfig().projectRoot;
     this.db = db ?? getDatabase();
     this.db.exec(SCHEMA_SQL);
     this.ensureDefaultProject();

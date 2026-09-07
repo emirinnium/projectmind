@@ -5,6 +5,7 @@ import { KnowledgeGraph } from '../../storage/knowledge-graph.js';
 import { CoherenceEngine } from '../coherence/engine.js';
 import { loadConfig } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
+import { getParserDefinition } from '../../parser/parser-registry.js';
 import type { RedundancyDetector } from './detection/interfaces.js';
 import type { PatternDriftDetector } from './detection/interfaces.js';
 import type { ArchitecturalDriftDetector } from './detection/interfaces.js';
@@ -65,7 +66,11 @@ export class DebtTracker {
 
   async detectDebt(): Promise<DebtItem[]> {
     const items: DebtItem[] = [];
-    const files = this.kg.getAllFiles();
+    // Debt analysis is intentionally scoped to the supported JS/TS source
+    // surface. Stale graph rows for retired languages must not re-enter the
+    // report after a scan has narrowed the project to JavaScript/TypeScript.
+    const files = this.kg.getAllFiles().filter((file) => getParserDefinition(file.relativePath));
+    const seenRedundancyPairs = new Set<string>();
 
     // Batch-fetch all file embeddings in a single query to avoid N+1
     const embeddings = this.redundancyDetector.getFileEmbeddings(
@@ -139,6 +144,9 @@ export class DebtTracker {
             embeddings,
           );
           for (const similar of similarFiles) {
+            const pairKey = [file.id, similar.id].sort((a, b) => a - b).join(':');
+            if (seenRedundancyPairs.has(pairKey)) continue;
+            seenRedundancyPairs.add(pairKey);
             items.push(
               this.persistence.createDebtItem({
                 type: 'redundancy',

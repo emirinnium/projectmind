@@ -24,7 +24,11 @@ export function createTaintCommand(): Command {
           }
 
           const content = readFileSync(path, 'utf-8');
-          const lang = detectLanguageFromPath(path) ?? 'typescript';
+          const lang = detectLanguageFromPath(path);
+          if (!lang) {
+            output.error('Taint analysis supports only TypeScript and JavaScript files.');
+            return;
+          }
 
           const flows = analyzer.analyzeSource(path, content, lang);
 
@@ -63,7 +67,11 @@ export function createTaintCommand(): Command {
           }
 
           const content = readFileSync(path, 'utf-8');
-          const lang = detectLanguageFromPath(path) ?? 'typescript';
+          const lang = detectLanguageFromPath(path);
+          if (!lang) {
+            output.error('Taint analysis supports only TypeScript and JavaScript files.');
+            return;
+          }
 
           const recorded = analyzer.recordFlows(path, content, lang);
           output.success(`Recorded ${recorded} taint flows from ${path}`);

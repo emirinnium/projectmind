@@ -15,18 +15,14 @@ export function registerStructuralSearchTool(server: McpServer, deps: McpDepende
     'structural_search',
     {
       title: 'Structural Search',
-      description:
-        'Find and optionally rewrite code by AST pattern. Matches AST nodes across TypeScript, JavaScript, Python, Go, Rust, and Java.',
+      description: 'Find and optionally rewrite TypeScript or JavaScript code by AST pattern.',
       inputSchema: {
         nodeKind: z
           .string()
           .describe(
-            'AST node kind to match (e.g., FunctionDeclaration, CallExpression, IfStatement; for non-TS languages use tree-sitter node types like function_definition, function_declaration, function_item, method_declaration)',
+            'AST node kind to match (e.g., FunctionDeclaration, CallExpression, IfStatement)',
           ),
-        hasModifier: z
-          .string()
-          .optional()
-          .describe('Required modifier (e.g., async, export; Java-only for non-TS languages)'),
+        hasModifier: z.string().optional().describe('Required modifier (e.g., async, export)'),
         containsText: z
           .string()
           .optional()
@@ -43,7 +39,7 @@ export function registerStructuralSearchTool(server: McpServer, deps: McpDepende
           .describe('Replacement text (if provided, performs replace instead of search)'),
         dryRun: z.boolean().default(true).describe('If true, do not write changes to disk'),
         language: z
-          .enum(['typescript', 'javascript', 'python', 'go', 'rust', 'java'])
+          .enum(['typescript', 'javascript'])
           .optional()
           .describe('Language to search (defaults to per-file extension detection)'),
       },

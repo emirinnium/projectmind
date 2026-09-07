@@ -14,7 +14,7 @@ Living Codebase Intelligence Layer for AI Agents.
 [![npm](https://img.shields.io/npm/v/@emirhanturker/projectmind?logo=npm)](https://npmjs.com/package/@emirhanturker/projectmind)
 [![GitHub](https://img.shields.io/github/stars/emirinnium/projectmind?style=social)](https://github.com/emirinnium/projectmind)
 
-**v1.0.0** · [npm package](https://npmjs.com/package/@emirhanturker/projectmind) · [GitHub repository](https://github.com/emirinnium/projectmind)
+**v1.0.2** · [npm package](https://npmjs.com/package/@emirhanturker/projectmind) · [GitHub repository](https://github.com/emirinnium/projectmind)
 
 ProjectMind scans your codebase, builds a knowledge graph, and exposes it through a CLI and an MCP server so agents can reason about architecture, debt, dependencies, embeddings, taint, and runtime traces.
 
@@ -23,17 +23,39 @@ ProjectMind scans your codebase, builds a knowledge graph, and exposes it throug
 - Node.js `>=22.13.0` is required.
 - Windows, Linux, and macOS are supported; persisted project paths use `/` separators while native filesystem calls use the host path API.
 - Windows drive-letter/UNC paths and POSIX absolute paths are validated before project-scoped reads, writes, or CLI child execution.
-- Run the web dashboard from `web/` for the repository layout, or set `PROJECTMIND_ROOT` and `PROJECTMIND_CLI_PATH` in packaged/CI deployments.
-- Set `PROJECTMIND_API_PROXY` only when an external API proxy is intentionally required; Next App Router handlers are the default.
-- Set `NEXT_PUBLIC_SITE_URL` in production so Open Graph and Twitter metadata use the deployed origin.
 
 ## Quick Start
+
+```bash
+npm install -g @emirhanturker/projectmind
+pm init
+pm scan
+pm health
+```
+
+For local development from a checkout:
 
 ```bash
 npm install
 npm run build
 projectmind scan
 projectmind health
+```
+
+### Control what ProjectMind reads
+
+ProjectMind uses one ignore source: `.pmignore` at the project root. It is
+created by `pm init`, follows gitignore-style path patterns, and is applied by
+the scanner, watcher, coherence/contract checks, MCP tools, and filesystem
+integrity checks. Keep runtime settings in `.projectmindrc.json`; ignore rules
+do not belong in that file. Negation rules (`!pattern`) are intentionally not
+supported.
+
+```gitignore
+# Example .pmignore
+generated/
+fixtures/private-data.ts
+*.generated.ts
 ```
 
 ### Connect your coding agent
@@ -49,7 +71,7 @@ pm mcp-init antigravity # .agent/mcp_config.json + rule
 pm mcp-init kilo-code   # .kilo/kilo.jsonc + AGENTS.md
 ```
 
-Supported aliases also include Cursor, Windsurf, VS Code MCP, and Claude Desktop. Existing configuration is preserved unless `--force` is explicitly supplied.
+Supported targets also include Cursor, Windsurf, and Claude Desktop. Existing configuration is preserved unless `--force` is explicitly supplied.
 
 ## CLI Commands
 
@@ -241,7 +263,6 @@ rollbackLast(db, 1);
 - `src/parser` — AST parsing, pattern extraction, embeddings, taint analysis, structural search
 - `src/mcp` — MCP server and tool registrations
 - `src/cli` — Commander-based CLI commands and shared utilities
-- `src/tracer` — Runtime trace utilities
 - `src/types` — Shared TypeScript types and declarations
 - `src/utils` — Configuration and shared utilities
 
@@ -259,7 +280,7 @@ npm run test:vitest    # Unit tests
 npm run test:coverage  # Unit tests with coverage report
 npm run test:watch     # Watch mode for unit tests
 npm run start:mcp      # Start MCP server
-npm run ci             # Full CI pipeline (lint + typecheck + test + coverage)
+npm run pm:ci          # Scan + genome + debt release checks
 ```
 
 ## Repository Pattern
@@ -285,22 +306,14 @@ const fileRepo = new FileRepository(manager.getDb());
 - `DataFlowRepository` — Taint analysis data flows
 - `DynamicCallRepository` — Runtime call tracing
 
-## Installation Notes (Dependency Overrides & Peer Deps)
+## Installation Notes (Dependency Overrides)
 
-This project pins security overrides and tolerates a known tree-sitter peer
-conflict. Install with:
+The package has no peer-dependency override requirement. A global install is
+the recommended end-user path, while a regular `npm install` is sufficient for
+contributors.
 
-```bash
-npm install --legacy-peer-deps
-```
-
-**Why:** the tree-sitter grammar packages (`tree-sitter-java`, etc.) still
-declare `peerOptional tree-sitter@^0.21.1` while this project uses
-`tree-sitter@^0.25.1`. Plain `npm install` / `npm audit fix` therefore fails
-with ERESOLVE until grammars publish updated peers.
-
-**Security overrides** (see `package.json > overrides`) keep transitive CVEs
-at zero without breaking downgrades:
+Security overrides (see `package.json > overrides`) keep transitive CVEs at
+zero without breaking downgrades:
 
 | Override | Reason |
 |---|---|
@@ -318,32 +331,6 @@ MIT
 ## MCP / AI Agent Integration
 
 See [docs/MCP.md](docs/MCP.md) for connecting Claude Code, Cursor,
-OpenCode, Windsurf or any MCP client — 28 dedicated tools plus the
-`run_cli` bridge exposing the full CLI surface (exposed as
-`projectmind_run_cli` on clients that prefix MCP tools by server, e.g. opencode).
-
-## Roadmap / Next Steps
-
-The v0.9.0 roadmap is tracked in [docs/roadmap.md](docs/roadmap.md). Key 
-implementations completed in this cycle:
-
-- **Task 1**: Split `smart-assembler.ts` into user- and system-context assemblers 
-  with wrapper re-exports and updated `src/core/index.ts` exports.
-- **Task 2**: Enhanced `src/index.ts` barrel exports with clarification comment and 
-  verified export coverage.
-- **Task 3**: Added layer config, color-coding, and circular dependency detection to 
-  `architecture-diagram.ts` Mermaid output.
-- **Task 4**: Created `docs/roadmap.md` from `docs/v0.9.0-spec.md` and added Roadmap 
-  section to this README.
-- **Task 5**: Added JSDoc and undefined-case comments to `advanced-cache.ts` return types.
-
-For the full v0.9.0 feature set, see the roadmap document. Ongoing work includes 
-predictive impact analysis, self-healing knowledge graph, and context window budget 
-optimization for M3 phase delivery.
-
-## MCP / AI Agent Integration
-
-See [docs/MCP.md](docs/MCP.md) for connecting Claude Code, Cursor,
-OpenCode, Windsurf or any MCP client — 28 dedicated tools plus the
+OpenCode, Windsurf or any MCP client — dedicated tools plus the
 `run_cli` bridge exposing the full CLI surface (exposed as
 `projectmind_run_cli` on clients that prefix MCP tools by server, e.g. opencode).

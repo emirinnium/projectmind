@@ -23,7 +23,7 @@ What you expected to happen.
 - OS: [e.g., Windows 11, macOS 14, Ubuntu 22.04]
 - Node.js version: [e.g., 22.0.0]
 - ProjectMind version: [e.g., 0.1.9]
-- CLI or MCP: [e.g., CLI, VS Code Extension]
+- Surface: [e.g., CLI, MCP server]
 
 **Additional Context**
 Add any other context, logs, or screenshots about the bug here.

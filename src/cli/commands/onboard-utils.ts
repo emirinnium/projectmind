@@ -55,7 +55,7 @@ export function generateOnboardingPath(
     order: stepOrder++,
     title: 'Development Environment Setup',
     description: 'Install dependencies, run build, verify tests pass',
-    files: ['package.json', 'tsconfig.json', '.projectmindrc.json'],
+    files: ['package.json', 'tsconfig.json', '.projectmindrc.json', '.pmignore'],
     estimatedTime: '15 min',
     prerequisites: ['Node.js >=22', 'npm'],
     type: 'run',
@@ -320,7 +320,7 @@ export function generateMLSteps(
       .concat(findModuleFiles(report, 'data', allFiles))
       .slice(0, 10),
     estimatedTime: '60 min',
-    prerequisites: ['Python/ML basics'],
+    prerequisites: ['TypeScript/JavaScript tooling basics'],
     type: 'explore',
   });
 

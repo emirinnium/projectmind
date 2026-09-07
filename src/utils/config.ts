@@ -16,7 +16,6 @@ export interface ProjectMindConfig {
   databasePath: string;
   embeddingsDir: string;
   maxDepth: number;
-  ignorePatterns: string[];
   llm: {
     provider: string;
     model: string;
@@ -49,15 +48,6 @@ const DEFAULT_CONFIG: ProjectMindConfig = {
   databasePath: '.projectmind/pm-knowledge.db',
   embeddingsDir: '.projectmind/embeddings',
   maxDepth: 10,
-  ignorePatterns: [
-    'node_modules/**',
-    'dist/**',
-    '.git/**',
-    '*.min.js',
-    '*.map',
-    'package-lock.json',
-    'yarn.lock',
-  ],
   llm: {
     provider: 'anthropic',
     model: 'claude-3-5-sonnet-20241022',
@@ -179,7 +169,13 @@ function loadProjectConfigRaw(): { parsed: unknown; path: string } | null {
 
   try {
     const content = readFileSync(projectPath, 'utf-8');
-    return { parsed: JSON.parse(content) as unknown, path: projectPath };
+    const parsed = JSON.parse(content) as unknown;
+    if (isPlainObject(parsed) && 'ignorePatterns' in parsed) {
+      logger.warn(
+        `The ignorePatterns setting in ${projectPath} is no longer used. Move those rules to .pmignore.`,
+      );
+    }
+    return { parsed, path: projectPath };
   } catch (error) {
     logger.warn(
       `Invalid project config at ${projectPath}: ${error instanceof Error ? error.message : String(error)}. Using defaults.`,
@@ -386,7 +382,6 @@ export function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
       effectiveProjectRoot,
     ),
     maxDepth: validated.maxDepth ?? DEFAULT_CONFIG.maxDepth,
-    ignorePatterns: validated.ignorePatterns ?? DEFAULT_CONFIG.ignorePatterns,
     llm: llmConfig,
     embeddings: embeddingsConfig,
     features: featuresConfig,

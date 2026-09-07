@@ -1,14 +1,28 @@
 import { existsSync, statSync } from 'node:fs';
+import { relative, resolve } from 'node:path';
+import { loadConfig } from '@/utils/config.js';
+import { getProjectIgnorePatterns, isIgnoredRelativePath } from '@/utils/ignore.js';
 
 export async function getFilesToCheck(path: string): Promise<string[]> {
   const fg = await import('fast-glob');
   const glob = fg.default ?? fg;
+  const projectRoot = resolve(loadConfig().projectRoot);
+  const ignorePatterns = getProjectIgnorePatterns(projectRoot);
+  const target = resolve(path);
+  const relativeTarget = relative(projectRoot, target).replace(/\\/g, '/');
 
-  if (existsSync(path) && statSync(path).isFile()) {
-    return [path];
+  if (relativeTarget.startsWith('..') || relativeTarget === '..') return [];
+
+  if (existsSync(target) && statSync(target).isFile()) {
+    return isIgnoredRelativePath(relativeTarget, ignorePatterns) ? [] : [target];
   }
-  return glob([`${path}/**/*.{ts,js,tsx,jsx}`], {
-    ignore: ['**/node_modules/**', '**/dist/**', '**/dist-tests/**', '**/coverage/**'],
+  const pattern =
+    relativeTarget && relativeTarget !== '.'
+      ? `${relativeTarget}/**/*.{ts,js,tsx,jsx,mjs,cjs}`
+      : '**/*.{ts,js,tsx,jsx,mjs,cjs}';
+  return glob([pattern], {
+    cwd: projectRoot,
+    ignore: ignorePatterns,
     absolute: true,
   });
 }

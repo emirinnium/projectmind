@@ -1,6 +1,6 @@
 {
   "name": "@emirhanturker/projectmind",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Living Codebase Intelligence Layer for AI Agents — persistent memory, real-time coherence, and Opus-level reasoning",
   "bin": {
     "projectmind": "./cli.mjs",
@@ -14,10 +14,11 @@
   },
   "files": [
     "dist/**/*",
+    "cli.mjs",
     "src/**/*",
     "README.md",
     "LICENSE",
-    "assets/**/*"
+    "assets/cli-logo.txt"
   ],
   "scripts": {
     "build": "tsc && tsc-alias",
@@ -74,15 +75,6 @@
     "dotenv": "^17.4.2",
     "fast-glob": "^3.3.3",
     "sqlite-vec": "^0.1.9",
-    "tree-sitter": "^0.25.1",
-    "tree-sitter-c-sharp": "^0.23.5",
-    "tree-sitter-cpp": "^0.23.4",
-    "tree-sitter-go": "^0.25.0",
-    "tree-sitter-java": "^0.23.5",
-    "tree-sitter-python": "^0.25.0",
-    "tree-sitter-ruby": "^0.23.1",
-    "tree-sitter-rust": "^0.24.0",
-    "tree-sitter-typescript": "^0.23.2",
     "typescript": "^5.4.0",
     "ws": "^8.18.0",
     "zod": "^4.4.3"
@@ -109,9 +101,6 @@
     "onnxruntime-node": "^1.27.0"
   },
   "overrides": {
-    "tree-sitter-cpp": {
-      "tree-sitter": "^0.25.1"
-    },
     "adm-zip": "^0.6.0",
     "fast-uri": "^3.1.6",
     "protobufjs": "^8.7.2",
