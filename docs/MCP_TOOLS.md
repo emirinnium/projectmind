@@ -1,90 +1,105 @@
 # MCP Tools
 
-ProjectMind exposes its capabilities through the Model Context Protocol (MCP). Start the server with:
+ProjectMind exposes a typed MCP surface for codebase intelligence. Start the
+server with:
 
 ```bash
-projectmind mcp
+pm mcp
 ```
 
-## Tool Reference
+The default `PROJECTMIND_TOOLS=core` profile registers the dedicated tools
+listed below. Set `PROJECTMIND_TOOLS=all` to add the generated `pm_*` CLI
+parity tools. `run_cli` remains available in both profiles.
 
-### Core
-- `check_coherence` — Check code coherence against project patterns
-- `get_context` — Get relevant context for a file
-- `store_memory` — Store agent memory
-- `get_memory` — Retrieve agent memory
-- `debt_report` — Generate cognitive debt report
-- `scale_report` — Get project scale and coverage report
-- `genome_score` — Compute project coherence genome score
-- `scan_project` — Scan project and build/update knowledge graph
-- `start_session` — Start a new agent session
-- `end_session` — End an agent session
-- `get_agent_sessions` — Get agent sessions
+## Context, reports, and project lifecycle
 
-### Import / Dependency
-- `trace_imports` — Trace all transitive imports for a file
-- `find_circular_deps` — Find all circular dependencies in the project
-- `resolve_import` — Resolve an import path to the actual file
-- `get_dependents` — Find all files that import/depend on a given file
-- `get_dependency_graph` — Get the dependency graph for a module/directory
+- `check_coherence` — Check code against learned project patterns.
+- `get_context` — Assemble imports, dependents, structure, and similar files.
+- `store_memory` / `get_memory` — Persist and retrieve agent memory.
+- `debt_report` — Report cognitive debt by severity.
+- `scale_report` — Report project size, languages, coverage, and hotspots.
+- `genome_score` — Compute the project coherence score.
+- `scan_project` — Build or refresh the knowledge graph.
+- `start_session` / `end_session` / `get_agent_sessions` — Manage agent sessions.
+- `resource_subscribe` / `resource_unsubscribe` — Manage session resource-update subscriptions.
 
-### Path Resolution
-- `resolve_path` — Resolve a file path with TypeScript/JS module resolution rules
-- `find_file_by_import` — Find all files that match an import pattern
+## Imports, graph, and paths
 
-### Architecture / Impact
-- `check_architecture` — Check if a file complies with project architectural patterns
-- `analyze_impact` — Analyze the impact of changing a file
-- `suggest_refactor` — Get refactoring suggestions based on code patterns
+- `trace_imports` — Trace transitive imports for a file.
+- `find_circular_deps` — Find dependency cycles.
+- `resolve_import` — Resolve an import in the knowledge graph.
+- `get_dependents` — Find reverse dependencies.
+- `get_dependency_graph` — Get a module dependency graph.
+- `kg_query` — Run graph algorithms (stats, PageRank, communities, paths, BFS).
+- `kg_stats` — Get node, edge, and PageRank statistics.
+- `export_architecture_diagram` — Export SVG, PNG, or Mermaid architecture data.
+- `resolve_path` — Resolve TypeScript/JavaScript paths and aliases.
+- `find_file_by_import` — Find files matching an import pattern.
 
-### Continuous Sync
-- `file_watch` — Register interest in a file for continuous synchronization
-- `get_file_status` — Get real-time status of a file
-- `sync_context` — Synchronize context between coding agent and ProjectMind
-- `unregister_file_watch` — Stop watching a file for continuous synchronization
+## Architecture, contracts, and synchronization
 
-### Dynamic Tracing
-- `ingest_trace` — Ingest runtime call trace data into the knowledge graph
+- `check_architecture` — Check architectural rules and markers.
+- `analyze_impact` — Analyze a file change and its dependents.
+- `suggest_refactor` — Recommend refactors by complexity, duplication, architecture, or performance.
+- `check_contracts` — Enforce project architectural contracts.
+- `auto_fix` — Preview or apply AST-safe mechanical fixes; preview is the default.
+- `register_file_watch` / `unregister_file_watch` — Manage session-scoped file watches.
+- `get_file_status` — Get live coherence and dependency status for a file.
+- `sync_context` — Synchronize decisions, patterns, issues, and working state.
 
-### Structural Search / Replace
-- `structural_search` — Find code by AST pattern
-- `structural_replace` — Rewrite code by AST pattern
+## Coordination and predictive analysis
 
-### Project Management
-- `list_projects` — List all projects in the knowledge graph
-- `create_project` — Create a new project
-- `switch_project` — Switch the current project context
+- `agent_locks` — Advisory per-file locks for concurrent agents.
+- `predict_merge_risk` — Estimate collision risk before multi-agent edits.
+- `predict_impact_risk` — Predict change impact with risk levels.
+- `predict_impact` — Predict affected tests and callers from a change.
+- `broadcast_intent` / `check_intent_conflicts` — Share and inspect planned edits.
+- `suggest_next_files` — Rank files to read next for a task.
+- `find_patterns` — Find learned patterns by interface shape.
 
-### Data-Flow / Taint Analysis
-- `record_data_flow` — Record a data-flow edge between resources or functions
-- `get_data_flows` — Get all recorded data flows for the current project
-- `get_resource_flows` — Get all data flows for a specific resource
-- `clear_data_flows` — Clear all recorded data flows for the current project
+## Search, symbols, and code analysis
 
-### Embeddings
-- `init_embedding_provider` — Initialize the embedding provider
-- `generate_embedding` — Generate an embedding vector for text or code
-- `get_embedding_provider` — Get the current embedding provider
+- `search_intent` — Hybrid natural-language task search.
+- `semantic_search` — Embedding-based file search.
+- `structural_search` — AST search with optional dry-run replacement.
+- `find_symbol_references` — Find symbol references through the TypeScript language service.
+- `find_symbol_definition` — Find a symbol definition through the TypeScript language service.
+- `analyze_taint` / `record_taint` — Analyze or persist taint flows.
+- `record_data_flow` / `get_data_flows` / `get_resource_flows` — Manage data-flow edges.
+- `clear_data_flows` — Clear current-project data-flow edges; protected by MCP safety guards.
 
-### Intelligence & Agent Coordination
-- `search_intent` — Semantic + structural search with a natural-language task query
-- `predict_impact` — Predict which tests/callers break when a file changes
-- `plan_context_budget` — Rank which files to load within a token budget
-- `broadcast_intent` — Announce planned edits so other agents avoid conflicts
-- `check_intent_conflicts` — Check whether other agents hold overlapping write intents
-- `agent_locks` — Advisory per-file locks for multi-agent coordination
-- `predict_merge_risk` — Predict merge collisions before multi-agent edits
-- `find_patterns` — Find previously learned design patterns by interface shape
+## Projects, memory, embeddings, and security
 
-### Search & Analysis
-- `semantic_search` — Rank files purely by embedding similarity to a query
-- `structural_search` / `structural_replace` — AST-pattern find and rewrite
-- `kg_query` — Graph algorithms over the knowledge graph (PageRank, communities, paths)
-- `find_symbol_references` — Every reference of a symbol via the real TypeScript language service
-- `suggest_next_files` — Task-aware "what to read next" ranking over the knowledge graph
+- `list_projects` / `create_project` / `switch_project` — Manage graph projects.
+- `store_team_memory` / `get_team_memories` / `search_team_memories` — Share durable team knowledge.
+- `init_embedding_provider` — Select and initialize an embedding provider.
+- `generate_embedding` — Generate a vector for text or code.
+- `get_embedding_provider` — Inspect embedding configuration.
+- `ingest_trace` — Persist runtime call-trace data.
+- `recommend_skills` — Recommend skills for a task from project evidence.
+- `scan_cves` — Run the dependency vulnerability audit; `fix` is preview-only.
 
-### Skills
-- `recommend_skills{task, limit?}` — Given a free-text task description, rank the skill
-  catalog (label/description/whyItHelps/importance) by task-token overlap, repo evidence
-  (via the scale report) and importance. Returns `{ name, description, score, reason }`
-  per skill plus the CLI commands to apply each. Deterministic, no LLM required.
+## CLI bridge
+
+`run_cli` exposes the approved CLI commands that do not need a dedicated typed
+tool. It accepts an argument array only, pins the working directory to
+`PROJECTMIND_ROOT`, blocks shell execution and destructive commands, and keeps
+path-valued outputs inside the project root.
+
+All 66 dedicated registrations expose an input schema, a callable handler, and
+the four explicit MCP behavior annotations (`readOnlyHint`, `destructiveHint`,
+`idempotentHint`, `openWorldHint`). Generated parity tools use the same
+contract.
+
+Example:
+
+```json
+{
+  "name": "run_cli",
+  "arguments": { "args": ["health", "--json"] }
+}
+```
+
+All tool names are unprefixed in Claude Code, Cursor, Windsurf, and similar
+clients. OpenCode prefixes them with the server name, for example
+`projectmind_get_context` and `projectmind_run_cli`.

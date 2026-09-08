@@ -79,7 +79,7 @@ Point at the local build instead of npm:
 | Variable | Purpose |
 |---|---|
 | `PROJECTMIND_ROOT` | Project root the server scans/stores under (**set this**) |
-| `PROJECTMIND_TOOLS` | Tool surface profile: `all` (default, ~134 tools incl. `pm_*` parity) or `core` (~45 dedicated-only — recommended for clients with a small active-tool budget such as Cursor). `run_cli` stays available in both. |
+| `PROJECTMIND_TOOLS` | Tool surface profile: `core` (default, dedicated typed tools) or `all` (dedicated tools plus the full `pm_*` CLI-parity surface). `run_cli` stays available in both. |
 | `PROJECTMIND_HTTP_PORT` | When set, the server starts a **stateless Streamable HTTP** endpoint instead of stdio: `POST http://127.0.0.1:<port>/mcp` (JSON responses; GET returns 405). For remote/team-shared deployments behind plain load balancers. |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` | Enables deep-tier LLM analysis for the matching provider |
 | `CLAUDE_API_KEY` | Alias accepted for Anthropic |
@@ -110,8 +110,12 @@ does not define file ignores.
 
 ### Annotations, Resources & Prompts
 
-- All read-only tools carry `readOnlyHint` + `idempotentHint` annotations, so
-  compliant clients skip approval dialogs for pure queries.
+- Every dedicated tool and generated CLI-parity tool carries explicit
+  `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint`
+  annotations. Values are classified from the operation's real side effects;
+  state-changing tools are not advertised as read-only.
+- Local analysis tools set `openWorldHint: false`; tools that can invoke an
+  external LLM, embedding provider, or npm registry set it to `true`.
 - Resources: `pm://schema` (live DB tables), `pm://config` (secrets masked),
   `pm://stats` (project statistics).
 - Prompts: `impact-first-refactor`, `pre-commit-checklist`, `debt-triage`,
@@ -128,7 +132,7 @@ does not define file ignores.
 | Imports & structure | `trace_imports`, `find_circular_deps`, `resolve_import`, `resolve_path`, `find_file_by_import`, `get_dependents`, `get_dependency_graph`, `structural_search` |
 | Memory & sessions | `store_memory`, `get_memory`, `start/end/get_agent_sessions`, `store_team_memory`, `get_team_memories` |
 | Reports | `debt_report`, `scale_report`, `genome_score` |
-| Projects | `list/create/switch/delete_project` |
+| Projects | `list_projects`, `create_project`, `switch_project` |
 | Data-flow & taint | `record_data_flow`, `get_data_flows`, `clear_data_flows`, `analyze_taint` |
 | Tracing | `ingest_trace` (+ get/clear dynamic calls) |
 | Embeddings | `init_embedding_provider`, `generate_embedding`, `get_embedding_provider` |

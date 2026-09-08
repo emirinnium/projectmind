@@ -7,6 +7,7 @@ import { loadConfig } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 import { watch as fsWatch, type FSWatcher } from 'node:fs';
 import { toolCacheHintMeta } from './tools/list.js';
+import { TOOL_ANNOTATIONS } from './tools/guard.js';
 import { getProjectIgnorePatterns, isIgnoredRelativePath } from '../utils/ignore.js';
 
 /**
@@ -138,7 +139,7 @@ export function registerCoreResources(server: McpServer, deps: McpDependencies):
   // Set the server for the subscription manager
   subscriptionManager.setServer(server);
   // Real-time chain: source edits → resource/updated notifications.
-  subscriptionManager.startFileWatch(process.cwd());
+  subscriptionManager.startFileWatch(deps.projectRoot);
 
   // pm://schema — live table list from the knowledge-graph database.
   server.registerResource(
@@ -257,6 +258,7 @@ export function registerResourceSubscriptionTool(server: McpServer): void {
       ...toolCacheHintMeta('resource_subscribe'),
       title: 'Resource Subscribe',
       description: 'Subscribe to updates for a specific resource.',
+      annotations: TOOL_ANNOTATIONS.resource_subscribe,
       inputSchema: {
         resourceId: z.string().describe('The ID of the resource to subscribe to.'),
         clientId: z.string().describe('The client ID to associate with this subscription.'),
@@ -274,6 +276,7 @@ export function registerResourceSubscriptionTool(server: McpServer): void {
       ...toolCacheHintMeta('resource_unsubscribe'),
       title: 'Resource Unsubscribe',
       description: 'Unsubscribe from updates for a specific resource.',
+      annotations: TOOL_ANNOTATIONS.resource_unsubscribe,
       inputSchema: {
         resourceId: z.string().describe('The ID of the resource to unsubscribe from.'),
         clientId: z.string().describe('The client ID to remove from this subscription.'),

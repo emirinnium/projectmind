@@ -13,24 +13,6 @@ import { createProgressReporter } from './progress.js';
  * (graph algorithms), complementing analyze_impact (reverse-dependency BFS).
  */
 
-const inputSchema = {
-  action: z
-    .enum(['stats', 'pagerank', 'communities', 'subgraph', 'path', 'impact', 'bfs'])
-    .describe(
-      'Graph operation: stats=nodes/edges overview, pagerank=critical files by score, communities=module clusters, subgraph=N-hop neighborhood around file, path=shortest import chain from→to, impact=direct+transitive affected set of file, bfs=traversal from file',
-    ),
-  file: z
-    .string()
-    .optional()
-    .describe(
-      'File path (relative or absolute) — required for subgraph/impact/bfs, endpoint for path',
-    ),
-  to: z.string().optional().describe('Target file path — required for action=path'),
-  hops: z.number().default(2).describe('Radius for subgraph / depth for bfs (default 2)'),
-  limit: z.number().default(15).describe('Max results for pagerank/communities listing'),
-  damping: z.number().default(0.85).describe('PageRank damping factor'),
-};
-
 function json(result: object): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 }
@@ -44,7 +26,35 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
         'Run real graph algorithms over the project knowledge graph.\n' +
         'WHEN to call: before refactors ("give me the 2-hop subgraph around this file"), to find critical files (pagerank), detect module clusters (communities), or compute the shortest import chain between two files (path).\n' +
         'Returns structured JSON per action. Read-only.',
-      inputSchema,
+      inputSchema: {
+        action: z
+          .enum(['stats', 'pagerank', 'communities', 'subgraph', 'path', 'impact', 'bfs'])
+          .describe(
+            'Graph operation: stats=nodes/edges overview, pagerank=critical files by score, communities=module clusters, subgraph=N-hop neighborhood around file, path=shortest import chain from→to, impact=direct+transitive affected set of file, bfs=traversal from file',
+          ),
+        file: z
+          .string()
+          .optional()
+          .describe(
+            'File path (relative or absolute) — required for subgraph/impact/bfs, endpoint for path',
+          ),
+        to: z.string().optional().describe('Target file path — required for action=path'),
+        hops: z
+          .number()
+          .int()
+          .min(1)
+          .max(20)
+          .default(2)
+          .describe('Radius for subgraph / depth for bfs (default 2)'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(1000)
+          .default(15)
+          .describe('Max results for pagerank/communities listing'),
+        damping: z.number().min(0).max(1).default(0.85).describe('PageRank damping factor'),
+      },
     },
     async (args, extra) => {
       const progress = createProgressReporter(extra, 'kg_query');

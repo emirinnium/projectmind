@@ -31,60 +31,225 @@ export function isBlockedCliInvocation(argv: string[]): boolean {
 }
 
 /**
- * Dedicated MCP tools that are pure readers / pure computations. These get
- * readOnlyHint (+idempotentHint) so MCP clients can skip approval dialogs.
- * Everything NOT listed stays unannotated = conservative default.
+ * Complete MCP behavior annotation used by every registered core tool.
+ *
+ * These values describe the actual operation, not merely whether a tool
+ * returns a report. For example, genome_score persists a derived snapshot,
+ * scan_project prunes stale graph rows, and run_cli can reach the network and
+ * execute state-changing commands through its allowlisted bridge.
  */
-const DEDICATED_READ_ONLY = new Set([
-  'analyze_impact',
-  'analyze_taint',
-  'check_architecture',
+export interface CompleteToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
+}
+
+const READ_ONLY_LOCAL: CompleteToolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
+const WRITE_DERIVED: CompleteToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+
+/** The 64 core tools plus the two resource-subscription tools. */
+export const MCP_CORE_TOOL_NAMES = [
   'check_coherence',
-  'check_contracts',
-  'check_intent_conflicts',
+  'get_context',
+  'store_memory',
+  'get_memory',
   'debt_report',
-  'export_architecture_diagram',
+  'scale_report',
+  'genome_score',
+  'scan_project',
+  'start_session',
+  'end_session',
+  'get_agent_sessions',
+  'trace_imports',
   'find_circular_deps',
+  'resolve_import',
+  'get_dependents',
+  'get_dependency_graph',
+  'kg_query',
+  'kg_stats',
+  'export_architecture_diagram',
+  'resolve_path',
   'find_file_by_import',
+  'check_architecture',
+  'analyze_impact',
+  'suggest_refactor',
+  'check_contracts',
+  'auto_fix',
+  'register_file_watch',
+  'get_file_status',
+  'sync_context',
+  'unregister_file_watch',
+  'agent_locks',
+  'predict_merge_risk',
+  'predict_impact_risk',
+  'ingest_trace',
+  'structural_search',
+  'list_projects',
+  'create_project',
+  'switch_project',
+  'record_data_flow',
+  'get_data_flows',
+  'get_resource_flows',
+  'clear_data_flows',
+  'init_embedding_provider',
+  'generate_embedding',
+  'get_embedding_provider',
+  'analyze_taint',
+  'record_taint',
+  'store_team_memory',
+  'get_team_memories',
+  'search_team_memories',
+  'search_intent',
+  'predict_impact',
+  'plan_context_budget',
+  'check_kg_integrity',
+  'broadcast_intent',
+  'check_intent_conflicts',
   'find_patterns',
+  'semantic_search',
   'find_symbol_references',
   'find_symbol_definition',
-  'generate_embedding',
-  'genome_score',
-  'get_agent_sessions',
-  'get_context',
-  'get_data_flows',
-  'get_dependency_graph',
-  'get_dependents',
-  'get_embedding_provider',
-  'get_file_status',
-  'get_memory',
-  'get_resource_flows',
-  'get_team_memories',
-  'kg_query',
-  'list_projects',
-  'plan_context_budget',
-  'predict_impact',
-  'predict_merge_risk',
-  'recommend_skills',
-  'search_intent',
-  'semantic_search',
-  'search_team_memories',
-  'resolve_import',
-  'resolve_path',
-  'scale_report',
   'suggest_next_files',
-  'suggest_refactor',
-  'trace_imports',
+  'recommend_skills',
+  'run_cli',
   'scan_cves',
-]);
+  'resource_subscribe',
+  'resource_unsubscribe',
+] as const;
+
+const OPEN_WORLD_READ_ONLY: CompleteToolAnnotations = {
+  ...READ_ONLY_LOCAL,
+  openWorldHint: true,
+};
+
+const WRITE_EXTERNAL: CompleteToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: true,
+};
+
+const DESTRUCTIVE_WRITE: CompleteToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+
+const DESTRUCTIVE_IDEMPOTENT: CompleteToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
+const REVERSIBLE_IDEMPOTENT: CompleteToolAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
 
 /**
- * Read-only tools that may reach the OUTSIDE world (cloud LLM, external
- * embedding providers). Per MCP spec openWorldHint defaults to true, so we
- * simply skip setting it false for these instead of special-casing later.
+ * Per-tool classification. Keep this map exhaustive: the registration guard
+ * throws if a new dedicated tool is added without an explicit classification.
  */
-const READ_ONLY_OPEN_WORLD_EXCEPTIONS = new Set(['check_coherence', 'generate_embedding']);
+export const TOOL_ANNOTATIONS: Readonly<Record<string, CompleteToolAnnotations>> = {
+  check_coherence: OPEN_WORLD_READ_ONLY,
+  get_context: READ_ONLY_LOCAL,
+  store_memory: WRITE_DERIVED,
+  get_memory: READ_ONLY_LOCAL,
+  debt_report: WRITE_DERIVED,
+  scale_report: READ_ONLY_LOCAL,
+  genome_score: WRITE_DERIVED,
+  scan_project: { ...DESTRUCTIVE_WRITE, idempotentHint: false },
+  start_session: WRITE_DERIVED,
+  end_session: WRITE_DERIVED,
+  get_agent_sessions: READ_ONLY_LOCAL,
+  trace_imports: READ_ONLY_LOCAL,
+  find_circular_deps: { ...WRITE_DERIVED, idempotentHint: true },
+  resolve_import: READ_ONLY_LOCAL,
+  get_dependents: READ_ONLY_LOCAL,
+  get_dependency_graph: READ_ONLY_LOCAL,
+  kg_query: READ_ONLY_LOCAL,
+  kg_stats: READ_ONLY_LOCAL,
+  export_architecture_diagram: READ_ONLY_LOCAL,
+  resolve_path: READ_ONLY_LOCAL,
+  find_file_by_import: READ_ONLY_LOCAL,
+  check_architecture: READ_ONLY_LOCAL,
+  analyze_impact: READ_ONLY_LOCAL,
+  suggest_refactor: READ_ONLY_LOCAL,
+  check_contracts: READ_ONLY_LOCAL,
+  auto_fix: DESTRUCTIVE_WRITE,
+  register_file_watch: WRITE_DERIVED,
+  get_file_status: READ_ONLY_LOCAL,
+  sync_context: WRITE_DERIVED,
+  unregister_file_watch: REVERSIBLE_IDEMPOTENT,
+  agent_locks: WRITE_DERIVED,
+  predict_merge_risk: READ_ONLY_LOCAL,
+  predict_impact_risk: READ_ONLY_LOCAL,
+  ingest_trace: WRITE_DERIVED,
+  structural_search: DESTRUCTIVE_WRITE,
+  list_projects: READ_ONLY_LOCAL,
+  create_project: WRITE_DERIVED,
+  switch_project: { ...WRITE_DERIVED, idempotentHint: true },
+  record_data_flow: WRITE_DERIVED,
+  get_data_flows: READ_ONLY_LOCAL,
+  get_resource_flows: READ_ONLY_LOCAL,
+  clear_data_flows: DESTRUCTIVE_IDEMPOTENT,
+  init_embedding_provider: WRITE_EXTERNAL,
+  generate_embedding: OPEN_WORLD_READ_ONLY,
+  get_embedding_provider: READ_ONLY_LOCAL,
+  analyze_taint: READ_ONLY_LOCAL,
+  record_taint: WRITE_DERIVED,
+  store_team_memory: WRITE_EXTERNAL,
+  get_team_memories: READ_ONLY_LOCAL,
+  search_team_memories: READ_ONLY_LOCAL,
+  search_intent: READ_ONLY_LOCAL,
+  predict_impact: READ_ONLY_LOCAL,
+  plan_context_budget: READ_ONLY_LOCAL,
+  check_kg_integrity: DESTRUCTIVE_WRITE,
+  broadcast_intent: WRITE_DERIVED,
+  check_intent_conflicts: READ_ONLY_LOCAL,
+  find_patterns: READ_ONLY_LOCAL,
+  semantic_search: OPEN_WORLD_READ_ONLY,
+  find_symbol_references: READ_ONLY_LOCAL,
+  find_symbol_definition: READ_ONLY_LOCAL,
+  suggest_next_files: READ_ONLY_LOCAL,
+  recommend_skills: READ_ONLY_LOCAL,
+  run_cli: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint: true,
+  },
+  scan_cves: OPEN_WORLD_READ_ONLY,
+  resource_subscribe: REVERSIBLE_IDEMPOTENT,
+  resource_unsubscribe: REVERSIBLE_IDEMPOTENT,
+};
+
+function hasCompleteAnnotations(value: unknown): value is CompleteToolAnnotations {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.readOnlyHint === 'boolean' &&
+    typeof record.destructiveHint === 'boolean' &&
+    typeof record.idempotentHint === 'boolean' &&
+    typeof record.openWorldHint === 'boolean'
+  );
+}
 
 /** Parity roots that may reach the outside world (deps-fresh --audit → npm registry). */
 const PARITY_OPEN_WORLD_EXCEPTIONS = new Set(['deps-fresh']);
@@ -99,8 +264,9 @@ function humanizeToolName(name: string): string {
 }
 
 /**
- * Wrap server.registerTool so every DEDICATED registration made after this
- * call receives correct annotations without touching each tool file.
+ * Wrap server.registerTool so every registration made after this call
+ * receives a complete behavior classification without touching each tool
+ * file. CLI parity registrations provide their own complete classification.
  *
  * Every tool config also gets the `_meta` cache hint (ttlMs/cacheScope) via
  * {@link toolCacheHintMeta} — the documented cache-hint feature
@@ -108,14 +274,8 @@ function humanizeToolName(name: string): string {
  * is the MCP spec's standard extension channel, so this is additive and
  * non-breaking for clients and tests.
  *
- * Read-only tools get the full hint set:
- * - readOnlyHint + idempotentHint  → clients can skip approval dialogs
- * - destructiveHint: false         → explicitly non-destructive (spec default
- *                                    is true when readOnlyHint is false!)
- * - openWorldHint: false           → local-only analysis (except LLM/network
- *                                    tools listed in READ_ONLY_OPEN_WORLD_EXCEPTIONS)
- * - title                          → human-readable label when the tool file
- *                                    did not define one
+ * Every core tool gets all four behavior hints explicitly. This matters for
+ * clients that do not apply the MCP specification defaults consistently.
  */
 export function annotateToolRegistration(server: McpServer): void {
   type JsonLike = string | number | boolean | null | JsonLike[] | { [key: string]: JsonLike };
@@ -128,19 +288,25 @@ export function annotateToolRegistration(server: McpServer): void {
     // (matches the resources.ts integration pattern). Stable tool definitions
     // get a long TTL; tools reflecting live project state get a short TTL.
     cfg._meta = toolCacheHintMeta(name)._meta as Record<string, JsonLike>;
-    if (DEDICATED_READ_ONLY.has(name)) {
-      const openWorld = !READ_ONLY_OPEN_WORLD_EXCEPTIONS.has(name);
-      const annotations = (cfg as Record<string, JsonLike>).annotations as
-        Record<string, JsonLike> | undefined;
-      (cfg as Record<string, JsonLike>).annotations = {
-        ...(annotations?.title ? {} : { title: humanizeToolName(name) }),
-        readOnlyHint: true,
-        idempotentHint: true,
-        destructiveHint: false,
-        ...(openWorld ? { openWorldHint: false } : {}),
-        ...(annotations ?? {}),
-      };
+    const existing = (cfg as Record<string, JsonLike>).annotations as
+      Record<string, JsonLike> | undefined;
+    const explicit = TOOL_ANNOTATIONS[name];
+    const supplied = hasCompleteAnnotations(existing) ? existing : undefined;
+    const annotations = explicit ?? supplied;
+    if (!annotations) {
+      throw new Error(`Missing complete MCP behavior annotations for tool: ${name}`);
     }
+    const title =
+      typeof existing?.title === 'string'
+        ? existing.title
+        : typeof cfg.title === 'string'
+          ? cfg.title
+          : humanizeToolName(name);
+    (cfg as Record<string, JsonLike>).annotations = {
+      title,
+      ...existing,
+      ...annotations,
+    };
     const result = original(name, cfg, ...rest);
     return result;
   };
@@ -151,7 +317,7 @@ export function annotateToolRegistration(server: McpServer): void {
  * project (optional `-o <file>` export does not change their read nature).
  * Roots with ANY writing subcommand (taint record, embed init,
  * structural-search replace, layers --auto-fix, adr new, contract-test
- * generate, ...) are deliberately excluded and stay unannotated.
+ * generate, ...) are classified conservatively as state-changing below.
  */
 const PARITY_READ_ONLY_ROOTS = new Set([
   'report',
@@ -182,27 +348,32 @@ const PARITY_READ_ONLY_ROOTS = new Set([
   'sbom',
   'deps-fresh',
   'secrets-life',
+  'migrate',
+  'export_architecture_diagram',
+  'find_symbol_references',
+  'find_symbol_definition',
 ]);
 
-/** Full annotation set for a parity tool identified by its CLI path, if read-only. */
-export function parityAnnotations(path: string[]):
-  | {
-      readOnlyHint: boolean;
-      idempotentHint: boolean;
-      destructiveHint: boolean;
-      openWorldHint?: boolean;
-    }
-  | undefined {
+/** Full annotation set for a parity tool identified by its CLI path. */
+export function parityAnnotations(path: string[]): CompleteToolAnnotations {
   if (path.length > 0 && PARITY_READ_ONLY_ROOTS.has(path[0])) {
     const openWorld = !PARITY_OPEN_WORLD_EXCEPTIONS.has(path[0]);
     return {
       readOnlyHint: true,
       idempotentHint: true,
       destructiveHint: false,
-      ...(openWorld ? { openWorldHint: false } : {}),
+      openWorldHint: !openWorld,
     };
   }
-  return undefined;
+  // The generated parity surface is derived from CLI command metadata. A
+  // non-read-only root may contain a mutating subcommand, so advertise the
+  // conservative behavior even when a particular invocation is harmless.
+  return {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint: PARITY_OPEN_WORLD_EXCEPTIONS.has(path[0] ?? ''),
+  };
 }
 
 /**

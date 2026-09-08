@@ -68,22 +68,6 @@ export function stopPeriodicCleanup(): void {
  * Locks are COORDINATION hints, not enforcement: the CLI can always write.
  */
 
-const inputSchema = {
-  action: z
-    .enum(['acquire', 'release', 'list', 'check'])
-    .describe(
-      'acquire=lock a file, release=unlock (owner only), list=all live locks, check=batch conflict check before editing',
-    ),
-  filePath: z
-    .string()
-    .optional()
-    .describe('File path to lock/release (required for acquire/release)'),
-  files: z.array(z.string()).optional().describe('File paths to check (required for check)'),
-  agentName: z.string().describe('Your agent name (e.g. "cursor-agent", "claude-code")'),
-  ttlMinutes: z.number().default(30).describe('Lock TTL in minutes for acquire (1-1440)'),
-  reason: z.string().optional().describe('Why you are locking this file (shown to other agents)'),
-};
-
 function json(result: object): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 }
@@ -100,7 +84,24 @@ export function registerAgentLocksTool(server: McpServer, deps: McpDependencies)
         'Coordinate with OTHER agents working in the same repo.\n' +
         'WHEN to call: BEFORE editing, run action=check over the files you plan to touch; if a conflict comes back, wait or pick another approach instead of colliding. Then action=acquire your primary target, and action=release when done.\n' +
         'Locks are TTL-based advisory hints (crashed agents cannot deadlock a file), NOT write enforcement.',
-      inputSchema,
+      inputSchema: {
+        action: z
+          .enum(['acquire', 'release', 'list', 'check'])
+          .describe(
+            'acquire=lock a file, release=unlock (owner only), list=all live locks, check=batch conflict check before editing',
+          ),
+        filePath: z
+          .string()
+          .optional()
+          .describe('File path to lock/release (required for acquire/release)'),
+        files: z.array(z.string()).optional().describe('File paths to check (required for check)'),
+        agentName: z.string().describe('Your agent name (e.g. "cursor-agent", "claude-code")'),
+        ttlMinutes: z.number().default(30).describe('Lock TTL in minutes for acquire (1-1440)'),
+        reason: z
+          .string()
+          .optional()
+          .describe('Why you are locking this file (shown to other agents)'),
+      },
     },
     async (args) => {
       try {
