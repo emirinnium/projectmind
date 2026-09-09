@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "name": "projectmind-public-smoke",
+  "access": "public",
+  "repositories": [
+    {
+      "id": "projectmind",
+      "url": "https://github.com/emirinnium/projectmind",
+      "commitSha": "ae3324ba07aa3a58f7c59125960c0a54a050b112",
+      "license": "MIT",
+      "languages": ["javascript", "typescript", "jsx", "tsx"]
+    }
+  ],
+  "cases": [
+    {
+      "repositoryId": "projectmind",
+      "case": {
+        "id": "intent-search-engine",
+        "query": "hybrid semantic intent search",
+        "expectedPaths": ["src/core/search/intent-search.ts"],
+        "aliases": ["semantic search", "retrieval"],
+        "unknown": false,
+        "kind": "search"
+      }
+    },
+    {
+      "repositoryId": "projectmind",
+      "case": {
+        "id": "central-path-security",
+        "query": "path traversal project root symlink security",
+        "expectedPaths": ["src/core/security/path-security.ts"],
+        "aliases": ["path boundary", "trusted root"],
+        "unknown": false,
+        "kind": "search"
+      }
+    }
+  ]
+}

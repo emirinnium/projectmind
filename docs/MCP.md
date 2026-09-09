@@ -2,7 +2,7 @@
 
 ProjectMind exposes **two complementary surfaces** to coding agents:
 
-1. **Dedicated MCP tools** (66 explicit registrations) — typed inputs for hot paths
+1. **Dedicated MCP tools** (the explicit registered surface) — typed inputs for hot paths
 2. **`run_cli` bridge tool** — programmatic access to the CLI surface for
    capabilities without a dedicated tool
 
@@ -85,7 +85,7 @@ Point at the local build instead of npm:
 | Variable | Purpose |
 |---|---|
 | `PROJECTMIND_ROOT` | Project root the server scans/stores under (**set this**) |
-| `PROJECTMIND_TOOLS` | Tool surface profile: `core` (default, 66 dedicated typed tools) or `all` (dedicated tools plus the full `pm_*` CLI-parity surface). `run_cli` stays available in both. |
+| `PROJECTMIND_TOOLS` | Tool surface profile: `core` (default), `review`, `security`, `maintenance`, or `all`/`full` (dedicated tools plus the full `pm_*` CLI-parity surface). `run_cli` stays available in every non-full profile where listed. |
 | `PROJECTMIND_HTTP_PORT` | When set, the server starts a **stateless Streamable HTTP** endpoint instead of stdio: `POST http://127.0.0.1:<port>/mcp` (JSON responses; GET returns 405). For remote/team-shared deployments behind plain load balancers. |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` | Enables deep-tier LLM analysis for the matching provider; `OPENAI_API_KEY` also enables the configured OpenAI embedding provider |
 | `CLAUDE_API_KEY` | Alias accepted for Anthropic |
@@ -123,7 +123,8 @@ does not define file ignores.
 - Local analysis tools set `openWorldHint: false`; tools that can invoke an
   external LLM, embedding provider, or npm registry set it to `true`.
 - Resources: `pm://schema` (live DB tables), `pm://config` (secrets masked),
-  `pm://stats` (project statistics).
+  `pm://stats` (project statistics), and `pm://profiles` (deterministic tool
+  profile discovery).
 - Prompts: `impact-first-refactor`, `pre-commit-checklist`, `debt-triage`,
   `explain-file-context`.
 

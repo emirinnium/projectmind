@@ -22,7 +22,9 @@ describe('technical debt detector evidence', () => {
     );
 
     const types = findings.map((finding) => finding.type);
-    expect(types).toEqual(expect.arrayContaining(['code_age', 'cognitive_load', 'change_frequency']));
+    expect(types).toEqual(
+      expect.arrayContaining(['code_age', 'cognitive_load', 'change_frequency']),
+    );
     for (const finding of findings) {
       expect(finding.reasoningTrace).toHaveLength(1);
       expect(finding.reasoningTrace[0]).toContain(

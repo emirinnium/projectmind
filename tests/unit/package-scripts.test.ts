@@ -7,9 +7,7 @@ interface PackageManifest {
 }
 
 const root = resolve(process.cwd());
-const manifest = JSON.parse(
-  readFileSync(resolve(root, 'package.json'), 'utf8'),
-) as PackageManifest;
+const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as PackageManifest;
 
 describe('package runtime entrypoints', () => {
   it('starts the MCP server through the generated package entrypoint', () => {

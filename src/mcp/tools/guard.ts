@@ -1,5 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toolCacheHintMeta } from './list.js';
+import { measureInvocation } from '@/core/telemetry/invocation.js';
+import { actionableMcpError, toActionableError } from '@/utils/actionable-error.js';
 export { parityAnnotations } from './parity-annotations.js';
 
 /** Root commands that must never be launched through the MCP surface. */
@@ -46,6 +48,12 @@ export interface CompleteToolAnnotations {
   openWorldHint: boolean;
 }
 
+export interface McpToolBudget {
+  latencyClass: 'fast' | 'standard' | 'heavy' | 'external';
+  maxOutputBytes: number;
+  maxOutputTokens: number;
+}
+
 const READ_ONLY_LOCAL: CompleteToolAnnotations = {
   readOnlyHint: true,
   destructiveHint: false,
@@ -60,7 +68,7 @@ const WRITE_DERIVED: CompleteToolAnnotations = {
   openWorldHint: false,
 };
 
-/** The 66 dedicated tools plus the two resource-subscription tools. */
+/** Dedicated tools plus the two resource-subscription tools in the default registry. */
 export const MCP_CORE_TOOL_NAMES = [
   'check_coherence',
   'get_context',
@@ -128,6 +136,10 @@ export const MCP_CORE_TOOL_NAMES = [
   'scan_cves',
   'prove_claim',
   'verify_freshness',
+  'get_source_range',
+  'get_invocation_metrics',
+  'review_project',
+  'get_canonical_example',
   'resource_subscribe',
   'resource_unsubscribe',
 ] as const;
@@ -241,9 +253,45 @@ export const TOOL_ANNOTATIONS: Readonly<Record<string, CompleteToolAnnotations>>
   scan_cves: OPEN_WORLD_READ_ONLY,
   prove_claim: READ_ONLY_LOCAL,
   verify_freshness: READ_ONLY_LOCAL,
+  get_source_range: READ_ONLY_LOCAL,
+  get_invocation_metrics: READ_ONLY_LOCAL,
+  review_project: READ_ONLY_LOCAL,
+  get_canonical_example: READ_ONLY_LOCAL,
   resource_subscribe: REVERSIBLE_IDEMPOTENT,
   resource_unsubscribe: REVERSIBLE_IDEMPOTENT,
 };
+
+/** Return a bounded payload/latency budget for every dedicated or parity tool. */
+export function getMcpToolBudget(name: string): McpToolBudget {
+  const normalized = name.toLowerCase();
+  const external =
+    normalized.includes('audit') ||
+    normalized.includes('embed') ||
+    normalized.includes('deps') ||
+    normalized.includes('cve') ||
+    normalized === 'run_cli';
+  const heavy =
+    normalized.includes('scan') ||
+    normalized.includes('context') ||
+    normalized.includes('review') ||
+    normalized.includes('graph') ||
+    normalized.includes('search') ||
+    normalized.includes('impact');
+  const latencyClass = external
+    ? 'external'
+    : heavy
+      ? 'heavy'
+      : normalized.startsWith('pm_')
+        ? 'standard'
+        : 'fast';
+  const maxOutputBytes =
+    latencyClass === 'fast' ? 64_000 : latencyClass === 'standard' ? 256_000 : 1_000_000;
+  return {
+    latencyClass,
+    maxOutputBytes,
+    maxOutputTokens: Math.ceil(maxOutputBytes / 4),
+  };
+}
 
 function hasCompleteAnnotations(value: unknown): value is CompleteToolAnnotations {
   if (!value || typeof value !== 'object') return false;
@@ -266,6 +314,48 @@ function humanizeToolName(name: string): string {
 }
 
 /**
+ * Normalize legacy handlers that return `{ success: false, error }` inside
+ * an MCP text payload. This is additive: the original error remains available
+ * for existing clients, while new clients receive structured next actions.
+ */
+function addActionableFailureDetails(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.content)) return value;
+  let changed = false;
+  const content = record.content.map((block) => {
+    if (!block || typeof block !== 'object') return block;
+    const contentBlock = block as Record<string, unknown>;
+    if (contentBlock.type !== 'text' || typeof contentBlock.text !== 'string') return block;
+    let payload: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(contentBlock.text);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return block;
+      payload = parsed as Record<string, unknown>;
+    } catch (error) {
+      void error;
+      return block;
+    }
+    if (
+      payload.success !== false ||
+      typeof payload.error !== 'string' ||
+      payload.errorDetails !== undefined
+    ) {
+      return block;
+    }
+    changed = true;
+    return {
+      ...contentBlock,
+      text: JSON.stringify({
+        ...payload,
+        errorDetails: toActionableError(new Error(payload.error)),
+      }),
+    };
+  });
+  return changed ? { ...record, content } : value;
+}
+
+/**
  * Wrap server.registerTool so every registration made after this call
  * receives a complete behavior classification without touching each tool
  * file. CLI parity registrations provide their own complete classification.
@@ -280,18 +370,20 @@ function humanizeToolName(name: string): string {
  * clients that do not apply the MCP specification defaults consistently.
  */
 export function annotateToolRegistration(server: McpServer): void {
-  type JsonLike = string | number | boolean | null | JsonLike[] | { [key: string]: JsonLike };
   const target = server as unknown as {
-    registerTool: (name: string, cfg: Record<string, JsonLike>, ...rest: JsonLike[]) => unknown;
+    registerTool: (name: string, cfg: Record<string, unknown>, ...rest: unknown[]) => unknown;
   };
   const original = target.registerTool.bind(server);
   target.registerTool = (name, cfg, ...rest) => {
+    if (!isToolEnabled(name)) return undefined;
     // Cache hints: spread toolCacheHintMeta(name) into every tool config
     // (matches the resources.ts integration pattern). Stable tool definitions
     // get a long TTL; tools reflecting live project state get a short TTL.
-    cfg._meta = toolCacheHintMeta(name)._meta as Record<string, JsonLike>;
-    const existing = (cfg as Record<string, JsonLike>).annotations as
-      Record<string, JsonLike> | undefined;
+    cfg._meta = {
+      ...(cfg._meta as Record<string, unknown> | undefined),
+      ...toolCacheHintMeta(name)._meta,
+    };
+    const existing = cfg.annotations as Record<string, unknown> | undefined;
     const explicit = TOOL_ANNOTATIONS[name];
     const supplied = hasCompleteAnnotations(existing) ? existing : undefined;
     const annotations = explicit ?? supplied;
@@ -304,11 +396,31 @@ export function annotateToolRegistration(server: McpServer): void {
         : typeof cfg.title === 'string'
           ? cfg.title
           : humanizeToolName(name);
-    (cfg as Record<string, JsonLike>).annotations = {
+    cfg.annotations = {
       title,
       ...existing,
       ...annotations,
     };
+    const handler = rest[0];
+    if (typeof handler === 'function') {
+      rest[0] = (async (...args: unknown[]) => {
+        try {
+          const measured = await measureInvocation(name, args[0], () => handler(...args));
+          const value = addActionableFailureDetails(measured.value);
+          if (process.env.PROJECTMIND_METRICS !== '1') return value;
+          if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+          return {
+            ...value,
+            _meta: {
+              ...((value as Record<string, unknown>)._meta as Record<string, unknown> | undefined),
+              metrics: measured.metrics,
+            },
+          };
+        } catch (error) {
+          return actionableMcpError(error);
+        }
+      }) as unknown as (...args: unknown[]) => Promise<unknown>;
+    }
     const result = original(name, cfg, ...rest);
     return result;
   };
@@ -317,12 +429,95 @@ export function annotateToolRegistration(server: McpServer): void {
 /**
  * Tool surface profile. `PROJECTMIND_TOOLS=all` registers the full surface
  * including generated pm_* parity tools (~130 total).
- * `PROJECTMIND_TOOLS=core` (DEFAULT) skips parity tools (~66 dedicated tools) so clients
+ * `PROJECTMIND_TOOLS=core` (DEFAULT) skips parity tools so clients
  * with a small active-tool budget (e.g. Cursor's limit) can use ProjectMind.
  * The run_cli bridge always remains available as escape hatch.
  * Set `PROJECTMIND_TOOLS=all` to enable the full parity surface.
  */
 export function shouldRegisterParityTools(): boolean {
-  const profile = (process.env.PROJECTMIND_TOOLS || 'core').trim().toLowerCase();
-  return profile === 'all';
+  return getMcpProfile() === 'full';
+}
+
+export type McpProfile = 'core' | 'review' | 'security' | 'maintenance' | 'full';
+
+const PROFILE_TOOLS: Record<Exclude<McpProfile, 'full'>, ReadonlySet<string>> = {
+  core: new Set(MCP_CORE_TOOL_NAMES),
+  review: new Set([
+    'check_coherence',
+    'get_context',
+    'analyze_impact',
+    'check_architecture',
+    'check_contracts',
+    'semantic_search',
+    'find_symbol_references',
+    'find_symbol_definition',
+    'suggest_next_files',
+    'prove_claim',
+    'verify_freshness',
+    'get_source_range',
+    'get_invocation_metrics',
+    'review_project',
+    'get_canonical_example',
+    'resource_subscribe',
+    'resource_unsubscribe',
+  ]),
+  security: new Set([
+    'check_coherence',
+    'get_context',
+    'scan_cves',
+    'analyze_taint',
+    'record_taint',
+    'get_data_flows',
+    'get_resource_flows',
+    'prove_claim',
+    'verify_freshness',
+    'run_cli',
+    'resource_subscribe',
+    'resource_unsubscribe',
+  ]),
+  maintenance: new Set([
+    'get_context',
+    'debt_report',
+    'scale_report',
+    'genome_score',
+    'find_circular_deps',
+    'get_dependency_graph',
+    'get_file_status',
+    'sync_context',
+    'agent_locks',
+    'predict_merge_risk',
+    'find_patterns',
+    'recommend_skills',
+    'run_cli',
+    'resource_subscribe',
+    'resource_unsubscribe',
+  ]),
+};
+
+export function getMcpProfile(): McpProfile {
+  const requested = (process.env.PROJECTMIND_TOOLS || 'core').trim().toLowerCase();
+  if (requested === 'all') return 'full';
+  if (
+    requested === 'full' ||
+    requested === 'core' ||
+    requested === 'review' ||
+    requested === 'security' ||
+    requested === 'maintenance'
+  ) {
+    return requested;
+  }
+  return 'core';
+}
+
+export function isToolEnabled(name: string): boolean {
+  const profile = getMcpProfile();
+  if (profile === 'full') return true;
+  if (name.startsWith('pm_')) return false;
+  return PROFILE_TOOLS[profile].has(name);
+}
+
+/** Return the deterministic dedicated-tool list advertised by a profile. */
+export function getMcpProfileTools(profile: McpProfile = getMcpProfile()): readonly string[] {
+  if (profile === 'full') return [...MCP_CORE_TOOL_NAMES, 'pm_* parity tools'];
+  return [...PROFILE_TOOLS[profile]].sort((left, right) => left.localeCompare(right));
 }

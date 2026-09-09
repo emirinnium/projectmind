@@ -23,7 +23,10 @@ describe('Parser - detectLanguage', () => {
 
 describe('Parser - parseFile', () => {
   it('parses TypeScript function declarations', () => {
-    const result = parseFile('test.ts', 'export function hello(name: string): string { return "hello"; }');
+    const result = parseFile(
+      'test.ts',
+      'export function hello(name: string): string { return "hello"; }',
+    );
     expect(result).not.toBeNull();
     expect(result!.language).toBe('typescript');
     expect(result!.functions.length).toBeGreaterThanOrEqual(1);

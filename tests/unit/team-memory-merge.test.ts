@@ -23,15 +23,21 @@ describe('diffHunks (Myers line diff)', () => {
   });
 
   it('detects a mid-file replacement', () => {
-    expect(diffHunks(['a', 'b', 'c'], ['a', 'X', 'c'])).toEqual([{ baseStart: 1, baseEnd: 2, lines: ['X'] }]);
+    expect(diffHunks(['a', 'b', 'c'], ['a', 'X', 'c'])).toEqual([
+      { baseStart: 1, baseEnd: 2, lines: ['X'] },
+    ]);
   });
 
   it('detects a trailing insertion', () => {
-    expect(diffHunks(['a', 'b'], ['a', 'b', 'c'])).toEqual([{ baseStart: 2, baseEnd: 2, lines: ['c'] }]);
+    expect(diffHunks(['a', 'b'], ['a', 'b', 'c'])).toEqual([
+      { baseStart: 2, baseEnd: 2, lines: ['c'] },
+    ]);
   });
 
   it('detects a mid-file deletion', () => {
-    expect(diffHunks(['a', 'b', 'c'], ['a', 'c'])).toEqual([{ baseStart: 1, baseEnd: 2, lines: [] }]);
+    expect(diffHunks(['a', 'b', 'c'], ['a', 'c'])).toEqual([
+      { baseStart: 1, baseEnd: 2, lines: [] },
+    ]);
   });
 
   it('collapses adjacent changes into a single hunk', () => {

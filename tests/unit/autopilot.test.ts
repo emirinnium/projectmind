@@ -78,9 +78,11 @@ vi.mock('../../src/cli/utils/shared.js', () => {
       warn: vi.fn(),
     },
     loadConfig: vi.fn().mockReturnValue({ projectRoot: '/tmp/test' }),
-    withService: vi.fn().mockImplementation(async (_services: string[], fn: () => Promise<void>) => {
-      await fn();
-    }),
+    withService: vi
+      .fn()
+      .mockImplementation(async (_services: string[], fn: () => Promise<void>) => {
+        await fn();
+      }),
   };
 });
 
@@ -139,7 +141,8 @@ describe('autopilot pre-commit', () => {
     const args: string[] = ['pre-commit'];
     if (opts.minGenome !== undefined) args.push('--min-genome', opts.minGenome);
     if (opts.format !== undefined) args.push('--format', opts.format);
-    if (opts.impactRiskThreshold !== undefined) args.push('--impact-risk-threshold', opts.impactRiskThreshold);
+    if (opts.impactRiskThreshold !== undefined)
+      args.push('--impact-risk-threshold', opts.impactRiskThreshold);
     if (opts.skipImpactCheck) args.push('--skip-impact-check');
     if (opts.allowBreakingApi) args.push('--allow-breaking-api');
 
@@ -188,10 +191,10 @@ describe('autopilot pre-commit', () => {
     it('accepts --impact-risk-threshold option', async () => {
       const { createAutopilotCommand } = await import('../../src/cli/commands/autopilot.js');
       const cmd = createAutopilotCommand();
-      const preCommitCmd = cmd.commands.find(c => c.name() === 'pre-commit');
+      const preCommitCmd = cmd.commands.find((c) => c.name() === 'pre-commit');
       expect(preCommitCmd).toBeDefined();
 
-      const options = preCommitCmd?.options.map(o => o.long);
+      const options = preCommitCmd?.options.map((o) => o.long);
       expect(options).toContain('--impact-risk-threshold');
     });
 
@@ -206,12 +209,14 @@ describe('autopilot pre-commit', () => {
       expect(exitCode).toBe(1);
       expect(outputMock.kv).toHaveBeenCalledWith(
         expect.stringContaining('Impact risk'),
-        expect.stringContaining('could not determine staged files')
+        expect.stringContaining('could not determine staged files'),
       );
     });
 
     it('filters staged files to TypeScript/JavaScript extensions', async () => {
-      mockExecFileSync.mockReturnValue('src/test.ts\nsrc/component.tsx\nREADME.md\nsrc/styles.css\n');
+      mockExecFileSync.mockReturnValue(
+        'src/test.ts\nsrc/component.tsx\nREADME.md\nsrc/styles.css\n',
+      );
 
       mockPredictTestBreaksImpl.mockReturnValue([]);
 
@@ -241,9 +246,7 @@ describe('autopilot pre-commit', () => {
 
       // Gate should fail because high-risk failure meets default threshold (high).
       expect(exitCode).toBe(1);
-      expect(outputMock.error).toHaveBeenCalledWith(
-        expect.stringContaining('Gate FAILED')
-      );
+      expect(outputMock.error).toHaveBeenCalledWith(expect.stringContaining('Gate FAILED'));
     });
 
     it('passes when all failures are below threshold', async () => {
@@ -285,9 +288,7 @@ describe('autopilot pre-commit', () => {
 
       // Gate should fail because critical > high threshold.
       expect(exitCode).toBe(1);
-      expect(outputMock.error).toHaveBeenCalledWith(
-        expect.stringContaining('Gate FAILED')
-      );
+      expect(outputMock.error).toHaveBeenCalledWith(expect.stringContaining('Gate FAILED'));
     });
 
     it('fails when threshold is low and failure is low (low >= low)', async () => {
@@ -310,9 +311,7 @@ describe('autopilot pre-commit', () => {
 
       // Gate should fail because low >= low threshold means it's at threshold.
       expect(exitCode).toBe(1);
-      expect(outputMock.error).toHaveBeenCalledWith(
-        expect.stringContaining('Gate FAILED')
-      );
+      expect(outputMock.error).toHaveBeenCalledWith(expect.stringContaining('Gate FAILED'));
     });
 
     it('passes when threshold is critical and failure is high', async () => {
@@ -347,7 +346,7 @@ describe('autopilot pre-commit', () => {
 
       expect(exitCode).toBe(1);
       expect(outputMock.error).toHaveBeenCalledWith(
-        expect.stringContaining('Invalid --impact-risk-threshold')
+        expect.stringContaining('Invalid --impact-risk-threshold'),
       );
     });
 
@@ -367,7 +366,7 @@ describe('autopilot pre-commit', () => {
 
       expect(exitCode).toBe(1);
       expect(outputMock.error).toHaveBeenCalledWith(
-        expect.stringContaining('Invalid --impact-risk-threshold')
+        expect.stringContaining('Invalid --impact-risk-threshold'),
       );
     });
 
@@ -403,7 +402,7 @@ describe('autopilot pre-commit', () => {
           encoding: 'utf8',
           timeout: 5000,
           cwd: '/tmp/test',
-        })
+        }),
       );
     });
   });
@@ -424,7 +423,9 @@ describe('autopilot pre-commit', () => {
     it('fails when breaking API changes detected', async () => {
       mockExecFileSync.mockReturnValue('src/foo.ts\n');
       // Provide a base API reference so the diff is computed.
-      mockGetApiAtRef.mockResolvedValue([{ name: 'existingFn', relativePath: 'src/foo.ts', type: 'function' }]);
+      mockGetApiAtRef.mockResolvedValue([
+        { name: 'existingFn', relativePath: 'src/foo.ts', type: 'function' },
+      ]);
       mockComputeDiff.mockReturnValue({
         breaking: [{ name: 'foo', relativePath: 'src/foo.ts', type: 'function' }],
       });
@@ -432,19 +433,19 @@ describe('autopilot pre-commit', () => {
       const { exitCode, outputMock } = await runPreCommitAction({});
 
       expect(exitCode).toBe(1);
-      expect(outputMock.error).toHaveBeenCalledWith(
-        expect.stringContaining('Gate FAILED')
-      );
+      expect(outputMock.error).toHaveBeenCalledWith(expect.stringContaining('Gate FAILED'));
       expect(outputMock.kv).toHaveBeenCalledWith(
         expect.stringContaining('API surface'),
-        expect.stringContaining('breaking')
+        expect.stringContaining('breaking'),
       );
     });
 
     it('passes when no breaking changes', async () => {
       mockExecFileSync.mockReturnValue('src/foo.ts\n');
       // Provide a base API reference so the diff is computed.
-      mockGetApiAtRef.mockResolvedValue([{ name: 'existingFn', relativePath: 'src/foo.ts', type: 'function' }]);
+      mockGetApiAtRef.mockResolvedValue([
+        { name: 'existingFn', relativePath: 'src/foo.ts', type: 'function' },
+      ]);
       mockComputeDiff.mockReturnValue({ breaking: [] });
 
       const { exitCode, outputMock } = await runPreCommitAction({});
@@ -453,7 +454,7 @@ describe('autopilot pre-commit', () => {
       expect(outputMock.success).toHaveBeenCalledWith('All gates passed.');
       expect(outputMock.kv).toHaveBeenCalledWith(
         expect.stringContaining('API surface'),
-        expect.stringContaining('no breaking API changes')
+        expect.stringContaining('no breaking API changes'),
       );
     });
 
@@ -468,7 +469,7 @@ describe('autopilot pre-commit', () => {
       expect(outputMock.success).toHaveBeenCalledWith('All gates passed.');
       expect(outputMock.kv).toHaveBeenCalledWith(
         expect.stringContaining('API surface'),
-        expect.stringContaining('API surface check skipped')
+        expect.stringContaining('API surface check skipped'),
       );
       // computeDiff should NOT have been called when gate is bypassed
       expect(mockComputeDiff).not.toHaveBeenCalled();
@@ -484,7 +485,7 @@ describe('autopilot pre-commit', () => {
       expect(outputMock.success).toHaveBeenCalledWith('All gates passed.');
       expect(outputMock.kv).toHaveBeenCalledWith(
         expect.stringContaining('API surface'),
-        expect.stringContaining('no base API reference')
+        expect.stringContaining('no base API reference'),
       );
     });
   });

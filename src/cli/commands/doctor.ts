@@ -12,6 +12,7 @@ import {
   ExportedSymbol,
 } from './api-surface-utils.js';
 import { createDoctorFixImportsCommand } from './doctor-fix-imports.js';
+import { createDoctorInstallCommand } from './doctor-install.js';
 
 /** ANSI color codes for risk level visualization (chalk-free). */
 function formatRiskLevel(riskLevel?: string): string {
@@ -37,6 +38,7 @@ export function createDoctorCommand(): Command {
   });
 
   doctorCmd.addCommand(createDoctorFixImportsCommand());
+  doctorCmd.addCommand(createDoctorInstallCommand());
 
   doctorCmd
     .command('clean-debt')

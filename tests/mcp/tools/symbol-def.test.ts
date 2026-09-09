@@ -29,7 +29,7 @@ async function seedProject(): Promise<string> {
       compilerOptions: { target: 'ES2022', module: 'commonjs', strict: true },
       include: ['src/**/*.ts'],
     }),
-    'utf-8'
+    'utf-8',
   );
   await writeFile(
     join(root, 'src', 'utils.ts'),
@@ -56,7 +56,7 @@ async function seedProject(): Promise<string> {
       '  Inactive = "inactive"',
       '}',
     ].join('\n'),
-    'utf-8'
+    'utf-8',
   );
   await writeFile(
     join(root, 'src', 'main.ts'),
@@ -72,7 +72,7 @@ async function seedProject(): Promise<string> {
       'console.log("PI:", PI);',
       'console.log("Status:", Status.Active);',
     ].join('\n'),
-    'utf-8'
+    'utf-8',
   );
   return root;
 }

@@ -2,6 +2,34 @@ import type { Migration } from './types.js';
 
 export const graphMigrations: Migration[] = [
   {
+    version: 99,
+    name: 'project-worktree-index-identities',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS project_worktrees (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL,
+          repository_root TEXT NOT NULL,
+          common_git_dir TEXT NOT NULL,
+          worktree_path TEXT NOT NULL,
+          branch TEXT NOT NULL,
+          head_sha TEXT NOT NULL,
+          namespace_key TEXT NOT NULL UNIQUE,
+          last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(project_id, worktree_path, head_sha),
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_project_worktrees_project
+          ON project_worktrees(project_id, last_seen_at);
+        CREATE INDEX IF NOT EXISTS idx_project_worktrees_repository
+          ON project_worktrees(repository_root, worktree_path);
+      `);
+    },
+    down: (db) => {
+      db.exec('DROP TABLE IF EXISTS project_worktrees;');
+    },
+  },
+  {
     version: 98,
     name: 'project-scoped-identities',
     up: (db) => {

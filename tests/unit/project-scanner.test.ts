@@ -37,9 +37,10 @@ describe('ProjectScanner incremental freshness', () => {
       .prepare("SELECT value FROM settings WHERE key = 'embedding_index_config:1'")
       .get() as { value: string } | undefined;
     expect(manifest?.value).toContain('"activeProvider":"simple"');
-    expect((JSON.parse(manifest?.value ?? '{}') as { effectiveDimensions?: number[] }).effectiveDimensions).toEqual([
-      768,
-    ]);
+    expect(
+      (JSON.parse(manifest?.value ?? '{}') as { effectiveDimensions?: number[] })
+        .effectiveDimensions,
+    ).toEqual([768]);
 
     // A provider/index configuration change must invalidate hash-only
     // incremental filtering; otherwise old vectors would remain comparable

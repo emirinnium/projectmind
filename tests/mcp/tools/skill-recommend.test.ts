@@ -42,7 +42,9 @@ describe('recommend_skills (recommendSkillsForTool)', () => {
 
     expect(result.recommendations.length).toBeGreaterThan(1);
     for (let i = 1; i < result.recommendations.length; i++) {
-      expect(result.recommendations[i].score).toBeLessThanOrEqual(result.recommendations[i - 1].score);
+      expect(result.recommendations[i].score).toBeLessThanOrEqual(
+        result.recommendations[i - 1].score,
+      );
     }
     const ids = result.recommendations.map((r) => r.id);
     expect(ids).toContain('sqlite-persistence');
@@ -50,13 +52,18 @@ describe('recommend_skills (recommendSkillsForTool)', () => {
   });
 
   it('respects the limit option', () => {
-    const result = recommendSkillsForTool(makeDeps('/test'), { task: 'typescript testing and sqlite migration', limit: 2 });
+    const result = recommendSkillsForTool(makeDeps('/test'), {
+      task: 'typescript testing and sqlite migration',
+      limit: 2,
+    });
 
     expect(result.recommendations).toHaveLength(2);
   });
 
   it('matches every item to a real catalog entry (name/description come from the registry)', () => {
-    const result = recommendSkillsForTool(makeDeps('/test'), { task: 'add vitest unit tests with mocks for the cli' });
+    const result = recommendSkillsForTool(makeDeps('/test'), {
+      task: 'add vitest unit tests with mocks for the cli',
+    });
 
     for (const rec of result.recommendations) {
       const def = SKILL_CATALOG.find((d) => d.id === rec.id);
@@ -92,6 +99,8 @@ describe('recommend_skills (recommendSkillsForTool)', () => {
   });
 
   it('throws for an empty task description', () => {
-    expect(() => recommendSkillsForTool(makeDeps('/test'), { task: '   ' })).toThrow(/non-empty task description/i);
+    expect(() => recommendSkillsForTool(makeDeps('/test'), { task: '   ' })).toThrow(
+      /non-empty task description/i,
+    );
   });
 });

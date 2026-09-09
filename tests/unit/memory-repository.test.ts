@@ -19,7 +19,11 @@ describe('MemoryRepository', () => {
 
   beforeEach(() => {
     db = createTestDb();
-    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(1, 'default', '/test');
+    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(
+      1,
+      'default',
+      '/test',
+    );
     repo = new MemoryRepository(db);
   });
 
@@ -57,7 +61,12 @@ describe('MemoryRepository', () => {
   describe('memory', () => {
     it('stores and retrieves memory', () => {
       const sessionId = repo.startSession('test-agent');
-      repo.storeMemory(sessionId, 'decisions', 'file-1', JSON.stringify({ decision: 'refactor', reasoning: 'too complex' }));
+      repo.storeMemory(
+        sessionId,
+        'decisions',
+        'file-1',
+        JSON.stringify({ decision: 'refactor', reasoning: 'too complex' }),
+      );
 
       const memories = repo.getMemory('decisions', 'file-1');
       expect(memories).toHaveLength(1);

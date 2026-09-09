@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { DebtPersistence, DebtType, Severity } from '../../../../src/core/debt/detection/persistence.js';
+import {
+  DebtPersistence,
+  DebtType,
+  Severity,
+} from '../../../../src/core/debt/detection/persistence.js';
 import { SCHEMA_SQL } from '../../../../src/storage/schema.js';
 
 /**
@@ -48,9 +52,9 @@ describe('DebtPersistence', () => {
 
     it('creates debt item linked to a file', () => {
       // Insert a file first
-      const fileResult = db.prepare(
-        `INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)`
-      ).run('/project/src/utils.ts', 'src/utils.ts', 'typescript');
+      const fileResult = db
+        .prepare(`INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)`)
+        .run('/project/src/utils.ts', 'src/utils.ts', 'typescript');
 
       const persistence = new DebtPersistence(db);
       const item = persistence.createDebtItem({
@@ -66,7 +70,9 @@ describe('DebtPersistence', () => {
       expect(item.filePath).toBe('src/utils.ts');
 
       // Verify file_id was set
-      const row = db.prepare('SELECT file_id FROM debt_items WHERE id = ?').get(item.id) as { file_id: number | null };
+      const row = db.prepare('SELECT file_id FROM debt_items WHERE id = ?').get(item.id) as {
+        file_id: number | null;
+      };
       expect(row.file_id).toBe(Number(fileResult.lastInsertRowid));
     });
 
@@ -115,7 +121,9 @@ describe('DebtPersistence', () => {
       expect(count.cnt).toBe(1);
 
       // Verify the severity was updated
-      const row = db.prepare('SELECT severity FROM debt_items WHERE id = ?').get(item1.id) as { severity: string };
+      const row = db.prepare('SELECT severity FROM debt_items WHERE id = ?').get(item1.id) as {
+        severity: string;
+      };
       expect(row.severity).toBe('medium');
     });
 
@@ -371,7 +379,7 @@ describe('DebtPersistence', () => {
       // Insert a genome snapshot
       db.prepare(
         `INSERT INTO project_genome (checksum, genome_data, coherence_score, computed_at)
-         VALUES (?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?)`,
       ).run('abc123', '{}', 0.92, new Date().toISOString());
 
       const persistence = new DebtPersistence(db);
@@ -388,9 +396,11 @@ describe('DebtPersistence', () => {
     });
 
     it('includes file path in report items', () => {
-      db.prepare(
-        `INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)`
-      ).run('/project/src/test.ts', 'src/test.ts', 'typescript');
+      db.prepare(`INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)`).run(
+        '/project/src/test.ts',
+        'src/test.ts',
+        'typescript',
+      );
 
       const persistence = new DebtPersistence(db);
       persistence.createDebtItem({
@@ -421,7 +431,9 @@ describe('DebtPersistence', () => {
 
       persistence.resolveDebt(item.id);
 
-      const row = db.prepare('SELECT resolved FROM debt_items WHERE id = ?').get(item.id) as { resolved: number };
+      const row = db.prepare('SELECT resolved FROM debt_items WHERE id = ?').get(item.id) as {
+        resolved: number;
+      };
       expect(row.resolved).toBe(1);
     });
 
@@ -438,7 +450,9 @@ describe('DebtPersistence', () => {
 
       persistence.resolveDebt(item.id);
 
-      const row = db.prepare('SELECT resolved_at FROM debt_items WHERE id = ?').get(item.id) as { resolved_at: string };
+      const row = db.prepare('SELECT resolved_at FROM debt_items WHERE id = ?').get(item.id) as {
+        resolved_at: string;
+      };
       expect(row.resolved_at).toBeDefined();
     });
 
@@ -576,9 +590,11 @@ describe('DebtPersistence', () => {
     });
 
     it('links files correctly in batch insert', () => {
-      db.prepare(
-        `INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)`
-      ).run('/project/src/batch.ts', 'src/batch.ts', 'typescript');
+      db.prepare(`INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)`).run(
+        '/project/src/batch.ts',
+        'src/batch.ts',
+        'typescript',
+      );
 
       const persistence = new DebtPersistence(db);
       persistence.batchInsertDebtItems([
@@ -592,7 +608,9 @@ describe('DebtPersistence', () => {
         },
       ]);
 
-      const row = db.prepare('SELECT file_id FROM debt_items WHERE description = ?').get('Batch with file') as { file_id: number | null };
+      const row = db
+        .prepare('SELECT file_id FROM debt_items WHERE description = ?')
+        .get('Batch with file') as { file_id: number | null };
       expect(row.file_id).not.toBeNull();
     });
   });
@@ -601,8 +619,17 @@ describe('DebtPersistence', () => {
     it('removes all patterns', () => {
       db.prepare(
         `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run('test-pattern', 'naming', 'Test', 'hash1', 0.9, new Date().toISOString(), new Date().toISOString(), 1);
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        'test-pattern',
+        'naming',
+        'Test',
+        'hash1',
+        0.9,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        1,
+      );
 
       const persistence = new DebtPersistence(db);
       persistence.clearPatterns();

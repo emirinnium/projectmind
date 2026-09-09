@@ -1,4 +1,14 @@
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, relative } from 'node:path';
+import {
+  assertProjectPath,
+  PathSecurityError,
+  validateProjectPath,
+  type PathSecurityOptions,
+  type PathSecurityResult,
+} from '../../core/security/path-security.js';
+
+export { assertProjectPath, PathSecurityError, validateProjectPath };
+export type { PathSecurityOptions, PathSecurityResult };
 
 /**
  * True when `candidate` is `parent` itself or strictly inside it.
@@ -46,22 +56,16 @@ export function classifyPath(p: string): 'posix-absolute' | 'windows-absolute' |
  * {@link PathEscapesProjectError}.
  */
 export function confineToProject(filePath: string, projectRoot: string): string {
-  if (filePath.includes('\0') || projectRoot.includes('\0')) {
-    throw new PathEscapesProjectError(filePath, projectRoot);
-  }
-  const kind = classifyPath(filePath);
-  if (kind !== 'relative') {
-    const convention = kind === 'windows-absolute' ? 'windows' : 'posix';
-    const hostConvention = process.platform === 'win32' ? 'windows' : 'posix';
-    if (convention !== hostConvention) {
+  try {
+    // Preserve the legacy helper's ability to validate a project directory;
+    // callers that read a file use the stricter `mustExist` contract directly.
+    return assertProjectPath(filePath, projectRoot, { allowDirectory: true });
+  } catch (error) {
+    if (error instanceof PathSecurityError) {
       throw new PathEscapesProjectError(filePath, projectRoot);
     }
+    throw error;
   }
-  const abs = isAbsolute(filePath) ? filePath : resolve(projectRoot, filePath);
-  if (!isPathInside(projectRoot, abs)) {
-    throw new PathEscapesProjectError(filePath, projectRoot);
-  }
-  return abs;
 }
 
 /** CLI flags whose VALUE is a filesystem path (arrow hight-risk read/write). */

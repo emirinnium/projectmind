@@ -13,7 +13,12 @@ import type { ContextItem } from '../../../src/core/context/types.js';
 /**
  * Helper to create a ContextItem with minimal boilerplate.
  */
-function item(path: string, tokens: number, relevanceScore: number, extra: Partial<ContextItem> = {}): ContextItem {
+function item(
+  path: string,
+  tokens: number,
+  relevanceScore: number,
+  extra: Partial<ContextItem> = {},
+): ContextItem {
   return { path, tokens, relevanceScore, ...extra };
 }
 
@@ -54,10 +59,7 @@ describe('knapsack selectors', () => {
     });
 
     it('excludes items that exceed the budget individually', () => {
-      const items: ContextItem[] = [
-        item('big.ts', 100, 1.0),
-        item('small.ts', 5, 0.5),
-      ];
+      const items: ContextItem[] = [item('big.ts', 100, 1.0), item('small.ts', 5, 0.5)];
       const result = dpSelector(items, 10);
       expect(result.selectedItems.map((i) => i.path)).toEqual(['small.ts']);
       expect(result.excludedItems.map((i) => i.path)).toEqual(['big.ts']);
@@ -78,7 +80,7 @@ describe('knapsack selectors', () => {
 
     it('respects the budget constraint strictly', () => {
       const items: ContextItem[] = Array.from({ length: 10 }, (_, i) =>
-        item(`f${i}.ts`, 10 + i, 0.1 * (i + 1))
+        item(`f${i}.ts`, 10 + i, 0.1 * (i + 1)),
       );
       const budget = 50;
       const result = dpSelector(items, budget);
@@ -87,10 +89,7 @@ describe('knapsack selectors', () => {
 
     it('handles items with equal relevance but different token costs', () => {
       // Both have same relevance; DP should prefer the one that fits more value
-      const items: ContextItem[] = [
-        item('cheap.ts', 3, 0.5),
-        item('expensive.ts', 8, 0.5),
-      ];
+      const items: ContextItem[] = [item('cheap.ts', 3, 0.5), item('expensive.ts', 8, 0.5)];
       const result = dpSelector(items, 10);
       // Both fit: 3 + 8 = 11 > 10, so only one should be selected.
       // DP picks the combination that maximizes value — both same value,
@@ -100,10 +99,7 @@ describe('knapsack selectors', () => {
     });
 
     it('produces a valid SelectionResult shape', () => {
-      const items: ContextItem[] = [
-        item('a.ts', 5, 0.6),
-        item('b.ts', 5, 0.5),
-      ];
+      const items: ContextItem[] = [item('a.ts', 5, 0.6), item('b.ts', 5, 0.5)];
       const result = dpSelector(items, 10);
       expect(result).toHaveProperty('selectedItems');
       expect(result).toHaveProperty('excludedItems');
@@ -151,7 +147,7 @@ describe('knapsack selectors', () => {
 
     it('fills the budget with as many items as possible', () => {
       const items: ContextItem[] = Array.from({ length: 10 }, (_, i) =>
-        item(`f${i}.ts`, 10, 0.1 * (10 - i))
+        item(`f${i}.ts`, 10, 0.1 * (10 - i)),
       );
       const budget = 50;
       const result = greedySelector(items, budget);
@@ -194,22 +190,20 @@ describe('knapsack selectors', () => {
     });
 
     it('returns true for a small number of items within bounds', () => {
-      const items: ContextItem[] = Array.from({ length: 10 }, (_, i) =>
-        item(`f${i}.ts`, 100, 0.5)
-      );
+      const items: ContextItem[] = Array.from({ length: 10 }, (_, i) => item(`f${i}.ts`, 100, 0.5));
       expect(dpApplicable(items)).toBe(true);
     });
 
     it('returns false when item count exceeds DP_MAX_ITEMS', () => {
       const items: ContextItem[] = Array.from({ length: DP_MAX_ITEMS + 1 }, (_, i) =>
-        item(`f${i}.ts`, 100, 0.1)
+        item(`f${i}.ts`, 100, 0.1),
       );
       expect(dpApplicable(items)).toBe(false);
     });
 
     it('returns true when item count equals DP_MAX_ITEMS', () => {
       const items: ContextItem[] = Array.from({ length: DP_MAX_ITEMS }, (_, i) =>
-        item(`f${i}.ts`, 100, 0.1)
+        item(`f${i}.ts`, 100, 0.1),
       );
       expect(dpApplicable(items)).toBe(true);
     });
@@ -218,7 +212,7 @@ describe('knapsack selectors', () => {
       // Each item at relevance 2.0 → quantized value = 2.0 * 500 = 1000
       // Need enough items that n * 1000 > 100_000 → n > 100
       const items: ContextItem[] = Array.from({ length: 101 }, (_, i) =>
-        item(`f${i}.ts`, 100, 2.0)
+        item(`f${i}.ts`, 100, 2.0),
       );
       // 101 * 1000 = 101_000 > 100_000
       expect(dpApplicable(items)).toBe(false);
@@ -230,9 +224,7 @@ describe('knapsack selectors', () => {
       // Instead use n=60 at relevance ~1.67: 60 * round(1.67 * 500) = 60 * 835 = 50_100 < cap.
       // To hit exactly 100_000 with n <= 60, use relevance 2.0 and verify the cap boundary:
       // n=60 at relevance 2.0: totalValue = 60 * 1000 = 60_000 < 100_000 cap → applicable.
-      const items: ContextItem[] = Array.from({ length: 60 }, (_, i) =>
-        item(`f${i}.ts`, 100, 2.0)
-      );
+      const items: ContextItem[] = Array.from({ length: 60 }, (_, i) => item(`f${i}.ts`, 100, 2.0));
       expect(dpApplicable(items)).toBe(true);
     });
 
@@ -247,10 +239,7 @@ describe('knapsack selectors', () => {
   // ============================================================
   describe('edge cases', () => {
     it('dpSelector handles NaN relevance scores (treats as 0)', () => {
-      const items: ContextItem[] = [
-        item('nan.ts', 5, Number.NaN),
-        item('ok.ts', 5, 0.5),
-      ];
+      const items: ContextItem[] = [item('nan.ts', 5, Number.NaN), item('ok.ts', 5, 0.5)];
       expect(() => dpSelector(items, 100)).not.toThrow();
       const result = dpSelector(items, 100);
       expect(result.selectedItems.some((i) => i.path === 'ok.ts')).toBe(true);
@@ -258,10 +247,7 @@ describe('knapsack selectors', () => {
     });
 
     it('dpSelector handles negative relevance scores (clamps to 0)', () => {
-      const items: ContextItem[] = [
-        item('neg.ts', 5, -3),
-        item('ok.ts', 5, 0.5),
-      ];
+      const items: ContextItem[] = [item('neg.ts', 5, -3), item('ok.ts', 5, 0.5)];
       const result = dpSelector(items, 100);
       expect(result.selectedItems.some((i) => i.path === 'ok.ts')).toBe(true);
       // Negative score → quantized to 0 → never selected
@@ -269,10 +255,7 @@ describe('knapsack selectors', () => {
     });
 
     it('dpSelector handles very large relevance scores (clamps to DP_MAX_RELEVANCE)', () => {
-      const items: ContextItem[] = [
-        item('huge.ts', 5, 1e9),
-        item('normal.ts', 5, 0.5),
-      ];
+      const items: ContextItem[] = [item('huge.ts', 5, 1e9), item('normal.ts', 5, 0.5)];
       const result = dpSelector(items, 100);
       expect(() => result).not.toThrow();
       // Both should fit within budget
@@ -280,10 +263,7 @@ describe('knapsack selectors', () => {
     });
 
     it('greedySelector handles NaN relevance scores', () => {
-      const items: ContextItem[] = [
-        item('nan.ts', 5, Number.NaN),
-        item('ok.ts', 5, 0.5),
-      ];
+      const items: ContextItem[] = [item('nan.ts', 5, Number.NaN), item('ok.ts', 5, 0.5)];
       // NaN density = NaN / 5 = NaN; sort may place it anywhere but shouldn't throw
       expect(() => greedySelector(items, 100)).not.toThrow();
       const result = greedySelector(items, 100);
@@ -292,10 +272,7 @@ describe('knapsack selectors', () => {
     });
 
     it('greedySelector handles negative relevance scores', () => {
-      const items: ContextItem[] = [
-        item('neg.ts', 5, -1),
-        item('ok.ts', 5, 0.5),
-      ];
+      const items: ContextItem[] = [item('neg.ts', 5, -1), item('ok.ts', 5, 0.5)];
       expect(() => greedySelector(items, 100)).not.toThrow();
       const result = greedySelector(items, 100);
       expect(result.selectedItems.some((i) => i.path === 'ok.ts')).toBe(true);
@@ -328,10 +305,7 @@ describe('knapsack selectors', () => {
     });
 
     it('dpSelector with zero-token items (weight floors to 1)', () => {
-      const items: ContextItem[] = [
-        item('zero.ts', 0, 0.5),
-        item('normal.ts', 5, 0.6),
-      ];
+      const items: ContextItem[] = [item('zero.ts', 0, 0.5), item('normal.ts', 5, 0.6)];
       // tokens=0 → weight = max(1, floor(0)) = 1
       const result = dpSelector(items, 10);
       expect(result.selectedItems.length).toBeGreaterThan(0);
@@ -339,29 +313,20 @@ describe('knapsack selectors', () => {
     });
 
     it('greedySelector with zero-token items', () => {
-      const items: ContextItem[] = [
-        item('zero.ts', 0, 0.5),
-        item('normal.ts', 5, 0.6),
-      ];
+      const items: ContextItem[] = [item('zero.ts', 0, 0.5), item('normal.ts', 5, 0.6)];
       // Density for zero-token: 0.5 / max(0, 1) = 0.5
       expect(() => greedySelector(items, 10)).not.toThrow();
     });
 
     it('dpSelector with all zero-relevance items returns empty', () => {
-      const items: ContextItem[] = [
-        item('a.ts', 5, 0),
-        item('b.ts', 5, 0),
-      ];
+      const items: ContextItem[] = [item('a.ts', 5, 0), item('b.ts', 5, 0)];
       const result = dpSelector(items, 100);
       expect(result.selectedItems).toEqual([]);
       expect(result.totalRelevance).toBe(0);
     });
 
     it('greedySelector with all zero-relevance items', () => {
-      const items: ContextItem[] = [
-        item('a.ts', 5, 0),
-        item('b.ts', 5, 0),
-      ];
+      const items: ContextItem[] = [item('a.ts', 5, 0), item('b.ts', 5, 0)];
       // Density = 0 for all; no item adds value, but greedy may still pick them
       // if they fit the budget (it maximizes count when density is 0? No — it
       // picks by density, all 0, so first items get picked)
@@ -415,7 +380,7 @@ describe('knapsack selectors', () => {
     it('DP table width stays bounded for max-relevance items', () => {
       // 60 items at relevance 2.0: totalValue = 60 * 1000 = 60_000 < 100_000 cap
       const items: ContextItem[] = Array.from({ length: DP_MAX_ITEMS }, (_, i) =>
-        item(`f${i}.ts`, 100, 2.0)
+        item(`f${i}.ts`, 100, 2.0),
       );
       expect(dpApplicable(items)).toBe(true);
       const t0 = performance.now();
@@ -428,7 +393,7 @@ describe('knapsack selectors', () => {
     it('falls back to greedy when DP applicability check fails', () => {
       // n > DP_MAX_ITEMS triggers greedy fallback in the optimizer context
       const items: ContextItem[] = Array.from({ length: DP_MAX_ITEMS + 5 }, (_, i) =>
-        item(`m-${i}.ts`, 10 + (i % 7), 0.1 + (i % 10) * 0.05)
+        item(`m-${i}.ts`, 10 + (i % 7), 0.1 + (i % 10) * 0.05),
       );
       expect(dpApplicable(items)).toBe(false);
     });
@@ -451,7 +416,7 @@ describe('knapsack selectors', () => {
 
     it('DP is at least as good as greedy on random item sets', () => {
       const items: ContextItem[] = Array.from({ length: 20 }, (_, i) =>
-        item(`f${i}.ts`, 5 + (i % 10) * 3, 0.1 + (i % 8) * 0.12)
+        item(`f${i}.ts`, 5 + (i % 10) * 3, 0.1 + (i % 8) * 0.12),
       );
       const budget = 80;
       const greedy = greedySelector(items, budget);

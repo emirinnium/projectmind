@@ -89,7 +89,7 @@ describe('TaintAnalyzer', () => {
     it('detects exec as a sink', () => {
       const code = `const userInput = fs.readFile('input.txt'); exec(userInput);`;
       const flows = analyzer.analyzeSource('test.ts', code, 'typescript');
-      const hasExecSink = flows.some(f => f.sink.kind === 'SOCKET' && f.sink.identity === 'exec');
+      const hasExecSink = flows.some((f) => f.sink.kind === 'SOCKET' && f.sink.identity === 'exec');
       expect(hasExecSink).toBe(true);
     });
 
@@ -132,7 +132,10 @@ describe('TaintAnalyzer', () => {
       const testCases = [
         { code: `const a = fs.readFile('file.txt'); exec(a);`, expectedKind: 'FILE' },
         { code: `const b = fs.createReadStream('input.txt'); exec(b);`, expectedKind: 'FILE' },
-        { code: `const c = http.request('https://api.example.com'); exec(c);`, expectedKind: 'NETWORK' },
+        {
+          code: `const c = http.request('https://api.example.com'); exec(c);`,
+          expectedKind: 'NETWORK',
+        },
       ];
 
       for (const { code, expectedKind } of testCases) {

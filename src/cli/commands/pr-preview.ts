@@ -9,12 +9,20 @@ import {
   detectBreakingChanges,
   estimateReviewTime,
   getChangedFiles,
+  getChangedLineRanges,
   persistReviewHistory,
   selectTests,
   type PrImpact,
 } from './pr-preview-engine.js';
 import { generateMarkdownPrPreview } from './pr-preview-markdown.js';
 import { generateSarifPrPreview } from './pr-preview-sarif.js';
+import { planReviewBundles, type ReviewBundlePlan } from '@/core/review/bundle.js';
+import { loadReviewPolicy } from '@/core/review/policy.js';
+import {
+  reflectFindings,
+  validateFindingPositions,
+  verifiedFindings,
+} from '@/core/review/finding-validation.js';
 
 export { validateGitRevision, type PrImpact } from './pr-preview-engine.js';
 export { generateSarifPrPreview } from './pr-preview-sarif.js';
@@ -32,6 +40,9 @@ export function createPrPreviewCommand(): Command {
     .option('--no-tests', 'Skip test selection')
     .option('--no-coherence', 'Skip coherence check')
     .option('--history', 'Persist findings and reconcile resolved findings')
+    .option('--policy <file>', 'Review policy JSON (default: .projectmind/review-policy.json)')
+    .option('--bundle-bytes <n>', 'Maximum bytes per deterministic review bundle')
+    .option('--bundle-tokens <n>', 'Maximum estimated tokens per review bundle')
     .action(
       asyncHandler(
         async (opts: {
@@ -42,6 +53,9 @@ export function createPrPreviewCommand(): Command {
           tests: boolean;
           coherence: boolean;
           history?: boolean;
+          policy?: string;
+          bundleBytes?: string;
+          bundleTokens?: string;
         }) => {
           if (!['text', 'json', 'markdown', 'github', 'sarif'].includes(opts.format)) {
             throw new Error(
@@ -54,6 +68,7 @@ export function createPrPreviewCommand(): Command {
             const coherence = services.coherence!;
             const { loadConfig } = await import('../../utils/config.js');
             const config = loadConfig();
+            const policy = loadReviewPolicy(config.projectRoot, opts.policy);
             const outputPath = opts.output
               ? confineToProject(opts.output, config.projectRoot)
               : undefined;
@@ -160,7 +175,56 @@ export function createPrPreviewCommand(): Command {
 
             const testSelection = opts.tests ? selectTests(changedFiles, scale) : [];
             const breakingChanges = detectBreakingChanges(changedFiles, scale);
-            const findings = collectReviewFindings(changedFiles, config.projectRoot);
+            const generatedFindings = collectReviewFindings(
+              changedFiles,
+              config.projectRoot,
+              policy,
+            );
+            const changedLineRanges = await getChangedLineRanges(
+              opts.base,
+              opts.head,
+              config.projectRoot,
+              changedFiles,
+            );
+            const bundleBytes = opts.bundleBytes
+              ? Number.parseInt(opts.bundleBytes, 10)
+              : undefined;
+            const bundleTokens = opts.bundleTokens
+              ? Number.parseInt(opts.bundleTokens, 10)
+              : undefined;
+            if (
+              bundleBytes !== undefined &&
+              (!Number.isSafeInteger(bundleBytes) || bundleBytes < 1024 || bundleBytes > 50_000_000)
+            ) {
+              throw new Error('--bundle-bytes must be an integer between 1024 and 50000000.');
+            }
+            if (
+              bundleTokens !== undefined &&
+              (!Number.isSafeInteger(bundleTokens) ||
+                bundleTokens < 256 ||
+                bundleTokens > 10_000_000)
+            ) {
+              throw new Error('--bundle-tokens must be an integer between 256 and 10000000.');
+            }
+            const bundlePlan: ReviewBundlePlan = planReviewBundles(
+              changedFiles,
+              config.projectRoot,
+              policy,
+              {
+                maxBytes: bundleBytes,
+                maxTokens: bundleTokens,
+                allowedLineRanges: changedLineRanges,
+              },
+            );
+            const reflectedFindings = reflectFindings(
+              validateFindingPositions(generatedFindings, bundlePlan, config.projectRoot),
+              policy,
+              config.projectRoot,
+            );
+            const findings = verifiedFindings(reflectedFindings).map(
+              ({ status: _status, evidence: _evidence, nextAction: _nextAction, ...finding }) =>
+                finding,
+            );
             const reviewerConsensus = buildReviewerConsensus(
               findings,
               coherenceIssues,
@@ -183,6 +247,11 @@ export function createPrPreviewCommand(): Command {
               coherenceIssues,
               findings,
               reviewerConsensus,
+              reviewAudit: {
+                policy,
+                bundles: bundlePlan,
+                findings: reflectedFindings,
+              },
             };
 
             if (opts.history) {

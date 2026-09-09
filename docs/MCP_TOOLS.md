@@ -121,8 +121,8 @@ tool. It accepts an argument array only, pins the working directory to
 `PROJECTMIND_ROOT`, blocks shell execution and destructive commands, and keeps
 path-valued outputs inside the project root.
 
-All 66 dedicated registrations expose an input schema, a callable handler, and
-the four explicit MCP behavior annotations (`readOnlyHint`, `destructiveHint`,
+All dedicated registrations expose an input schema, a callable handler, and the
+four explicit MCP behavior annotations (`readOnlyHint`, `destructiveHint`,
 `idempotentHint`, `openWorldHint`). Generated parity tools use the same
 contract.
 

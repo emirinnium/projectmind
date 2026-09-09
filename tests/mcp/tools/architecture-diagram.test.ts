@@ -117,14 +117,16 @@ describe('export_architecture_diagram (exportArchitectureDiagramForTool)', () =>
   });
 
   it('throws a helpful error for an unknown module', () => {
-    expect(() => exportArchitectureDiagramForTool(makeDeps(makeReport()), { module: 'nope' })).toThrow(
-      /No module matches "nope"/
-    );
+    expect(() =>
+      exportArchitectureDiagramForTool(makeDeps(makeReport()), { module: 'nope' }),
+    ).toThrow(/No module matches "nope"/);
   });
 
   it('throws a helpful error when the report has no modules', () => {
     const report = makeReport();
     report.modules = [];
-    expect(() => exportArchitectureDiagramForTool(makeDeps(report), {})).toThrow(/run scan_project first/);
+    expect(() => exportArchitectureDiagramForTool(makeDeps(report), {})).toThrow(
+      /run scan_project first/,
+    );
   });
 });

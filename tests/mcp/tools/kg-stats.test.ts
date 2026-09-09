@@ -6,18 +6,22 @@ const TEST_PROJECT_ROOT = '/tmp/test-project';
 vi.mock('../../../src/mcp/tools/kg-stats.js', () => {
   return {
     registerKgStatsTool: vi.fn((server: any, _deps: any) => {
-      server.registerTool('kg_stats', {
-        title: 'Knowledge Graph Stats',
-        description: 'test',
-        inputSchema: {},
-      }, () => undefined);
+      server.registerTool(
+        'kg_stats',
+        {
+          title: 'Knowledge Graph Stats',
+          description: 'test',
+          inputSchema: {},
+        },
+        () => undefined,
+      );
     }),
   };
 });
 
 describe('kg_stats tool', () => {
   beforeEach(() => {
-    ;(registerKgStatsTool as unknown as ReturnType<typeof vi.fn>).mockClear();
+    (registerKgStatsTool as unknown as ReturnType<typeof vi.fn>).mockClear();
   });
 
   it('returns graph stats with nodes and edges count', () => {
@@ -36,7 +40,7 @@ describe('kg_stats tool', () => {
           pageRank: vi.fn().mockResolvedValueOnce([
             { path: '/src/core/index.ts', score: 0.15, rank: 1 },
             { path: '/src/core/utils.ts', score: 0.12, rank: 2 },
-            { path: '/src/api/routes.ts', score: 0.10, rank: 3 },
+            { path: '/src/api/routes.ts', score: 0.1, rank: 3 },
           ]),
         }),
       },
@@ -49,7 +53,8 @@ describe('kg_stats tool', () => {
     registerKgStatsTool(server, deps);
 
     // Verify the tool was registered with the correct name
-    const registered = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    const registered = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0];
     expect(registered).toBe('kg_stats');
   });
 
@@ -68,7 +73,7 @@ describe('kg_stats tool', () => {
           }),
           pageRank: vi.fn().mockResolvedValueOnce([
             { path: '/src/core/types.ts', score: 0.25, rank: 1 },
-            { path: '/src/core/models.ts', score: 0.20, rank: 2 },
+            { path: '/src/core/models.ts', score: 0.2, rank: 2 },
             { path: '/src/core/services.ts', score: 0.18, rank: 3 },
             { path: '/src/api/controllers.ts', score: 0.15, rank: 4 },
           ]),
@@ -82,7 +87,8 @@ describe('kg_stats tool', () => {
 
     registerKgStatsTool(server, deps);
 
-    const registeredCfg = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+    const registeredCfg = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1];
     expect(registeredCfg?.inputSchema).toBeDefined();
   });
 
@@ -100,7 +106,8 @@ describe('kg_stats tool', () => {
 
     registerKgStatsTool(server, deps);
 
-    const registeredCfg = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+    const registeredCfg = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1];
     expect(registeredCfg?.inputSchema).toBeDefined();
   });
 
@@ -117,9 +124,7 @@ describe('kg_stats tool', () => {
             density: 0.04,
             connectedComponents: 5,
           }),
-          pageRank: vi.fn().mockResolvedValueOnce([
-            { path: '/src/index.ts', score: 0.3, rank: 1 },
-          ]),
+          pageRank: vi.fn().mockResolvedValueOnce([{ path: '/src/index.ts', score: 0.3, rank: 1 }]),
         }),
       },
       coherence: {} as any,
@@ -130,7 +135,8 @@ describe('kg_stats tool', () => {
 
     registerKgStatsTool(server, deps);
 
-    const registeredCfg = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
+    const registeredCfg = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1];
     // Schema should be defined (no inputs needed)
     expect(registeredCfg?.inputSchema).toBeDefined();
   });

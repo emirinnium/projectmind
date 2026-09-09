@@ -13,6 +13,7 @@ import {
   mergeCodexConfig,
   mergeProjectMindInstructions,
   writeMcpConfig,
+  verifyMcpConfig,
 } from '../../src/cli/commands/init-mcp-config.js';
 import { resolveAgentConfigPath } from '../../src/cli/commands/init-mcp.js';
 
@@ -199,5 +200,23 @@ describe('MCP initialization config merging', () => {
     expect(parsed.mcp.servers.projectmind.cwd).toBe(FIXTURE_DIR);
     expect(parsed.mcp.servers.projectmind.disabled).toBe(false);
     expect(parsed.mcp.servers.projectmind.environment.PROJECTMIND_ROOT).toBe(FIXTURE_DIR);
+  });
+
+  it('verifies the exact structural entry and detects duplicate raw keys', () => {
+    const path = join(FIXTURE_DIR, 'verify.json');
+    writeFileSync(path, '{}', 'utf8');
+    expect(writeMcpConfig(path, FIXTURE_DIR, 'json-mcp', false)).toBe(true);
+    const valid = verifyMcpConfig(path, FIXTURE_DIR, 'json-mcp');
+    expect(valid.ok).toBe(true);
+    expect(valid.duplicateProjectMindEntries).toBe(0);
+
+    writeFileSync(
+      path,
+      '{"mcpServers":{"projectmind":{"command":"npx"},"projectmind":{"command":"npx"}}}',
+      'utf8',
+    );
+    const duplicate = verifyMcpConfig(path, FIXTURE_DIR, 'json-mcp');
+    expect(duplicate.duplicateProjectMindEntries).toBe(1);
+    expect(duplicate.checks.find((check) => check.name === 'duplicate-entry')?.status).toBe('warn');
   });
 });

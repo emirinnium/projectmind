@@ -1,16 +1,16 @@
 /**
  * Test helper for creating KnowledgeGraph instances with dependency injection.
- * 
+ *
  * Provides factory functions for creating KnowledgeGraph instances with
  * optional dependency injection, using sensible defaults for testing.
- * 
+ *
  * @example
  * ```typescript
  * const { kg, db, cleanup } = createTestKnowledgeGraph();
  * // ... use kg ...
  * cleanup();
  * ```
- * 
+ *
  * @module test-helpers/knowledge-graph
  */
 
@@ -32,10 +32,10 @@ export interface TestKnowledgeGraph {
 
 /**
  * Create a KnowledgeGraph instance for testing with an isolated database.
- * 
+ *
  * Accepts optional dependencies for injection. If not provided, sensible
  * defaults are used (real fs/promises, real parser, real embeddings).
- * 
+ *
  * @param deps - Optional dependencies to inject into the KnowledgeGraph
  * @returns A test KnowledgeGraph instance with db and cleanup function
  */

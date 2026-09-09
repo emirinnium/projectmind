@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { AgentFingerprintExtractor, fingerprintExtractor } from '../../../src/core/skills/fingerprint.js';
-import { persistAgentProfile, loadAgentProfile, adaptiveCoherenceCheck, pseudonymizeAgentId } from '../../../src/core/skills/engine.js';
+import {
+  AgentFingerprintExtractor,
+  fingerprintExtractor,
+} from '../../../src/core/skills/fingerprint.js';
+import {
+  persistAgentProfile,
+  loadAgentProfile,
+  adaptiveCoherenceCheck,
+  pseudonymizeAgentId,
+} from '../../../src/core/skills/engine.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -45,14 +53,20 @@ describe('Fingerprint WP3', () => {
       const result = extractor.extractFromAST('function f() { return { ok: true }; }');
       expect(['try-catch', 'result-type', 'throw', 'mixed']).toContain(result.errorHandlingStyle);
       const throwFile = extractor.extractFromAST('throw new Error("x");');
-      expect(['try-catch', 'result-type', 'throw', 'mixed']).toContain(throwFile.errorHandlingStyle);
+      expect(['try-catch', 'result-type', 'throw', 'mixed']).toContain(
+        throwFile.errorHandlingStyle,
+      );
     });
   });
 
   describe('F14 typeStrictness', () => {
     it('lower for cast-heavy file than strictly-typed file', () => {
-      const strict = extractor.extractFromAST('interface A { x: number; } interface B { y: string; } type C = A & B; const a: C = { x: 1, y: "s" }; assert(a); expect(a).toBeDefined();');
-      const castHeavy = extractor.extractFromAST('const a = (x as any) as string; const b = 1 as number; const c = (y as unknown);');
+      const strict = extractor.extractFromAST(
+        'interface A { x: number; } interface B { y: string; } type C = A & B; const a: C = { x: 1, y: "s" }; assert(a); expect(a).toBeDefined();',
+      );
+      const castHeavy = extractor.extractFromAST(
+        'const a = (x as any) as string; const b = 1 as number; const c = (y as unknown);',
+      );
       expect(castHeavy.typeStrictness).toBeGreaterThanOrEqual(0);
       expect(strict.typeStrictness).toBeGreaterThanOrEqual(0);
     });
@@ -62,7 +76,9 @@ describe('Fingerprint WP3', () => {
     it('persist->load round-trip on temp DB returns zod-valid profile with pseudonymized id', () => {
       const dbPath = join(tmpdir(), 'fp-test-' + Date.now() + '.db');
       const db = new DatabaseSync(dbPath);
-      db.exec(`CREATE TABLE IF NOT EXISTS agent_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_name TEXT NOT NULL UNIQUE, fingerprint TEXT NOT NULL DEFAULT '{}', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+      db.exec(
+        `CREATE TABLE IF NOT EXISTS agent_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_name TEXT NOT NULL UNIQUE, fingerprint TEXT NOT NULL DEFAULT '{}', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+      );
       // Monkey-patch getDatabase temporarily for this test
       const fp = extractor.extractFromAST('const a = 1;');
       const agentId = 'agent-42';
@@ -73,7 +89,9 @@ describe('Fingerprint WP3', () => {
       if (!loaded.success) throw new Error('Expected success');
       expect(loaded.value.asyncPreference).toBeGreaterThanOrEqual(0);
       // Raw agent id must NOT be present in DB row
-      const row = db.prepare('SELECT agent_name FROM agent_profiles WHERE agent_name = ?').get(pseudonymizeAgentId(agentId)) as { agent_name: string } | undefined;
+      const row = db
+        .prepare('SELECT agent_name FROM agent_profiles WHERE agent_name = ?')
+        .get(pseudonymizeAgentId(agentId)) as { agent_name: string } | undefined;
       expect(row).toBeDefined();
       expect(row!.agent_name).not.toBe(agentId);
       expect(row!.agent_name).toBe(pseudonymizeAgentId(agentId));
@@ -103,14 +121,18 @@ describe('Fingerprint WP3', () => {
       expect(fp.namingConvention).not.toBe('unknown');
     });
     it('marks dimensions with samples as measured', () => {
-      const fp = extractor.extractFromAST('async function f() { try { await g(); } catch (e) { throw e; } }');
+      const fp = extractor.extractFromAST(
+        'async function f() { try { await g(); } catch (e) { throw e; } }',
+      );
       expect(fp.measured!.asyncPreference).toBe(true);
       expect(fp.measured!.errorHandlingStyle).toBe(true);
     });
     it('round-trips measured flags through persist/load', () => {
       const dbPath = join(tmpdir(), 'fp-measured-' + Date.now() + '.db');
       const db = new DatabaseSync(dbPath);
-      db.exec(`CREATE TABLE IF NOT EXISTS agent_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_name TEXT NOT NULL UNIQUE, fingerprint TEXT NOT NULL DEFAULT '{}', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+      db.exec(
+        `CREATE TABLE IF NOT EXISTS agent_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_name TEXT NOT NULL UNIQUE, fingerprint TEXT NOT NULL DEFAULT '{}', updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+      );
       const fp = extractor.extractFromAST('const my_var = 1;');
       expect(persistAgentProfile('agent-77', fp, db)).toBe(true);
       const loaded = loadAgentProfile('agent-77', db);

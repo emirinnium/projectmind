@@ -7,6 +7,7 @@ import {
   type StructuralSearchOptions,
   type StructuralReplaceOptions,
 } from '@/parser/structural-search.js';
+import { assertProjectPath } from '@/core/security/path-security.js';
 
 const searcher = new StructuralSearcher();
 
@@ -51,7 +52,18 @@ export function registerStructuralSearchTool(server: McpServer, deps: McpDepende
         }
 
         const files = deps.kg.getAllFiles();
-        const filePaths = files.map((f) => f.path);
+        const filePaths = files.flatMap((file) => {
+          try {
+            return [
+              assertProjectPath(file.relativePath || file.path, deps.projectRoot, {
+                mustExist: true,
+                rejectIgnored: true,
+              }),
+            ];
+          } catch {
+            return [];
+          }
+        });
 
         const searchOptions: StructuralSearchOptions = {
           nodeKind: args.nodeKind,

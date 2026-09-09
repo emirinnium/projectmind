@@ -36,4 +36,12 @@ export interface SearchResult {
   snippet?: string;
   source?: 'embedding' | 'lexical';
   semanticEvidence?: SemanticEvidence;
+  scoreBreakdown?: {
+    lexical: number;
+    vector: number;
+    graph: number;
+    history: number;
+    freshness: number;
+  };
+  whyThisResult?: string[];
 }

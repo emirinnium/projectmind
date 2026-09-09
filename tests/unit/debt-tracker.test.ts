@@ -13,7 +13,7 @@ describe('DebtTracker', () => {
   beforeEach(() => {
     dbManager = new DatabaseManager(':memory:');
     const db = dbManager.init();
-    
+
     // Mock dependencies
     const kg = {
       getAllFiles: () => [],

@@ -5,7 +5,9 @@ describe('validateCliCommand (run_cli sandbox — default-deny whitelist)', () =
   it('rejects non-allowlisted root commands (git, npx, rm, echo, ...)', () => {
     expect(validateCliCommand(['git', 'status'])).toBe(false);
     expect(validateCliCommand(['git', 'clone'])).toBe(false);
-    expect(validateCliCommand(['npx', '-y', '@emirhanturker/projectmind@latest', 'mcp'])).toBe(false);
+    expect(validateCliCommand(['npx', '-y', '@emirhanturker/projectmind@latest', 'mcp'])).toBe(
+      false,
+    );
     expect(validateCliCommand(['rm', '-rf', '/'])).toBe(false);
     expect(validateCliCommand(['node', 'evil.js'])).toBe(false);
     expect(validateCliCommand(['echo', 'pwned'])).toBe(false);

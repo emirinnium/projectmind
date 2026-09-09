@@ -108,7 +108,7 @@ describe('check_contracts (evaluateContracts)', () => {
   it('rejects a filePath that escapes the project root', async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'pm-contracts-'));
     await expect(
-      evaluateContracts(makeDeps(tmpRoot), { filePath: '../outside.ts', scope: 'file' })
+      evaluateContracts(makeDeps(tmpRoot), { filePath: '../outside.ts', scope: 'file' }),
     ).rejects.toThrow(/escapes project root/i);
   });
 });

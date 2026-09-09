@@ -19,7 +19,11 @@ describe('DataFlowRepository', () => {
 
   beforeEach(() => {
     db = createTestDb();
-    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(1, 'default', '/test');
+    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(
+      1,
+      'default',
+      '/test',
+    );
     repo = new DataFlowRepository(db);
   });
 
@@ -140,8 +144,8 @@ describe('DataFlowRepository', () => {
 
       const flows = repo.getResourceFlows('middle');
       expect(flows).toHaveLength(2);
-      expect(flows.some(f => f.direction === 'from')).toBe(true);
-      expect(flows.some(f => f.direction === 'to')).toBe(true);
+      expect(flows.some((f) => f.direction === 'from')).toBe(true);
+      expect(flows.some((f) => f.direction === 'to')).toBe(true);
     });
 
     it('returns empty array for non-existent resource', () => {

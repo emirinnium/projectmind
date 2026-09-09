@@ -45,15 +45,17 @@ function mockGraphNode(overrides: Partial<GraphNode> = {}): GraphNode {
 /**
  * Creates a mock KnowledgeGraph with configurable behavior.
  */
-function createMockKnowledgeGraph(options: {
-  impactRadiusResult?: { direct: number; transitive: number; affected: GraphNode[] };
-  bfsResult?: { visited: GraphNode[]; depth: number; path: string[] };
-  dependents?: FileInfo[];
-  embedding?: number[] | null;
-  similarFiles?: FileInfo[];
-  throwOnTraversal?: boolean;
-  throwOnEmbedding?: boolean;
-} = {}): KnowledgeGraph {
+function createMockKnowledgeGraph(
+  options: {
+    impactRadiusResult?: { direct: number; transitive: number; affected: GraphNode[] };
+    bfsResult?: { visited: GraphNode[]; depth: number; path: string[] };
+    dependents?: FileInfo[];
+    embedding?: number[] | null;
+    similarFiles?: FileInfo[];
+    throwOnTraversal?: boolean;
+    throwOnEmbedding?: boolean;
+  } = {},
+): KnowledgeGraph {
   const {
     impactRadiusResult = { direct: 0, transitive: 0, affected: [] },
     bfsResult = { visited: [], depth: 0, path: [] },
@@ -383,7 +385,7 @@ describe('assembleSystemContext', () => {
   describe('token budget capping', () => {
     it('respects the limit option', () => {
       const affected = Array.from({ length: 10 }, (_, i) =>
-        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` })
+        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` }),
       );
       const bfsVisited = [...affected];
       const kg = createMockKnowledgeGraph({
@@ -403,7 +405,7 @@ describe('assembleSystemContext', () => {
 
     it('uses default limit of 16 when not specified', () => {
       const affected = Array.from({ length: 20 }, (_, i) =>
-        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` })
+        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` }),
       );
       const bfsVisited = [...affected];
       const kg = createMockKnowledgeGraph({
@@ -422,7 +424,7 @@ describe('assembleSystemContext', () => {
 
     it('caps items based on maxTokens budget', () => {
       const affected = Array.from({ length: 20 }, (_, i) =>
-        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` })
+        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` }),
       );
       const bfsVisited = [...affected];
       const kg = createMockKnowledgeGraph({
@@ -443,7 +445,7 @@ describe('assembleSystemContext', () => {
 
     it('maxTokens cap is at least 1', () => {
       const affected = Array.from({ length: 5 }, (_, i) =>
-        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` })
+        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` }),
       );
       const bfsVisited = [...affected];
       const kg = createMockKnowledgeGraph({
@@ -465,7 +467,7 @@ describe('assembleSystemContext', () => {
 
     it('ignores maxTokens when it is 0 or negative', () => {
       const affected = Array.from({ length: 20 }, (_, i) =>
-        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` })
+        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` }),
       );
       const bfsVisited = [...affected];
       const kg = createMockKnowledgeGraph({
@@ -486,7 +488,7 @@ describe('assembleSystemContext', () => {
 
     it('uses the smaller of limit and budgetItems', () => {
       const affected = Array.from({ length: 20 }, (_, i) =>
-        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` })
+        mockGraphNode({ id: 100 + i, path: `src/dep${i}.ts`, relativePath: `src/dep${i}.ts` }),
       );
       const bfsVisited = [...affected];
       const kg = createMockKnowledgeGraph({
@@ -513,7 +515,11 @@ describe('assembleSystemContext', () => {
   describe('scoring constants', () => {
     it('direct dependents receive score of 0.5 (DIRECT_DEPENDENT_SCORE)', () => {
       // One direct dependent (in BFS 1-hop), no transitive
-      const directNode = mockGraphNode({ id: 10, path: 'src/direct.ts', relativePath: 'src/direct.ts' });
+      const directNode = mockGraphNode({
+        id: 10,
+        path: 'src/direct.ts',
+        relativePath: 'src/direct.ts',
+      });
       const kg = createMockKnowledgeGraph({
         impactRadiusResult: {
           direct: 1,
@@ -540,7 +546,11 @@ describe('assembleSystemContext', () => {
 
     it('transitive dependents receive score of 0.28 (TRANSITIVE_DEPENDENT_SCORE)', () => {
       // One transitive dependent (NOT in BFS 1-hop)
-      const transitiveNode = mockGraphNode({ id: 20, path: 'src/transitive.ts', relativePath: 'src/transitive.ts' });
+      const transitiveNode = mockGraphNode({
+        id: 20,
+        path: 'src/transitive.ts',
+        relativePath: 'src/transitive.ts',
+      });
       const kg = createMockKnowledgeGraph({
         impactRadiusResult: {
           direct: 0,
@@ -566,8 +576,16 @@ describe('assembleSystemContext', () => {
     });
 
     it('direct dependent scores higher than transitive dependent', () => {
-      const directNode = mockGraphNode({ id: 10, path: 'src/direct.ts', relativePath: 'src/direct.ts' });
-      const transitiveNode = mockGraphNode({ id: 20, path: 'src/transitive.ts', relativePath: 'src/transitive.ts' });
+      const directNode = mockGraphNode({
+        id: 10,
+        path: 'src/direct.ts',
+        relativePath: 'src/direct.ts',
+      });
+      const transitiveNode = mockGraphNode({
+        id: 20,
+        path: 'src/transitive.ts',
+        relativePath: 'src/transitive.ts',
+      });
       const kg = createMockKnowledgeGraph({
         impactRadiusResult: {
           direct: 1,
@@ -610,9 +628,7 @@ describe('assembleSystemContext', () => {
           path: [],
         },
         embedding: [0.1, 0.2],
-        similarFiles: [
-          mockFileInfo({ id: 10, path: 'src/big.ts', relativePath: 'src/big.ts' }),
-        ],
+        similarFiles: [mockFileInfo({ id: 10, path: 'src/big.ts', relativePath: 'src/big.ts' })],
       });
 
       const result = assembleSystemContext(kg, {
@@ -701,9 +717,7 @@ describe('assembleSystemContext', () => {
           path: [],
         },
         embedding: [0.1, 0.2],
-        similarFiles: [
-          mockFileInfo({ id: 10, path: 'src/dep.ts', relativePath: 'src/dep.ts' }),
-        ],
+        similarFiles: [mockFileInfo({ id: 10, path: 'src/dep.ts', relativePath: 'src/dep.ts' })],
       });
 
       const result = assembleSystemContext(kg, {

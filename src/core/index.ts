@@ -161,6 +161,80 @@ export type {
 } from './search/types.js';
 export { classifyTask, TASK_KEYWORDS, createKgGraphAdapter } from './search/intent-engine.js';
 export type { KGGraphLike, KgAdapterSource } from './search/intent-engine.js';
+export { rankHybrid, lexicalRelevance } from './search/hybrid-ranking.js';
+export type { HybridRankingInput, HybridRankingOutput } from './search/hybrid-ranking.js';
+export { HistoryRanker } from './search/history-ranking.js';
+export type { HistoryScoreOptions } from './search/history-ranking.js';
+export { selectCanonicalExample, sourceHash } from './search/canonical-example.js';
+export type {
+  CanonicalExampleCandidate,
+  CanonicalExampleSelection,
+} from './search/canonical-example.js';
+export { resolveProjectRoot } from './project/roots.js';
+export { getWorktreeIdentity } from './project/worktree-identity.js';
+export {
+  recordWorktreeIdentity,
+  listWorktreeIdentities,
+  pruneWorktreeIdentities,
+} from './project/index-identity.js';
+export type { StoredWorktreeIdentity } from './project/index-identity.js';
+
+// Roadmap measurement and safe source/review primitives.
+export { parseBenchmarkCorpusManifest, parseBenchmarkManifest } from './benchmark/manifest.js';
+export type {
+  BenchmarkCase,
+  BenchmarkCorpusCase,
+  BenchmarkCorpusManifest,
+  BenchmarkManifest,
+  BenchmarkRepository,
+} from './benchmark/manifest.js';
+export {
+  aggregateRankingScores,
+  scoreRankingObservation,
+  RankingObservationSchema,
+} from './benchmark/scoring.js';
+export type {
+  RankingObservation,
+  RankingScore,
+  AggregateRankingScore,
+} from './benchmark/scoring.js';
+export {
+  parseBenchmarkRunResult,
+  renderBenchmarkMarkdown,
+  runLexicalSearch,
+  runBenchmark,
+} from './benchmark/runner.js';
+export type { BenchmarkRunResult, BenchmarkSearchResult } from './benchmark/runner.js';
+export {
+  BackendDescriptorSchema,
+  BackendKindSchema,
+  parseBackendDescriptor,
+} from './backends/contracts.js';
+export type {
+  BackendDescriptor,
+  BackendKind,
+  GraphNodeRecord,
+  GraphEdgeRecord,
+  GraphStore,
+  VectorMatch,
+  VectorStore,
+  ProjectFreshness,
+  ProjectIndex,
+} from './backends/contracts.js';
+export {
+  validateProjectPath,
+  assertProjectPath,
+  PathSecurityError,
+} from './security/path-security.js';
+export type {
+  PathSecurityCode,
+  PathSecurityOptions,
+  PathSecurityResult,
+} from './security/path-security.js';
+export { readSourceRange } from './retrieval/byte-range.js';
+export type { SourceRangeResult } from './retrieval/byte-range.js';
+export { applySurgicalEdit, makeSurgicalEditPlan } from './refactor/surgical-edit.js';
+export type { SurgicalEditPlan, SurgicalEditResult } from './refactor/surgical-edit.js';
 
 // Cross-Project Pattern Learning (F4)
 export {

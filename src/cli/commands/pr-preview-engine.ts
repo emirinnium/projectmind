@@ -4,6 +4,8 @@ import type { ScaleManager } from '../../core/scale/manager.js';
 import { getDatabase } from '../../storage/database.js';
 import { confineToProject } from '../../mcp/tools/_shared.js';
 import { logger } from '@/utils/logger.js';
+import { DEFAULT_REVIEW_POLICY, effectiveRules, type ReviewPolicy } from '@/core/review/policy.js';
+import { reviewRuleForLine } from '@/core/review/rules.js';
 
 export interface ReviewFinding {
   fingerprint: string;
@@ -12,6 +14,7 @@ export interface ReviewFinding {
   file: string;
   line: number;
   message: string;
+  confidence?: number;
 }
 
 export interface PrImpact {
@@ -28,6 +31,11 @@ export interface PrImpact {
   reviewerConsensus: {
     reviewers: Array<{ name: string; findingCount: number }>;
     consolidatedFindingCount: number;
+  };
+  reviewAudit?: {
+    policy: import('@/core/review/policy.js').ReviewPolicy;
+    bundles: import('@/core/review/bundle.js').ReviewBundlePlan;
+    findings: import('@/core/review/finding-validation.js').ValidatedFinding[];
   };
 }
 
@@ -71,6 +79,47 @@ export async function getChangedFiles(
   // NEVER fabricate file lists: report nothing and say why.
   logger.warn('git diff unavailable for this repository/ref pair; reporting zero changed files.');
   return [];
+}
+
+/** Parse zero-context Git hunks into head-side changed line ranges. */
+export async function getChangedLineRanges(
+  base: string,
+  head: string,
+  projectRoot: string,
+  files: readonly string[],
+): Promise<Record<string, Array<[number, number]>>> {
+  const { spawnSync } = await import('node:child_process');
+  validateGitRevision(base, 'base');
+  validateGitRevision(head, 'head');
+  const ranges: Record<string, Array<[number, number]>> = {};
+  for (const file of files) {
+    const diffArgs = [
+      ['git', 'diff', '--unified=0', `${base}...${head}`, '--', file],
+      ['git', 'diff', '--unified=0', `${base}..${head}`, '--', file],
+      ['git', 'diff', '--unified=0', head, '--', file],
+    ];
+    let diffOutput = '';
+    for (const args of diffArgs) {
+      const result = spawnSync(args[0], args.slice(1), {
+        cwd: projectRoot,
+        encoding: 'utf8',
+      });
+      if (result.status === 0 && result.stdout.trim()) {
+        diffOutput = result.stdout;
+        break;
+      }
+    }
+    const fileRanges: Array<[number, number]> = [];
+    for (const line of diffOutput.split(/\r?\n/)) {
+      const match = /^@@ .* \+(\d+)(?:,(\d+))? /.exec(line);
+      if (!match) continue;
+      const start = Number.parseInt(match[1], 10);
+      const count = Number.parseInt(match[2] ?? '1', 10);
+      if (count > 0) fileRanges.push([start, start + count - 1]);
+    }
+    if (fileRanges.length > 0) ranges[file.replace(/\\/g, '/')] = fileRanges;
+  }
+  return ranges;
 }
 
 /**
@@ -181,65 +230,33 @@ export function detectBreakingChanges(changedFiles: string[], scale: ScaleManage
 export function collectReviewFindings(
   changedFiles: string[],
   projectRoot: string,
+  policy: ReviewPolicy = DEFAULT_REVIEW_POLICY,
 ): ReviewFinding[] {
-  const rules: Array<{
-    rule: string;
-    severity: ReviewFinding['severity'];
-    pattern: RegExp;
-    message: string;
-  }> = [
-    {
-      rule: 'dangerous-eval',
-      severity: 'high',
-      pattern: /\b(?:eval|new\s+Function)\s*\(/,
-      message: 'Dynamic code execution requires explicit security review.',
-    },
-    {
-      rule: 'possible-secret',
-      severity: 'high',
-      pattern: /(?:api[_-]?key|secret|password|token)\s*[:=]\s*['"][^'"]{8,}/i,
-      message: 'Possible hard-coded credential or secret.',
-    },
-    {
-      rule: 'todo-marker',
-      severity: 'low',
-      pattern: /\b(?:TODO|FIXME|HACK)\b/i,
-      message: 'Unresolved work marker in changed code.',
-    },
-    {
-      rule: 'explicit-any',
-      severity: 'medium',
-      pattern: /\bany\b/,
-      message: 'Explicit any weakens the static contract at a changed line.',
-    },
-    {
-      rule: 'console-output',
-      severity: 'low',
-      pattern: /\bconsole\.(?:log|error|warn|debug)\s*\(/,
-      message: 'Ad-hoc console output should be reviewed for production behavior.',
-    },
-  ];
+  const rules = effectiveRules(policy);
   const findings: ReviewFinding[] = [];
   for (const file of changedFiles) {
     let lines: string[];
     try {
       lines = readFileSync(confineToProject(file, projectRoot), 'utf-8').split(/\r?\n/);
-    } catch {
+    } catch (error) {
+      logger.debug('Review source file could not be read.', {
+        file,
+        error: error instanceof Error ? error.message : String(error),
+      });
       continue;
     }
     lines.forEach((line, index) => {
       for (const rule of rules) {
-        if (rule.pattern.test(line)) {
+        if (reviewRuleForLine(rule, line)) {
           findings.push({
-            fingerprint: `${rule.rule}:${file}:${stableFindingIdentity(lines, index)}`,
-            rule: rule.rule,
+            fingerprint: `${rule.id}:${file}:${stableFindingIdentity(lines, index)}`,
+            rule: rule.id,
             severity: rule.severity,
             file,
             line: index + 1,
             message: rule.message,
           });
         }
-        rule.pattern.lastIndex = 0;
       }
     });
   }

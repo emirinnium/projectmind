@@ -1,6 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
 import type {
   IntentQuery,
   IntentType,
@@ -15,6 +14,8 @@ import { loadConfig } from '../../utils/config.js';
 import { executeIntentSearch, type SemanticSearchCandidate } from './intent-search.js';
 import type { KGGraphLike } from './graph-adapter.js';
 import { cosineSimilarity, safeScore } from './scoring.js';
+import { HistoryRanker } from './history-ranking.js';
+import { assertProjectPath } from '../security/path-security.js';
 
 export { createKgGraphAdapter } from './graph-adapter.js';
 export type { KGGraphLike, KgAdapterSource } from './graph-adapter.js';
@@ -29,6 +30,7 @@ export class IntentEngine {
   private readonly vecIndex?: VecIndex;
   private readonly db?: DatabaseSync;
   private readonly projectRoot?: string;
+  private readonly historyRanker?: HistoryRanker;
   private readonly embeddingDimension: number;
   public weights = { semantic: 0.4, structural: 0.3, intent: 0.3 };
 
@@ -53,6 +55,7 @@ export class IntentEngine {
     }
     if (options?.projectRoot) {
       this.projectRoot = options.projectRoot;
+      this.historyRanker = new HistoryRanker(options.projectRoot);
     }
   }
 
@@ -69,10 +72,14 @@ export class IntentEngine {
    */
   private resolveFilePath(filePath: string): string | undefined {
     if (!this.projectRoot) return filePath;
-    const rootResolved = resolve(this.projectRoot);
-    const result = resolve(rootResolved, filePath);
-    if (result !== rootResolved && !result.startsWith(rootResolved + sep)) return undefined;
-    return result;
+    try {
+      return assertProjectPath(filePath, this.projectRoot, {
+        mustExist: true,
+        rejectIgnored: true,
+      });
+    } catch {
+      return undefined;
+    }
   }
 
   private readonly intentKeywords: Record<IntentType, string[]> = {
@@ -347,6 +354,7 @@ export class IntentEngine {
           this.deriveSemanticFromSimilar(similarResults),
         resolveFilePath: (filePath) => this.resolveFilePath(filePath),
         getMarkers: (intentType, content) => this.getMarkers(intentType, content),
+        getHistoryScore: (filePath) => this.historyRanker?.score(filePath),
       },
       query,
       kgGraph,

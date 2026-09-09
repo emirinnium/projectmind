@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { registerProveClaimTool, registerVerifyFreshnessTool } from '../../../src/mcp/tools/proof.js';
+import {
+  registerProveClaimTool,
+  registerVerifyFreshnessTool,
+} from '../../../src/mcp/tools/proof.js';
 import type { McpDependencies } from '../../../src/mcp/tools/types.js';
 import type { KnowledgeGraph } from '../../../src/storage/knowledge-graph.js';
 import { stableHash } from '../../../src/utils/hash.js';
@@ -55,9 +58,21 @@ describe('MCP proof tools', () => {
     const graph = {
       getFileByPath: (path: string) =>
         path === relativePath || path === absolutePath
-          ? { path: absolutePath, relativePath, hash: stableHash(content), lastScanned: '2026-09-08 12:00:00' }
+          ? {
+              path: absolutePath,
+              relativePath,
+              hash: stableHash(content),
+              lastScanned: '2026-09-08 12:00:00',
+            }
           : null,
-      getAllFiles: () => [{ path: absolutePath, relativePath, hash: stableHash(content), lastScanned: '2026-09-08 12:00:00' }],
+      getAllFiles: () => [
+        {
+          path: absolutePath,
+          relativePath,
+          hash: stableHash(content),
+          lastScanned: '2026-09-08 12:00:00',
+        },
+      ],
     } as unknown as KnowledgeGraph;
     const deps = { projectRoot: root, kg: graph } as unknown as McpDependencies;
     const server = new McpServer({ name: 'proof-test', version: '1.0.0' });

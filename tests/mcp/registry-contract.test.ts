@@ -10,6 +10,7 @@ import {
 } from '../../src/mcp/tools/guard.js';
 import { stopPeriodicCleanup } from '../../src/mcp/tools/locks.js';
 import type { McpDependencies } from '../../src/mcp/tools/types.js';
+import { exportRegisteredToolSchemas } from '../../src/mcp/tools/schema-export.js';
 
 interface RegisteredToolContract {
   inputSchema?: unknown;
@@ -134,6 +135,22 @@ describe('MCP registered tool contract', () => {
     }
   });
 
+  it('exports the registered runtime schemas without a second schema catalog', async () => {
+    const server = new McpServer({ name: 'schema-export-test', version: '1.0.0' });
+    await registerAllTools(server, {} as McpDependencies);
+    registerResourceSubscriptionTool(server);
+    const exported = exportRegisteredToolSchemas(server);
+    expect(exported).toHaveLength(MCP_CORE_TOOL_NAMES.length);
+    expect(exported.map((tool) => tool.name)).toEqual(
+      [...exported.map((tool) => tool.name)].sort(),
+    );
+    expect(exported.find((tool) => tool.name === 'get_context')?.inputSchema).toMatchObject({
+      type: 'object',
+      properties: expect.any(Object),
+    });
+    expect(exported.every((tool) => Object.keys(tool.annotations).length > 4)).toBe(true);
+  });
+
   it('keeps generated CLI-parity registrations fully annotated as well', async () => {
     vi.stubEnv('PROJECTMIND_TOOLS', 'all');
     const server = new McpServer({ name: 'parity-contract-test', version: '1.0.0' });
@@ -174,6 +191,24 @@ describe('MCP registered tool contract', () => {
       openWorldHint: true,
     });
   });
+
+  it('invokes every generated parity interface through its safe help path', async () => {
+    vi.stubEnv('PROJECTMIND_TOOLS', 'all');
+    const server = new McpServer({ name: 'parity-invocation-test', version: '1.0.0' });
+    await registerAllTools(server, {} as McpDependencies);
+    const tools = getRegisteredTools(server);
+    const parityNames = Object.keys(tools).filter((name) => name.startsWith('pm_'));
+    expect(parityNames.length).toBeGreaterThan(0);
+    for (const name of parityNames) {
+      const result = (await tools[name].handler({ options: { help: true } })) as {
+        content?: Array<{ type?: string; text?: string }>;
+      };
+      expect(result.content?.[0]?.type, `${name} did not return MCP text`).toBe('text');
+      expect(result.content?.[0]?.text, `${name} returned an empty help response`).toContain(
+        'cliCommand',
+      );
+    }
+  }, 60_000);
 
   it('exercises a safe MCP invocation and rejects invalid required input at the schema boundary', async () => {
     const server = new McpServer({ name: 'registry-invocation-test', version: '1.0.0' });

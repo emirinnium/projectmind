@@ -42,3 +42,7 @@ export { registerEmbeddingTools } from './embeddings.js';
 export { registerTaintTools } from './taint.js';
 export { registerTeamMemoryTools } from './team-memory.js';
 export { registerIntelligenceTools, getSharedBroadcastService } from './intelligence.js';
+export { registerReviewProjectTool } from './review.js';
+export { registerSourceRangeTool } from './source-range.js';
+export { registerCanonicalExampleTool } from './canonical-example.js';
+export { registerInvocationMetricsTool } from './metrics.js';

@@ -64,7 +64,9 @@ describe('ClientRegistry — RFC 7591 dynamic client registration', () => {
 
   it('rejects unknown fields (strict metadata validation)', () => {
     const reg = new ClientRegistry(db);
-    expect(() => reg.parse({ client_name: 'X', bogus_field: 1 })).toThrowError(/Unrecognized key.*bogus_field/);
+    expect(() => reg.parse({ client_name: 'X', bogus_field: 1 })).toThrowError(
+      /Unrecognized key.*bogus_field/,
+    );
     expect(() => reg.register(regOwnSafe())).not.toThrow();
   });
 
@@ -82,8 +84,14 @@ describe('ClientRegistry — RFC 7591 dynamic client registration', () => {
 
   it('returns the established client for identical re-registration (RFC 7591 §2.2)', () => {
     const reg = new ClientRegistry(db);
-    const first = reg.register({ client_name: 'Dup', redirect_uris: ['https://app.example.com/cb'] });
-    const second = reg.register({ client_name: 'Dup', redirect_uris: ['https://app.example.com/cb'] });
+    const first = reg.register({
+      client_name: 'Dup',
+      redirect_uris: ['https://app.example.com/cb'],
+    });
+    const second = reg.register({
+      client_name: 'Dup',
+      redirect_uris: ['https://app.example.com/cb'],
+    });
 
     expect(second.client_id).toBe(first.client_id);
     expect(second.client_secret).toBeUndefined();
@@ -149,7 +157,11 @@ describe('TokenService — client-credentials access tokens', () => {
 });
 
 describe('handleOauthRoute — HTTP surface', () => {
-  function ctx(overrides?: { registry?: ClientRegistry; tokens?: TokenService; authorization?: string }) {
+  function ctx(overrides?: {
+    registry?: ClientRegistry;
+    tokens?: TokenService;
+    authorization?: string;
+  }) {
     return {
       registry: overrides?.registry ?? new ClientRegistry(db),
       tokens: overrides?.tokens ?? new TokenService(db, 3600),
@@ -194,7 +206,11 @@ describe('handleOauthRoute — HTTP surface', () => {
       registry: reg,
       tokens: new TokenService(db, 3600),
     });
-    const client = reg.register({ client_name: 'svc', redirect_uris: ['https://a.example.com/cb'], grant_types: ['client_credentials'] });
+    const client = reg.register({
+      client_name: 'svc',
+      redirect_uris: ['https://a.example.com/cb'],
+      grant_types: ['client_credentials'],
+    });
 
     const result = handleOauthRoute(
       '/oauth/token',
@@ -221,7 +237,12 @@ describe('handleOauthRoute — HTTP surface', () => {
 
   it('accepts client_secret_basic on the token endpoint', () => {
     const reg = new ClientRegistry(db);
-    const client = reg.register({ client_name: 'basic', redirect_uris: ['https://b.example.com/cb'], token_endpoint_auth_method: 'client_secret_basic', grant_types: ['client_credentials'] });
+    const client = reg.register({
+      client_name: 'basic',
+      redirect_uris: ['https://b.example.com/cb'],
+      token_endpoint_auth_method: 'client_secret_basic',
+      grant_types: ['client_credentials'],
+    });
     const basic = Buffer.from(`${client.client_id}:${client.client_secret}`).toString('base64');
 
     const result = handleOauthRoute(
@@ -238,10 +259,18 @@ describe('handleOauthRoute — HTTP surface', () => {
 
   it('rejects bad credentials with invalid_client', () => {
     const reg = new ClientRegistry(db);
-    const client = reg.register({ client_name: 'svc2', redirect_uris: ['https://c.example.com/cb'], grant_types: ['client_credentials'] });
+    const client = reg.register({
+      client_name: 'svc2',
+      redirect_uris: ['https://c.example.com/cb'],
+      grant_types: ['client_credentials'],
+    });
     const result = handleOauthRoute(
       '/oauth/token',
-      JSON.stringify({ grant_type: 'client_credentials', client_id: client.client_id, client_secret: 'wrong!'.repeat(8) }),
+      JSON.stringify({
+        grant_type: 'client_credentials',
+        client_id: client.client_id,
+        client_secret: 'wrong!'.repeat(8),
+      }),
       'application/json',
       ctx({ registry: reg }),
     );
@@ -252,7 +281,12 @@ describe('handleOauthRoute — HTTP surface', () => {
   });
 
   it('rejects unsupported grant types', () => {
-    const result = handleOauthRoute('/oauth/token', JSON.stringify({ grant_type: 'password' }), 'application/json', ctx());
+    const result = handleOauthRoute(
+      '/oauth/token',
+      JSON.stringify({ grant_type: 'password' }),
+      'application/json',
+      ctx(),
+    );
     expect(result.handled).toBe(true);
     if (!result.handled) return;
     expect(result.status).toBe(400);
@@ -269,14 +303,23 @@ describe('handleOauthRoute — HTTP surface', () => {
 
   it('accepts urlencoded bodies on the token endpoint', () => {
     const reg = new ClientRegistry(db);
-    const client = reg.register({ client_name: 'form', redirect_uris: ['https://d.example.com/cb'], grant_types: ['client_credentials'] });
+    const client = reg.register({
+      client_name: 'form',
+      redirect_uris: ['https://d.example.com/cb'],
+      grant_types: ['client_credentials'],
+    });
     const body = new URLSearchParams({
       grant_type: 'client_credentials',
       client_id: client.client_id,
       client_secret: client.client_secret!,
     }).toString();
 
-    const result = handleOauthRoute('/oauth/token', body, 'application/x-www-form-urlencoded', ctx({ registry: reg }));
+    const result = handleOauthRoute(
+      '/oauth/token',
+      body,
+      'application/x-www-form-urlencoded',
+      ctx({ registry: reg }),
+    );
     expect(result.handled).toBe(true);
     if (!result.handled) return;
     expect(result.status).toBe(200);
@@ -361,7 +404,9 @@ describe('handleOauthRoute — HTTP surface', () => {
 
 describe('SQLite persistence — OAuth data survives service restarts', () => {
   it('migration 9 created oauth_clients and oauth_tokens tables', () => {
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>;
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .all() as Array<{ name: string }>;
     expect(tables.some((t) => t.name === 'oauth_clients')).toBe(true);
     expect(tables.some((t) => t.name === 'oauth_tokens')).toBe(true);
   });
@@ -437,7 +482,9 @@ describe('SQLite persistence — OAuth data survives service restarts', () => {
     expect(row!.token).toBe(hashToken(res.access_token)); // deterministic mapping
 
     // A DB reader cannot replay the token because the plaintext is absent.
-    const rows = db.prepare('SELECT COUNT(*) AS n FROM oauth_tokens WHERE token = ?').get(res.access_token) as { n: number };
+    const rows = db
+      .prepare('SELECT COUNT(*) AS n FROM oauth_tokens WHERE token = ?')
+      .get(res.access_token) as { n: number };
     expect(rows.n).toBe(0);
   });
 });

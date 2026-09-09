@@ -1,6 +1,8 @@
 import ts from 'typescript';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { assertProjectPath } from '../security/path-security.js';
+import { logger } from '../../utils/logger.js';
+import { writeFileAtomically } from '../../utils/atomic-write.js';
 
 /**
  * Auto-Fix Engine v1 — AST-based mechanical fixes with diff preview.
@@ -175,7 +177,10 @@ export class AutoFixEngine {
       );
     }
 
-    const abs = resolve(this.projectRoot, filePath);
+    const abs = assertProjectPath(filePath, this.projectRoot, {
+      mustExist: true,
+      rejectIgnored: true,
+    });
     const original = readFileSync(abs, 'utf-8');
     // Deterministic execution order: type analysis must see pre-import-fix
     // line numbers (it reads the on-disk file), so it runs FIRST.
@@ -199,7 +204,7 @@ export class AutoFixEngine {
     const diff = changed ? makeLineDiff(original, current) : undefined;
 
     if (changed && opts.write) {
-      writeFileSync(abs, current);
+      writeFileAtomically(abs, current);
     }
 
     return {
@@ -382,7 +387,11 @@ export class AutoFixEngine {
             ts.forEachChild(node, collect);
           };
           collect(diskSf);
-        } catch {
+        } catch (error) {
+          logger.debug('Return-type inference unavailable; skipping type fixer.', {
+            file: absPath,
+            error: error instanceof Error ? error.message : String(error),
+          });
           return content; // compiler setup failed — never guess
         }
 

@@ -4,13 +4,15 @@ import { ContractEngine } from '../../src/core/contracts/engine.js';
 describe('ContractEngine', () => {
   describe('evaluate - forbidden keywords', () => {
     it('detects exec() usage', () => {
-      const engine = new ContractEngine([{
-        id: 'no-exec',
-        name: 'No Exec',
-        sourcePattern: '**/*.ts',
-        forbiddenKeywords: ['exec('],
-        severity: 'error',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'no-exec',
+          name: 'No Exec',
+          sourcePattern: '**/*.ts',
+          forbiddenKeywords: ['exec('],
+          severity: 'error',
+        },
+      ]);
 
       const violations = engine.evaluate('src/test.ts', 'const x = exec(userInput);');
       expect(violations).toHaveLength(1);
@@ -19,26 +21,30 @@ describe('ContractEngine', () => {
     });
 
     it('does not flag clean code', () => {
-      const engine = new ContractEngine([{
-        id: 'no-exec',
-        name: 'No Exec',
-        sourcePattern: '**/*.ts',
-        forbiddenKeywords: ['exec('],
-        severity: 'error',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'no-exec',
+          name: 'No Exec',
+          sourcePattern: '**/*.ts',
+          forbiddenKeywords: ['exec('],
+          severity: 'error',
+        },
+      ]);
 
       const violations = engine.evaluate('src/test.ts', 'const x = safeFunction(userInput);');
       expect(violations).toHaveLength(0);
     });
 
     it('supports regex patterns like \bany\b', () => {
-      const engine = new ContractEngine([{
-        id: 'no-\bany\b',
-        name: 'No Any',
-        sourcePattern: '**/*.ts',
-        forbiddenKeywords: ['\bany\b'],
-        severity: 'warning',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'no-\bany\b',
+          name: 'No Any',
+          sourcePattern: '**/*.ts',
+          forbiddenKeywords: ['\bany\b'],
+          severity: 'warning',
+        },
+      ]);
 
       const violations = engine.evaluate('src/test.ts', 'const x: \bany\b = 5;');
       expect(violations).toHaveLength(1);
@@ -46,26 +52,30 @@ describe('ContractEngine', () => {
     });
 
     it('does not false-positive on "\bany\b" as substring', () => {
-      const engine = new ContractEngine([{
-        id: 'no-\bany\b',
-        name: 'No Any',
-        sourcePattern: '**/*.ts',
-        forbiddenKeywords: ['\bany\b'],
-        severity: 'warning',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'no-\bany\b',
+          name: 'No Any',
+          sourcePattern: '**/*.ts',
+          forbiddenKeywords: ['\bany\b'],
+          severity: 'warning',
+        },
+      ]);
 
       const violations = engine.evaluate('src/test.ts', 'const many = 5;');
       expect(violations).toHaveLength(0);
     });
 
     it('ignores forbidden text inside comments, strings, templates, and regex literals', () => {
-      const engine = new ContractEngine([{
-        id: 'no-dynamic-code',
-        name: 'No Dynamic Code',
-        sourcePattern: '**/*.ts',
-        forbiddenKeywords: ['eval\\s*\\('],
-        severity: 'error',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'no-dynamic-code',
+          name: 'No Dynamic Code',
+          sourcePattern: '**/*.ts',
+          forbiddenKeywords: ['eval\\s*\\('],
+          severity: 'error',
+        },
+      ]);
       const forbidden = ['ev', 'al('].join('');
       const code = [
         `const text = '${forbidden}userInput)';`,
@@ -78,13 +88,15 @@ describe('ContractEngine', () => {
     });
 
     it('still detects executable forbidden calls after masking non-code tokens', () => {
-      const engine = new ContractEngine([{
-        id: 'no-dynamic-code',
-        name: 'No Dynamic Code',
-        sourcePattern: '**/*.ts',
-        forbiddenKeywords: ['eval\\s*\\('],
-        severity: 'error',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'no-dynamic-code',
+          name: 'No Dynamic Code',
+          sourcePattern: '**/*.ts',
+          forbiddenKeywords: ['eval\\s*\\('],
+          severity: 'error',
+        },
+      ]);
       const forbidden = ['ev', 'al('].join('');
 
       const violations = engine.evaluate('src/test.ts', `const value = ${forbidden}userInput);`);
@@ -95,13 +107,15 @@ describe('ContractEngine', () => {
 
   describe('evaluate - forbidden imports', () => {
     it('detects forbidden imports', () => {
-      const engine = new ContractEngine([{
-        id: 'no-cli',
-        name: 'No CLI',
-        sourcePattern: 'src/core/**/*.ts',
-        forbiddenImports: ['../cli/'],
-        severity: 'error',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'no-cli',
+          name: 'No CLI',
+          sourcePattern: 'src/core/**/*.ts',
+          forbiddenImports: ['../cli/'],
+          severity: 'error',
+        },
+      ]);
 
       // Debug: check if pattern matches
       const testPath = 'src/core/engine.ts';
@@ -115,54 +129,65 @@ describe('ContractEngine', () => {
     });
 
     it('allows permitted imports', () => {
-      const engine = new ContractEngine([{
-        id: 'no-cli',
-        name: 'No CLI',
-        sourcePattern: 'src/core/**/*.ts',
-        forbiddenImports: ['../cli/'],
-        severity: 'error',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'no-cli',
+          name: 'No CLI',
+          sourcePattern: 'src/core/**/*.ts',
+          forbiddenImports: ['../cli/'],
+          severity: 'error',
+        },
+      ]);
 
-      const violations = engine.evaluate('src/core/engine.ts', "import { foo } from '../utils/bar';");
+      const violations = engine.evaluate(
+        'src/core/engine.ts',
+        "import { foo } from '../utils/bar';",
+      );
       expect(violations).toHaveLength(0);
     });
   });
 
   describe('evaluate - pattern matching', () => {
     it('only applies contracts to matching files', () => {
-      const engine = new ContractEngine([{
-        id: 'core-only',
-        name: 'Core Only',
-        sourcePattern: 'src/core/**/*.ts',
-        forbiddenKeywords: ['exec('],
-        severity: 'error',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'core-only',
+          name: 'Core Only',
+          sourcePattern: 'src/core/**/*.ts',
+          forbiddenKeywords: ['exec('],
+          severity: 'error',
+        },
+      ]);
 
       const violations = engine.evaluate('src/cli/test.ts', 'exec(x);');
       expect(violations).toHaveLength(0);
     });
 
     it('applies wildcard patterns to all files', () => {
-      const engine = new ContractEngine([{
-        id: 'all-files',
-        name: 'All Files',
-        sourcePattern: '**/*.ts',
-        forbiddenKeywords: ['exec('],
-        severity: 'error',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'all-files',
+          name: 'All Files',
+          sourcePattern: '**/*.ts',
+          forbiddenKeywords: ['exec('],
+          severity: 'error',
+        },
+      ]);
 
       const violations = engine.evaluate('src/anything/test.ts', 'exec(x);');
       expect(violations).toHaveLength(1);
     });
 
     it('matches recursive globs at the directory root and below it', () => {
-      const engine = new ContractEngine([{
-        id: 'core-only',
-        name: 'Core Only',
-        sourcePattern: 'src/core/**/*.ts',
-        forbiddenKeywords: ['debugger'],
-        severity: 'error',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'core-only',
+          name: 'Core Only',
+          sourcePattern: 'src/core/**/*.ts',
+          forbiddenKeywords: ['debugger'],
+          severity: 'error',
+        },
+      ]);
 
       expect(engine.evaluate('src/core/engine.ts', 'debugger;')).toHaveLength(1);
       expect(engine.evaluate('src/core/nested/engine.ts', 'debugger;')).toHaveLength(1);
@@ -171,13 +196,15 @@ describe('ContractEngine', () => {
 
   describe('evaluate - required imports', () => {
     it('flags missing required imports', () => {
-      const engine = new ContractEngine([{
-        id: 'require-logger',
-        name: 'Require Logger',
-        sourcePattern: '**/*.ts',
-        requiredImports: ['logger'],
-        severity: 'warning',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'require-logger',
+          name: 'Require Logger',
+          sourcePattern: '**/*.ts',
+          requiredImports: ['logger'],
+          severity: 'warning',
+        },
+      ]);
 
       const violations = engine.evaluate('src/test.ts', 'const x = 5;');
       expect(violations).toHaveLength(1);
@@ -185,13 +212,15 @@ describe('ContractEngine', () => {
     });
 
     it('passes when required import is present', () => {
-      const engine = new ContractEngine([{
-        id: 'require-logger',
-        name: 'Require Logger',
-        sourcePattern: '**/*.ts',
-        requiredImports: ['logger'],
-        severity: 'warning',
-      }]);
+      const engine = new ContractEngine([
+        {
+          id: 'require-logger',
+          name: 'Require Logger',
+          sourcePattern: '**/*.ts',
+          requiredImports: ['logger'],
+          severity: 'warning',
+        },
+      ]);
 
       const violations = engine.evaluate('src/test.ts', "import { logger } from './logger';");
       expect(violations).toHaveLength(0);

@@ -94,7 +94,7 @@ describe('auto_fix (runAutoFix)', () => {
   it('rejects a filePath that escapes the project root', async () => {
     const root = await makeTmpRoot();
     await expect(
-      runAutoFix(makeDeps(root), { filePath: '../outside.ts', fixes: ['var-to-const'] })
+      runAutoFix(makeDeps(root), { filePath: '../outside.ts', fixes: ['var-to-const'] }),
     ).rejects.toThrow(/escapes project root/i);
   });
 
@@ -152,7 +152,8 @@ describe('auto_fix (runAutoFix)', () => {
     it('adds return type for unknown function', async () => {
       const root = await makeTmpRoot();
       const filePath = join(root, 'src', 'unknown-fn.ts');
-      const original = 'export function parseValue(input: string) {\n  try {\n    return JSON.parse(input);\n  } catch {\n    return undefined;\n  }\n}\n';
+      const original =
+        'export function parseValue(input: string) {\n  try {\n    return JSON.parse(input);\n  } catch {\n    return undefined;\n  }\n}\n';
       await writeFile(filePath, original, 'utf-8');
 
       const result = await runAutoFix(makeDeps(root), {
@@ -233,7 +234,8 @@ describe('auto_fix (runAutoFix)', () => {
     it('skips functions with inferred object literal types', async () => {
       const root = await makeTmpRoot();
       const filePath = join(root, 'src', 'object-fn.ts');
-      const original = 'export function createConfig() {\n  return { debug: true, port: 3000 };\n}\n';
+      const original =
+        'export function createConfig() {\n  return { debug: true, port: 3000 };\n}\n';
       await writeFile(filePath, original, 'utf-8');
 
       const result = await runAutoFix(makeDeps(root), {
@@ -281,7 +283,8 @@ describe('auto_fix (runAutoFix)', () => {
     it('adds return type for Promise<never> function', async () => {
       const root = await makeTmpRoot();
       const filePath = join(root, 'src', 'promise-never-fn.ts');
-      const original = 'export async function failAsync(): Promise<never> {\n  throw new Error("async fail");\n}\n';
+      const original =
+        'export async function failAsync(): Promise<never> {\n  throw new Error("async fail");\n}\n';
       await writeFile(filePath, original, 'utf-8');
 
       // Already has return type -> no change
@@ -297,7 +300,8 @@ describe('auto_fix (runAutoFix)', () => {
     it('adds return type for Promise<unknown> function', async () => {
       const root = await makeTmpRoot();
       const filePath = join(root, 'src', 'promise-unknown-fn.ts');
-      const original = 'export async function fetchData(url: string) {\n  const res = await fetch(url);\n  return res.json();\n}\n';
+      const original =
+        'export async function fetchData(url: string) {\n  const res = await fetch(url);\n  return res.json();\n}\n';
       await writeFile(filePath, original, 'utf-8');
 
       const result = await runAutoFix(makeDeps(root), {
@@ -377,7 +381,8 @@ describe('auto_fix (runAutoFix)', () => {
     it('skips async functions with inferred object literal types', async () => {
       const root = await makeTmpRoot();
       const filePath = join(root, 'src', 'promise-object-fn.ts');
-      const original = 'export async function fetchConfig() {\n  return { host: "localhost" };\n}\n';
+      const original =
+        'export async function fetchConfig() {\n  return { host: "localhost" };\n}\n';
       await writeFile(filePath, original, 'utf-8');
 
       const result = await runAutoFix(makeDeps(root), {
@@ -409,7 +414,8 @@ describe('auto_fix (runAutoFix)', () => {
     it('adds return type for union types that resolve to number', async () => {
       const root = await makeTmpRoot();
       const filePath = join(root, 'src', 'union-fn.ts');
-      const original = 'export function parse(input: string) {\n  if (input === "null") return null;\n  return parseInt(input, 10);\n}\n';
+      const original =
+        'export function parse(input: string) {\n  if (input === "null") return null;\n  return parseInt(input, 10);\n}\n';
       await writeFile(filePath, original, 'utf-8');
 
       const result = await runAutoFix(makeDeps(root), {
@@ -442,7 +448,8 @@ describe('auto_fix (runAutoFix)', () => {
     it('applies return types to multiple functions in one file', async () => {
       const root = await makeTmpRoot();
       const filePath = join(root, 'src', 'multi-fn.ts');
-      const original = 'export function getName() {\n  return "Bob";\n}\nexport function getAge() {\n  return 30;\n}\nexport function isActive() {\n  return true;\n}\n';
+      const original =
+        'export function getName() {\n  return "Bob";\n}\nexport function getAge() {\n  return 30;\n}\nexport function isActive() {\n  return true;\n}\n';
       await writeFile(filePath, original, 'utf-8');
 
       const result = await runAutoFix(makeDeps(root), {
@@ -460,7 +467,8 @@ describe('auto_fix (runAutoFix)', () => {
     it('applies return types to methods in a class', async () => {
       const root = await makeTmpRoot();
       const filePath = join(root, 'src', 'class-methods.ts');
-      const original = 'export class Greeter {\n  getName() {\n    return "Alice";\n  }\n  getAge() {\n    return 25;\n  }\n}\n';
+      const original =
+        'export class Greeter {\n  getName() {\n    return "Alice";\n  }\n  getAge() {\n    return 25;\n  }\n}\n';
       await writeFile(filePath, original, 'utf-8');
 
       const result = await runAutoFix(makeDeps(root), {

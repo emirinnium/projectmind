@@ -31,19 +31,28 @@ function encodeEmbedding(values: number[]): Buffer {
  */
 function seedDependents(db: DatabaseSync): void {
   const insertFile = db.prepare(
-    'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)',
   );
   const emb = encodeEmbedding([1, 0, 0]);
   insertFile.run(1, '/test/src/x.ts', 'src/x.ts', 'typescript', 10, 'h-x', emb);
   insertFile.run(1, '/test/src/y.ts', 'src/y.ts', 'typescript', 10, 'h-y', emb);
   insertFile.run(1, '/test/src/z.ts', 'src/z.ts', 'typescript', 10, 'h-z', emb);
-  insertFile.run(1, '/test/src/rate-limit.ts', 'src/rate-limit.ts', 'typescript', 10, 'h-rate', emb);
+  insertFile.run(
+    1,
+    '/test/src/rate-limit.ts',
+    'src/rate-limit.ts',
+    'typescript',
+    10,
+    'h-rate',
+    emb,
+  );
 
   const fileId = (relativePath: string): number =>
-    (db.prepare('SELECT id FROM files WHERE relative_path = ?').get(relativePath) as { id: number }).id;
+    (db.prepare('SELECT id FROM files WHERE relative_path = ?').get(relativePath) as { id: number })
+      .id;
 
   const insertImport = db.prepare(
-    'INSERT INTO imports (file_id, source, kind, resolved, resolved_path) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO imports (file_id, source, kind, resolved, resolved_path) VALUES (?, ?, ?, ?, ?)',
   );
   insertImport.run(fileId('src/y.ts'), './x', 'relative', 1, 'src/x.ts');
   insertImport.run(fileId('src/z.ts'), './x', 'relative', 1, 'src/x.ts');
@@ -77,7 +86,11 @@ describe('suggest_next_files (suggestNextFilesForTool)', () => {
     });
 
     // All three importers of src/x.ts are suggested.
-    expect(result.items.map((i) => i.path).sort()).toEqual(['src/rate-limit.ts', 'src/y.ts', 'src/z.ts']);
+    expect(result.items.map((i) => i.path).sort()).toEqual([
+      'src/rate-limit.ts',
+      'src/y.ts',
+      'src/z.ts',
+    ]);
 
     // Ranked descending by score (ties broken by path).
     for (let i = 1; i < result.items.length; i++) {
@@ -103,7 +116,9 @@ describe('suggest_next_files (suggestNextFilesForTool)', () => {
   });
 
   it('resolves the target by fileId identically to relativePath', () => {
-    const xId = (db.prepare('SELECT id FROM files WHERE relative_path = ?').get('src/x.ts') as { id: number }).id;
+    const xId = (
+      db.prepare('SELECT id FROM files WHERE relative_path = ?').get('src/x.ts') as { id: number }
+    ).id;
 
     const byPath = suggestNextFilesForTool(deps, { relativePath: 'src/x.ts', limit: 3 });
     const byId = suggestNextFilesForTool(deps, { fileId: String(xId), limit: 3 });
@@ -113,7 +128,9 @@ describe('suggest_next_files (suggestNextFilesForTool)', () => {
   });
 
   it('throws a clear error when the target file is not in the knowledge graph', () => {
-    expect(() => suggestNextFilesForTool(deps, { relativePath: 'src/missing.ts' })).toThrow(/not found/i);
+    expect(() => suggestNextFilesForTool(deps, { relativePath: 'src/missing.ts' })).toThrow(
+      /not found/i,
+    );
   });
 
   it('throws when neither relativePath nor fileId is provided', () => {

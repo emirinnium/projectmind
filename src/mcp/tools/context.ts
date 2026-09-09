@@ -10,6 +10,7 @@ import {
   buildEvidencePacket,
   verifyProjectFreshness,
 } from '../../core/proof/evidence.js';
+import { assertProjectPath } from '@/core/security/path-security.js';
 
 /** One live intent from another agent overlapping the requested context. */
 interface ConflictWarning {
@@ -109,6 +110,10 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
     },
     async (args) => {
       try {
+        assertProjectPath(args.filePath, deps.projectRoot, {
+          mustExist: true,
+          rejectIgnored: true,
+        });
         const file = deps.kg.getFileByPath(args.filePath);
         if (!file) {
           return {

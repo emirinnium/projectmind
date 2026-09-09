@@ -70,6 +70,9 @@ export async function buildProgram(): Promise<Command> {
     { path: './commands/parser-capabilities.js', name: 'createParserCapabilitiesCommand' },
     { path: './commands/init-mcp.js', name: 'createInitMcpCommand' },
     { path: './commands/proof.js', name: 'createProofCommand' },
+    { path: './commands/benchmark.js', name: 'createBenchmarkCommand' },
+    { path: './commands/range.js', name: 'createRangeCommand' },
+    { path: './commands/canonical-example.js', name: 'createCanonicalExampleCommand' },
     { path: './commands/watch.js', name: 'createWatchCommand' },
   ];
 

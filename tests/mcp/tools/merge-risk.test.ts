@@ -16,17 +16,18 @@ import type { McpDependencies } from '../../../src/mcp/tools/types.js';
  */
 function seedBlastRadius(db: DatabaseSync): void {
   const insertFile = db.prepare(
-    'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash) VALUES (?, ?, ?, ?, ?, ?)',
   );
   insertFile.run(1, '/test/shared.ts', 'shared.ts', 'typescript', 10, 'h-shared');
   insertFile.run(1, '/test/a.ts', 'a.ts', 'typescript', 10, 'h-a');
   insertFile.run(1, '/test/b.ts', 'b.ts', 'typescript', 10, 'h-b');
 
   const fileId = (relativePath: string): number =>
-    (db.prepare('SELECT id FROM files WHERE relative_path = ?').get(relativePath) as { id: number }).id;
+    (db.prepare('SELECT id FROM files WHERE relative_path = ?').get(relativePath) as { id: number })
+      .id;
 
   const insertImport = db.prepare(
-    'INSERT INTO imports (file_id, source, kind, resolved, resolved_path) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO imports (file_id, source, kind, resolved, resolved_path) VALUES (?, ?, ?, ?, ?)',
   );
   insertImport.run(fileId('a.ts'), './shared', 'relative', 1, 'shared.ts');
   insertImport.run(fileId('b.ts'), './shared', 'relative', 1, 'shared.ts');
@@ -153,12 +154,8 @@ describe('predict_merge_risk (predictMergeRiskForTool)', () => {
     const result = predictMergeRiskForTool(deps, {
       myFiles: ['shared.ts'],
       otherHeldFiles: [],
-      myContentChanges: [
-        { filePath: 'shared.ts', baseContent: 'a\n', proposedContent: 'A\n' },
-      ],
-      otherContentChanges: [
-        { filePath: 'shared.ts', baseContent: 'b\n', proposedContent: 'B\n' },
-      ],
+      myContentChanges: [{ filePath: 'shared.ts', baseContent: 'a\n', proposedContent: 'A\n' }],
+      otherContentChanges: [{ filePath: 'shared.ts', baseContent: 'b\n', proposedContent: 'B\n' }],
     });
 
     expect(result.contentAnalysis.status).toBe('unknown');
@@ -166,8 +163,8 @@ describe('predict_merge_risk (predictMergeRiskForTool)', () => {
       type: 'inconsistent-base',
       filePath: 'shared.ts',
     });
-    expect(result.reasons.some((reason) => reason.startsWith('Content comparison unavailable:'))).toBe(
-      true,
-    );
+    expect(
+      result.reasons.some((reason) => reason.startsWith('Content comparison unavailable:')),
+    ).toBe(true);
   });
 });

@@ -2,7 +2,8 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { AutoFixEngine } from '@/core/refactor/auto-fix.js';
-import { confineToProject } from './_shared.js';
+import { assertProjectPath } from '@/core/security/path-security.js';
+import { actionableMcpError } from '@/utils/actionable-error.js';
 
 /**
  * Real fixer ids supported by the AutoFixEngine (see src/core/refactor/auto-fix.ts).
@@ -55,7 +56,10 @@ export async function runAutoFix(
   deps: McpDependencies,
   args: AutoFixArgs,
 ): Promise<AutoFixToolResult> {
-  const absPath = confineToProject(args.filePath, deps.projectRoot);
+  const absPath = assertProjectPath(args.filePath, deps.projectRoot, {
+    mustExist: true,
+    rejectIgnored: true,
+  });
   const engine = new AutoFixEngine(deps.projectRoot);
   const apply = args.apply ?? false;
   const fixers: Array<AutoFixerId | 'all'> =
@@ -113,11 +117,8 @@ export function registerAutoFixTool(server: McpServer, deps: McpDependencies): v
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         };
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
-        };
+      } catch (error) {
+        return actionableMcpError(error);
       }
     },
   );

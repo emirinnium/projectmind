@@ -7,7 +7,7 @@ import { loadConfig } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 import { watch as fsWatch, type FSWatcher } from 'node:fs';
 import { toolCacheHintMeta } from './tools/list.js';
-import { TOOL_ANNOTATIONS } from './tools/guard.js';
+import { getMcpProfile, getMcpProfileTools, TOOL_ANNOTATIONS } from './tools/guard.js';
 import { getProjectIgnorePatterns, isIgnoredRelativePath } from '../utils/ignore.js';
 
 /**
@@ -243,6 +243,40 @@ export function registerCoreResources(server: McpServer, deps: McpDependencies):
         ],
       };
     },
+  );
+
+  // pm://profiles — deterministic discovery metadata for clients with a
+  // small tool budget. It contains names only, never source or credentials.
+  server.registerResource(
+    'profiles',
+    'pm://profiles',
+    {
+      title: 'MCP Tool Profiles',
+      description: 'Available ProjectMind MCP profiles and their dedicated tools.',
+      mimeType: 'application/json',
+    },
+    async () => ({
+      contents: [
+        {
+          uri: 'pm://profiles',
+          mimeType: 'application/json',
+          text: JSON.stringify(
+            {
+              active: getMcpProfile(),
+              profiles: ['core', 'review', 'security', 'maintenance', 'full'].map((profile) => ({
+                name: profile,
+                tools: getMcpProfileTools(profile as Parameters<typeof getMcpProfileTools>[0]),
+                includesParityTools: profile === 'full',
+              })),
+              nextAction:
+                'Select core for routine context, review for change analysis, security for trust checks, maintenance for debt/health, or full for compatibility.',
+            },
+            null,
+            2,
+          ),
+        },
+      ],
+    }),
   );
 }
 

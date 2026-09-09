@@ -135,7 +135,11 @@ describe('SKILL_CATALOG', () => {
       { skillId: 'debt-detection', path: 'src/utils/helper.ts', shouldMatch: false },
 
       // embedding-generation
-      { skillId: 'embedding-generation', path: 'src/core/embeddings/provider.ts', shouldMatch: true },
+      {
+        skillId: 'embedding-generation',
+        path: 'src/core/embeddings/provider.ts',
+        shouldMatch: true,
+      },
       { skillId: 'embedding-generation', path: 'src/utils/helper.ts', shouldMatch: false },
 
       // ast-parsing
@@ -197,7 +201,11 @@ describe('SKILL_CATALOG', () => {
       { skillId: 'architecture-analysis', path: 'src/utils/helper.ts', shouldMatch: false },
 
       // agent-session-management
-      { skillId: 'agent-session-management', path: 'src/core/session/tracker.ts', shouldMatch: true },
+      {
+        skillId: 'agent-session-management',
+        path: 'src/core/session/tracker.ts',
+        shouldMatch: true,
+      },
       { skillId: 'agent-session-management', path: 'src/core/agent/manager.ts', shouldMatch: true },
       { skillId: 'agent-session-management', path: 'src/core/memory/store.ts', shouldMatch: true },
       { skillId: 'agent-session-management', path: 'src/utils/helper.ts', shouldMatch: false },
@@ -208,8 +216,16 @@ describe('SKILL_CATALOG', () => {
       { skillId: 'pattern-extraction', path: 'src/utils/helper.ts', shouldMatch: false },
 
       // refactoring-automation
-      { skillId: 'refactoring-automation', path: 'src/core/refactor/transforms.ts', shouldMatch: true },
-      { skillId: 'refactoring-automation', path: 'src/core/organize-imports/index.ts', shouldMatch: true },
+      {
+        skillId: 'refactoring-automation',
+        path: 'src/core/refactor/transforms.ts',
+        shouldMatch: true,
+      },
+      {
+        skillId: 'refactoring-automation',
+        path: 'src/core/organize-imports/index.ts',
+        shouldMatch: true,
+      },
       { skillId: 'refactoring-automation', path: 'src/utils/helper.ts', shouldMatch: false },
 
       // documentation-generation
@@ -219,12 +235,15 @@ describe('SKILL_CATALOG', () => {
       { skillId: 'documentation-generation', path: 'src/utils/helper.ts', shouldMatch: false },
     ];
 
-    it.each(testCases)('$skillId indicator matches $path correctly', ({ skillId, path, shouldMatch }) => {
-      const skill = SKILL_CATALOG.find((s) => s.id === skillId);
-      expect(skill).toBeDefined();
-      const matches = skill!.indicators.some((re) => re.test(path));
-      expect(matches).toBe(shouldMatch);
-    });
+    it.each(testCases)(
+      '$skillId indicator matches $path correctly',
+      ({ skillId, path, shouldMatch }) => {
+        const skill = SKILL_CATALOG.find((s) => s.id === skillId);
+        expect(skill).toBeDefined();
+        const matches = skill!.indicators.some((re) => re.test(path));
+        expect(matches).toBe(shouldMatch);
+      },
+    );
   });
 
   describe('getSkillById()', () => {

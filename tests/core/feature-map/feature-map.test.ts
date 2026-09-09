@@ -36,7 +36,10 @@ describe('feature map', () => {
     const auth = file(1, 'src/core/auth/token.ts');
     const fs = file(2, 'src/utils/fs.ts');
     const test = file(3, 'tests/core/auth/token.test.ts');
-    const imports = new Map<number, Array<{ source: string; kind: string; resolvedFile: FileInfo | null }>>([
+    const imports = new Map<
+      number,
+      Array<{ source: string; kind: string; resolvedFile: FileInfo | null }>
+    >([
       [1, [{ source: '../../utils/fs.js', kind: 'import', resolvedFile: fs }]],
       [2, []],
       [3, [{ source: '../../../src/core/auth/token.js', kind: 'import', resolvedFile: auth }]],

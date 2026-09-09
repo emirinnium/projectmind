@@ -30,7 +30,9 @@ import type { CacheOptions, CacheEntry } from '../../../../src/core/cache/types.
 const testDir = join(tmpdir(), 'projectmind-test-persist');
 const persistPath = join(testDir, 'cache.json');
 
-function makeOptions(overrides: Partial<CacheOptions<string, string>> = {}): CacheOptions<string, string> {
+function makeOptions(
+  overrides: Partial<CacheOptions<string, string>> = {},
+): CacheOptions<string, string> {
   return {
     maxSize: 10,
     ttlMs: 60_000,
@@ -85,9 +87,7 @@ describe('CachePersistence — persistToDisk', () => {
   });
 
   it('does not write to disk when persistent=false', () => {
-    const persistence = new CachePersistence<string, string>(
-      makeOptions({ persistent: false })
-    );
+    const persistence = new CachePersistence<string, string>(makeOptions({ persistent: false }));
 
     const map = new Map<string, CacheEntry<string>>();
     map.set('a', makeEntry('1', Date.now() + 60_000));
@@ -148,7 +148,7 @@ describe('CachePersistence — persistToDisk', () => {
     const persistence = new CachePersistence<string, string>(
       makeOptions({
         onError: (err) => errors.push(err),
-      })
+      }),
     );
 
     const map = new Map<string, CacheEntry<string>>();
@@ -201,9 +201,7 @@ describe('CachePersistence — loadFromDisk', () => {
   });
 
   it('does not load when persistent=false', () => {
-    const persistence = new CachePersistence<string, string>(
-      makeOptions({ persistent: false })
-    );
+    const persistence = new CachePersistence<string, string>(makeOptions({ persistent: false }));
 
     const map = new Map<string, CacheEntry<string>>();
     persistence.loadFromDisk(map);
@@ -265,10 +263,10 @@ describe('CachePersistence — Skipping Expired Entries on Load', () => {
   it('loads only non-expired entries when multiple expire at different times', () => {
     const now = Date.now();
     const cachedData = [
-      { key: 'a', value: '1', createdAt: now, expiresAt: now - 1000 },    // expired
-      { key: 'b', value: '2', createdAt: now, expiresAt: now + 1000 },    // expires soon
-      { key: 'c', value: '3', createdAt: now, expiresAt: now - 5000 },    // expired
-      { key: 'd', value: '4', createdAt: now, expiresAt: now + 60_000 },  // fresh
+      { key: 'a', value: '1', createdAt: now, expiresAt: now - 1000 }, // expired
+      { key: 'b', value: '2', createdAt: now, expiresAt: now + 1000 }, // expires soon
+      { key: 'c', value: '3', createdAt: now, expiresAt: now - 5000 }, // expired
+      { key: 'd', value: '4', createdAt: now, expiresAt: now + 60_000 }, // fresh
     ];
 
     vi.mocked(existsSync).mockReturnValue(true);
@@ -320,7 +318,7 @@ describe('CachePersistence — Corrupt Data Handling', () => {
     const persistence = new CachePersistence<string, string>(
       makeOptions({
         onError: (err) => errors.push(err),
-      })
+      }),
     );
 
     const map = new Map<string, CacheEntry<string>>();
@@ -338,7 +336,7 @@ describe('CachePersistence — Corrupt Data Handling', () => {
     const persistence = new CachePersistence<string, string>(
       makeOptions({
         onError: (err) => errors.push(err),
-      })
+      }),
     );
 
     const map = new Map<string, CacheEntry<string>>();
@@ -356,7 +354,7 @@ describe('CachePersistence — Corrupt Data Handling', () => {
     const persistence = new CachePersistence<string, string>(
       makeOptions({
         onError: (err) => errors.push(err),
-      })
+      }),
     );
 
     const map = new Map<string, CacheEntry<string>>();
@@ -408,9 +406,7 @@ describe('CachePersistence — Auto-Persist Interval (PERSIST_INTERVAL_MS)', () 
   it('does not start a persist timer when persistent=false', () => {
     vi.useFakeTimers();
 
-    const persistence = new CachePersistence<string, string>(
-      makeOptions({ persistent: false })
-    );
+    const persistence = new CachePersistence<string, string>(makeOptions({ persistent: false }));
 
     // No timer should be started
     expect(vi.getTimerCount()).toBe(0);
@@ -520,7 +516,7 @@ describe('CachePersistence — Directory Creation', () => {
     vi.mocked(existsSync).mockReturnValue(false);
 
     const persistence = new CachePersistence<string, string>(
-      makeOptions({ persistPath: nestedPath })
+      makeOptions({ persistPath: nestedPath }),
     );
 
     const map = new Map<string, CacheEntry<string>>();
@@ -604,7 +600,7 @@ describe('CachePersistence — Custom Serialization', () => {
     const customSerialize = vi.fn().mockReturnValue('custom-serialized');
 
     const persistence = new CachePersistence<string, string>(
-      makeOptions({ serialize: customSerialize })
+      makeOptions({ serialize: customSerialize }),
     );
 
     const map = new Map<string, CacheEntry<string>>();

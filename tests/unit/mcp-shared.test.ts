@@ -38,23 +38,32 @@ describe('K5: confineToProject (path traversal barrier)', () => {
 
   it('rejects sibling-drive / home-directory absolute paths', () => {
     expect(() => confineToProject('/etc/passwd', ROOT)).toThrow(PathEscapesProjectError);
-    expect(() => confineToProject('C:\\Windows\\System32\\drivers\\etc\\hosts', ROOT)).toThrow(PathEscapesProjectError);
+    expect(() => confineToProject('C:\\Windows\\System32\\drivers\\etc\\hosts', ROOT)).toThrow(
+      PathEscapesProjectError,
+    );
   });
 });
 
 describe('K4: confinePathValueFlags (CLI -o / --output / --config escapes)', () => {
   it('rejects -o escaping the project root', () => {
-    expect(() => confinePathValueFlags(['report', '-o', '../pwn.json'], ROOT)).toThrow(PathEscapesProjectError);
-  });
-
-  it('rejects the --output= form', () => {
-    expect(() => confinePathValueFlags(['doctor', 'scan-health', `--output=${resolve(ROOT, '..', 'x.json')}`], ROOT)).toThrow(
-      PathEscapesProjectError
+    expect(() => confinePathValueFlags(['report', '-o', '../pwn.json'], ROOT)).toThrow(
+      PathEscapesProjectError,
     );
   });
 
+  it('rejects the --output= form', () => {
+    expect(() =>
+      confinePathValueFlags(
+        ['doctor', 'scan-health', `--output=${resolve(ROOT, '..', 'x.json')}`],
+        ROOT,
+      ),
+    ).toThrow(PathEscapesProjectError);
+  });
+
   it('rejects --config pointing outside', () => {
-    expect(() => confinePathValueFlags(['layers', '--config', '/etc/passwd'], ROOT)).toThrow(PathEscapesProjectError);
+    expect(() => confinePathValueFlags(['layers', '--config', '/etc/passwd'], ROOT)).toThrow(
+      PathEscapesProjectError,
+    );
   });
 
   it('leaves safe argv untouched', () => {
@@ -90,7 +99,9 @@ describe('isPathInside boundary semantics', () => {
     expect(isPathInside(ROOT, ROOT)).toBe(true);
     expect(isPathInside(ROOT, outside)).toBe(false);
     // Prefix trick: /proj2 inside /proj must be false, not just startsWith.
-    expect(isPathInside(resolve(process.cwd(), 'proj'), resolve(process.cwd(), 'proj2'))).toBe(false);
+    expect(isPathInside(resolve(process.cwd(), 'proj'), resolve(process.cwd(), 'proj2'))).toBe(
+      false,
+    );
   });
 });
 

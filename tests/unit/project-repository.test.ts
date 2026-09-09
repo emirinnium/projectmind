@@ -86,10 +86,16 @@ describe('ProjectRepository', () => {
     it('returns file count when files exist', () => {
       repo.create('proj', '/proj');
 
-      db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)')
-        .run(1, '/proj/file1.ts', 'file1.ts');
-      db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)')
-        .run(1, '/proj/file2.ts', 'file2.ts');
+      db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)').run(
+        1,
+        '/proj/file1.ts',
+        'file1.ts',
+      );
+      db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)').run(
+        1,
+        '/proj/file2.ts',
+        'file2.ts',
+      );
 
       const projects = repo.list();
 
@@ -101,9 +107,16 @@ describe('ProjectRepository', () => {
   describe('delete', () => {
     it('deletes a project and its files', () => {
       // Create a project with explicit id > 1 to avoid default project protection
-      db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(100, 'to-delete', '/delete');
-      db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)')
-        .run(100, '/delete/file.ts', 'file.ts');
+      db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(
+        100,
+        'to-delete',
+        '/delete',
+      );
+      db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)').run(
+        100,
+        '/delete/file.ts',
+        'file.ts',
+      );
 
       const result = repo.delete(100);
 

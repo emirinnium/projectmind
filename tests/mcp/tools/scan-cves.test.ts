@@ -19,15 +19,15 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-  function mockSpawnSync(mockOutput: string, status = 0) {
-    vi.mocked(spawnSync).mockReturnValue({
-      status,
-      stdout: Buffer.from(mockOutput),
-      stderr: Buffer.from(''),
-      pid: 1,
-      output: [Buffer.from(mockOutput), Buffer.from('')],
-      signal: null,
-    });
+function mockSpawnSync(mockOutput: string, status = 0) {
+  vi.mocked(spawnSync).mockReturnValue({
+    status,
+    stdout: Buffer.from(mockOutput),
+    stderr: Buffer.from(''),
+    pid: 1,
+    output: [Buffer.from(mockOutput), Buffer.from('')],
+    signal: null,
+  });
 }
 
 describe('scan_cves tool', () => {
@@ -59,10 +59,9 @@ describe('scan_cves tool', () => {
     registerScanCvesTool(server, deps);
 
     // The tool is registered; test the inputSchema directly
-    const inputSchema = (server.registerTool as unknown as (
-      name: string,
-      cfg: any,
-      cb: any) => void).mock.calls[0]?.[1]?.inputSchema;
+    const inputSchema = (
+      server.registerTool as unknown as (name: string, cfg: any, cb: any) => void
+    ).mock.calls[0]?.[1]?.inputSchema;
     expect(inputSchema).toBeDefined();
 
     // Verify the schema has fix and level fields
@@ -90,7 +89,7 @@ describe('scan_cves tool', () => {
       metadata: {},
     });
 
-    ;(spawnSync as unknown as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+    (spawnSync as unknown as ReturnType<typeof vi.fn>).mockReturnValueOnce({
       status: 0,
       stdout: mockAuditOutput,
       stderr: Buffer.from(''),
@@ -148,7 +147,7 @@ describe('scan_cves tool', () => {
       metadata: {},
     });
 
-    ;(spawnSync as unknown as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+    (spawnSync as unknown as ReturnType<typeof vi.fn>).mockReturnValueOnce({
       status: 0,
       stdout: mockAuditOutput,
       stderr: Buffer.from(''),

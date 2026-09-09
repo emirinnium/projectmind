@@ -11,6 +11,7 @@ import type {
 import type { KGGraphLike } from './graph-adapter.js';
 import { safeScore } from './scoring.js';
 import { logger } from '../../utils/logger.js';
+import { rankHybrid } from './hybrid-ranking.js';
 
 export interface SemanticSearchCandidate {
   path: string;
@@ -46,6 +47,7 @@ export interface IntentSearchContext {
   ): SemanticSearchCandidate[];
   resolveFilePath(filePath: string): string | undefined;
   getMarkers(intent: IntentType, content: string): number;
+  getHistoryScore(filePath: string): number | undefined;
 }
 
 const RANK_DECAY_FACTOR = 0.15;
@@ -128,13 +130,36 @@ export async function executeIntentSearch(
       candidate.source,
     );
     const snippet = readSnippet(context, candidate.path, intent);
+    const content = readContent(context, candidate.path);
+    const ranked = rankHybrid({
+      query: queryText,
+      filePath: candidate.path,
+      content,
+      vectorScore: score.semantic,
+      graphScore: score.structural,
+      historyScore:
+        kgGraph?.getHistoryScore?.(candidate.path) ?? context.getHistoryScore(candidate.path),
+    });
     results.push({
       filePath: candidate.path,
-      score,
+      score: {
+        semantic: ranked.vector,
+        structural: ranked.graph,
+        intent: ranked.lexical,
+        total: ranked.total,
+      },
       rank: 0,
       snippet: snippet || candidate.path,
       source: candidate.source,
       semanticEvidence: candidate.semanticEvidence,
+      scoreBreakdown: {
+        lexical: ranked.lexical,
+        vector: ranked.vector,
+        graph: ranked.graph,
+        history: ranked.history,
+        freshness: ranked.freshness,
+      },
+      whyThisResult: ranked.whyThisResult,
     });
   }
 
@@ -167,13 +192,35 @@ function addStructuralNeighbors(
       if (seen.has(seed)) continue;
       seen.add(seed);
       const score = context.computeHybridScore(query, seed, kgGraph, 0.4, 'embedding');
+      const content = readContent(context, seed);
+      const ranked = rankHybrid({
+        query: context.resolveQueryText(query),
+        filePath: seed,
+        content,
+        vectorScore: score.semantic,
+        graphScore: score.structural,
+        historyScore: kgGraph.getHistoryScore?.(seed) ?? context.getHistoryScore(seed),
+      });
       results.push({
         filePath: seed,
-        score,
+        score: {
+          semantic: ranked.vector,
+          structural: ranked.graph,
+          intent: ranked.lexical,
+          total: ranked.total,
+        },
         rank: 0,
         snippet: readSnippet(context, seed, undefined) || seed,
         source: 'embedding',
         semanticEvidence: 'structural-heuristic',
+        scoreBreakdown: {
+          lexical: ranked.lexical,
+          vector: ranked.vector,
+          graph: ranked.graph,
+          history: ranked.history,
+          freshness: ranked.freshness,
+        },
+        whyThisResult: ranked.whyThisResult,
       });
     }
   } catch (error) {
@@ -196,6 +243,15 @@ function readSnippet(context: IntentSearchContext, filePath: string, intent?: In
       .slice(start, start + 3)
       .join('\n')
       .substring(0, 200);
+  } catch {
+    return '';
+  }
+}
+
+function readContent(context: IntentSearchContext, filePath: string): string {
+  try {
+    const resolved = context.resolveFilePath(filePath);
+    return resolved ? readFileSync(resolved, 'utf8') : '';
   } catch {
     return '';
   }

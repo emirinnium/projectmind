@@ -37,11 +37,23 @@ describe('MCP runtime trace ingestion', () => {
 
     const db = new DatabaseSync(':memory:');
     db.exec(SCHEMA_SQL);
-    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(1, 'trace-test', root);
+    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(
+      1,
+      'trace-test',
+      root,
+    );
     db.prepare(
       `INSERT INTO files (id, project_id, path, relative_path, language, size_bytes, hash)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(1, 1, join(root, 'runtime.ts'), 'runtime.ts', 'typescript', source.length, stableHash(source));
+    ).run(
+      1,
+      1,
+      join(root, 'runtime.ts'),
+      'runtime.ts',
+      'typescript',
+      source.length,
+      stableHash(source),
+    );
     db.prepare(
       'INSERT INTO functions (id, file_id, name, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)',
     ).run(1, 1, 'start', 1, 1, 1);
@@ -90,7 +102,9 @@ describe('MCP runtime trace ingestion', () => {
       clear: boolean;
     }) => Promise<{ content: Array<{ text: string }> }>;
     const result = await handler({
-      traceData: [{ fromFunctionName: 'start', toFunctionName: 'finish', workloadId: 'smoke', callCount: 2 }],
+      traceData: [
+        { fromFunctionName: 'start', toFunctionName: 'finish', workloadId: 'smoke', callCount: 2 },
+      ],
       clear: false,
     });
     const payload = JSON.parse(result.content[0].text) as {

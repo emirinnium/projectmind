@@ -28,7 +28,9 @@ describe('IntegrityGuard', () => {
 
   function seedFunction(fileId: number, name: string): number {
     const res = getDatabase()
-      .prepare('INSERT INTO functions (file_id, name, signature, start_line, end_line) VALUES (?, ?, ?, 1, 2)')
+      .prepare(
+        'INSERT INTO functions (file_id, name, signature, start_line, end_line) VALUES (?, ?, ?, 1, 2)',
+      )
       .run(fileId, name, `${name}()`);
     return Number(res.lastInsertRowid);
   }
@@ -169,7 +171,7 @@ describe('IntegrityGuard', () => {
   it('repairs stale imports against the importing file directory', () => {
     const importerId = seedFile(
       'src/feat/importer-c.ts',
-      "import { h } from './utils-c/helper';\nimport { i } from './utils2-c';\nexport function use() { return h() + i(); }\n"
+      "import { h } from './utils-c/helper';\nimport { i } from './utils2-c';\nexport function use() { return h() + i(); }\n",
     );
     seedImport(importerId, './utils-c/helper');
     seedImport(importerId, './utils2-c');
@@ -243,7 +245,7 @@ describe('IntegrityGuard', () => {
         'export function caller() { return inner(); }',
         'function inner() { return 3; }',
         '',
-      ].join('\n')
+      ].join('\n'),
     );
     const exportedId = seedFunction(fileId, 'exportedFn');
     const lonelyId = seedFunction(fileId, 'lonely');
@@ -252,7 +254,9 @@ describe('IntegrityGuard', () => {
     seedCall(callerId, innerId); // inner is called -> not an orphan
 
     const violations = guard.checkConsistency();
-    const orphanFns = violations.filter((v) => v.type === 'orphan_node' && v.functionName !== undefined);
+    const orphanFns = violations.filter(
+      (v) => v.type === 'orphan_node' && v.functionName !== undefined,
+    );
 
     expect(orphanFns).toHaveLength(1);
     const v = orphanFns[0];
@@ -338,7 +342,9 @@ describe('IntegrityGuard', () => {
     const repaired = guard.repairStaleNodes(violations);
     expect(repaired).toBeGreaterThanOrEqual(1);
 
-    const row = getDatabase().prepare('SELECT relative_path FROM files WHERE id = ?').get(fileId) as {
+    const row = getDatabase()
+      .prepare('SELECT relative_path FROM files WHERE id = ?')
+      .get(fileId) as {
       relative_path: string;
     };
     expect(row.relative_path).toBe('src/deep/orig-g.ts');

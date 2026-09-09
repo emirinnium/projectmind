@@ -18,14 +18,14 @@ const SRC_DIR = join(PROJECT_ROOT, 'src');
 async function testDatabase(): Promise<void> {
   const dbDir = dirname(TEST_DB);
   if (!existsSync(dbDir)) mkdirSync(dbDir, { recursive: true });
-  
+
   // Retry cleanup to handle Windows file locking
   for (let i = 0; i < 5; i++) {
     try {
       if (existsSync(TEST_DB)) rmSync(TEST_DB);
       break;
     } catch {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
 
@@ -56,15 +56,41 @@ async function testDatabase(): Promise<void> {
   assert(db !== null, 'Database initialized');
 
   console.log('\n=== Test: SQL Schema ===');
-  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
-  assert(tables.some((t) => t.name === 'files'), 'files table exists');
-  assert(tables.some((t) => t.name === 'functions'), 'functions table exists');
-  assert(tables.some((t) => t.name === 'classes'), 'classes table exists');
-  assert(tables.some((t) => t.name === 'patterns'), 'patterns table exists');
-  assert(tables.some((t) => t.name === 'agent_sessions'), 'agent_sessions table exists');
-  assert(tables.some((t) => t.name === 'debt_items'), 'debt_items table exists');
-  assert(tables.some((t) => t.name === 'coherence_decisions'), 'coherence_decisions table exists');
-  assert(tables.some((t) => t.name === 'project_genome'), 'project_genome table exists');
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+    name: string;
+  }[];
+  assert(
+    tables.some((t) => t.name === 'files'),
+    'files table exists',
+  );
+  assert(
+    tables.some((t) => t.name === 'functions'),
+    'functions table exists',
+  );
+  assert(
+    tables.some((t) => t.name === 'classes'),
+    'classes table exists',
+  );
+  assert(
+    tables.some((t) => t.name === 'patterns'),
+    'patterns table exists',
+  );
+  assert(
+    tables.some((t) => t.name === 'agent_sessions'),
+    'agent_sessions table exists',
+  );
+  assert(
+    tables.some((t) => t.name === 'debt_items'),
+    'debt_items table exists',
+  );
+  assert(
+    tables.some((t) => t.name === 'coherence_decisions'),
+    'coherence_decisions table exists',
+  );
+  assert(
+    tables.some((t) => t.name === 'project_genome'),
+    'project_genome table exists',
+  );
 
   console.log('\n=== Test: File Parsing ===');
   const testFile = join(SRC_DIR, 'parser', 'embeddings.ts');
@@ -104,7 +130,10 @@ async function testDatabase(): Promise<void> {
   const sim1 = cosineSimilarity(emb1, emb2);
   const sim2 = cosineSimilarity(emb1, emb3);
   assert(sim1 > 0.5, `Similar texts have high similarity: ${sim1.toFixed(3)}`);
-  assert(sim2 < sim1, `Different texts have lower similarity: ${sim2.toFixed(3)} < ${sim1.toFixed(3)}`);
+  assert(
+    sim2 < sim1,
+    `Different texts have lower similarity: ${sim2.toFixed(3)} < ${sim1.toFixed(3)}`,
+  );
 
   console.log('\n=== Test: Coherence Check (Fast) ===');
   const result = await coherence.checkCoherence({
@@ -114,7 +143,10 @@ async function testDatabase(): Promise<void> {
   });
   assert(result.verdict !== undefined, `Verdict: ${result.verdict}`);
   assert(result.confidence > 0, `Confidence: ${result.confidence}`);
-  assert(result.reasoningTrace.length > 0, `Reasoning trace length: ${result.reasoningTrace.length}`);
+  assert(
+    result.reasoningTrace.length > 0,
+    `Reasoning trace length: ${result.reasoningTrace.length}`,
+  );
   assert(result.responseTimeMs >= 0, `Response time: ${result.responseTimeMs}ms`);
 
   console.log('\n=== Test: Coherence Check (Caching) ===');
@@ -132,7 +164,10 @@ async function testDatabase(): Promise<void> {
   kg.storeMemory(sessionId, 'test-scope', 'key1', JSON.stringify({ value: 'test' }));
   const memories = kg.getMemory('test-scope', 'key1');
   assert(memories.length === 1, 'Memory stored and retrieved');
-  assert(JSON.stringify(memories[0].value) === JSON.stringify({ value: 'test' }), 'Memory value matches');
+  assert(
+    JSON.stringify(memories[0].value) === JSON.stringify({ value: 'test' }),
+    'Memory value matches',
+  );
 
   kg.endAgentSession(sessionId);
   const sessions = kg.getAgentSessions('test-agent');
@@ -142,7 +177,7 @@ async function testDatabase(): Promise<void> {
   // Use Promise.race with timeout to prevent CI hangs
   const genomePromise = debt.computeGenome();
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('computeGenome timeout after 30s')), 30_000)
+    setTimeout(() => reject(new Error('computeGenome timeout after 30s')), 30_000),
   );
   const genome = await Promise.race([genomePromise, timeoutPromise]);
   assert(genome.coherenceScore > 0, `Genome score: ${genome.coherenceScore.toFixed(3)}`);
@@ -161,7 +196,10 @@ async function testDatabase(): Promise<void> {
   assert(Object.keys(scaleReport.languages).length > 0, 'Languages detected');
   assert(scaleReport.modules.length > 0, `Modules found: ${scaleReport.modules.length}`);
   assert(scaleReport.topHotspots.length > 0, `Hotspots found: ${scaleReport.topHotspots.length}`);
-  assert(scaleReport.uncoveredFiles.length > 0, `Uncovered files: ${scaleReport.uncoveredFiles.length}`);
+  assert(
+    scaleReport.uncoveredFiles.length > 0,
+    `Uncovered files: ${scaleReport.uncoveredFiles.length}`,
+  );
 
   const agentProfiles = scale.getAgentProfiles();
   assert(agentProfiles.length > 0, `Agent profiles: ${agentProfiles.length}`);
@@ -190,7 +228,10 @@ async function testDatabase(): Promise<void> {
 
   const projects = kg.listProjects();
   assert(projects.length >= 1, `Projects listed: ${projects.length}`);
-  assert(projects.some((p) => p.name === 'test-project'), 'New project in list');
+  assert(
+    projects.some((p) => p.name === 'test-project'),
+    'New project in list',
+  );
 
   const switchResult = kg.switchProject(project.id);
   assert(switchResult.success, 'Switched to new project');
@@ -201,14 +242,18 @@ async function testDatabase(): Promise<void> {
 
   console.log('\n=== Test: Dynamic Tracing ===');
   // First insert functions to reference in dynamic calls
-  db.prepare('INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(1, 'caller', 'caller()', 1, 3, 1);
-  db.prepare('INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(1, 'callee', 'callee()', 5, 7, 1);
-  db.prepare('INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(1, 'caller2', 'caller2()', 9, 11, 1);
-  db.prepare('INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(1, 'callee2', 'callee2()', 13, 15, 1);
+  db.prepare(
+    'INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(1, 'caller', 'caller()', 1, 3, 1);
+  db.prepare(
+    'INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(1, 'callee', 'callee()', 5, 7, 1);
+  db.prepare(
+    'INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(1, 'caller2', 'caller2()', 9, 11, 1);
+  db.prepare(
+    'INSERT INTO functions (file_id, name, signature, start_line, end_line, complexity) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(1, 'callee2', 'callee2()', 13, 15, 1);
 
   kg.ingestDynamicCalls([
     {
@@ -278,7 +323,7 @@ async function testDatabase(): Promise<void> {
       if (existsSync(TEST_DB + '-wal')) rmSync(TEST_DB + '-wal');
       break;
     } catch {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
 

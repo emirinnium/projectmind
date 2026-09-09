@@ -2,7 +2,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { StructuralSearcher, type StructuralSearchOptions, type StructuralReplaceOptions } from '../../src/parser/structural-search.js';
+import {
+  StructuralSearcher,
+  type StructuralSearchOptions,
+  type StructuralReplaceOptions,
+} from '../../src/parser/structural-search.js';
 
 const searcher = new StructuralSearcher();
 
@@ -43,10 +47,7 @@ const NESTED_CONTENT = [
 ].join('\n');
 
 const IDENTIFIER_FILE = join(FIXTURE_DIR, 'identifiers.ts');
-const IDENTIFIER_CONTENT = [
-  'const oldValue = 1;',
-  'const result = oldValue + 1;',
-].join('\n');
+const IDENTIFIER_CONTENT = ['const oldValue = 1;', 'const result = oldValue + 1;'].join('\n');
 
 beforeAll(() => {
   mkdirSync(FIXTURE_DIR, { recursive: true });
@@ -75,37 +76,30 @@ describe('StructuralSearcher - search', () => {
   });
 
   it('finds functions by name pattern', () => {
-    const matches = searcher.search(
-      { nodeKind: 'FunctionDeclaration', namePattern: '^add' },
-      [TS_FILE],
-    );
+    const matches = searcher.search({ nodeKind: 'FunctionDeclaration', namePattern: '^add' }, [
+      TS_FILE,
+    ]);
     expect(matches.length).toBe(1);
     expect(matches[0].text).toContain('addUser');
   });
 
   it('finds nodes containing specific text', () => {
-    const matches = searcher.search(
-      { containsText: 'console.log' },
-      [TS_FILE],
-    );
+    const matches = searcher.search({ containsText: 'console.log' }, [TS_FILE]);
     expect(matches.length).toBeGreaterThanOrEqual(1);
     expect(matches.some((m) => m.text.includes('console.log'))).toBe(true);
   });
 
   it('finds multiple matches across nodes', () => {
-    const matches = searcher.search(
-      { nodeKind: 'FunctionDeclaration' },
-      [TS_FILE, NESTED_FILE],
-    );
+    const matches = searcher.search({ nodeKind: 'FunctionDeclaration' }, [TS_FILE, NESTED_FILE]);
     // 3 in TS_FILE (fetchUser, logError, addUser) + 2 in NESTED_FILE (outer, inner) = 5
     expect(matches.length).toBeGreaterThanOrEqual(4);
   });
 
   it('respects maxResults limit', () => {
-    const matches = searcher.search(
-      { nodeKind: 'FunctionDeclaration', maxResults: 2 },
-      [TS_FILE, NESTED_FILE],
-    );
+    const matches = searcher.search({ nodeKind: 'FunctionDeclaration', maxResults: 2 }, [
+      TS_FILE,
+      NESTED_FILE,
+    ]);
     expect(matches.length).toBeLessThanOrEqual(2);
   });
 
@@ -169,11 +163,9 @@ describe('StructuralSearcher - replace (dry-run)', () => {
 describe('StructuralSearcher - replace (AST-based)', () => {
   // Use a dedicated file for write tests so we don't interfere with other tests.
   const WRITE_FILE = join(FIXTURE_DIR, 'write-test.ts');
-  const WRITE_CONTENT = [
-    'function greet(name: string) {',
-    '  return `Hello, ${name}!`;',
-    '}',
-  ].join('\n');
+  const WRITE_CONTENT = ['function greet(name: string) {', '  return `Hello, ${name}!`;', '}'].join(
+    '\n',
+  );
 
   beforeAll(() => {
     writeFileSync(WRITE_FILE, WRITE_CONTENT, 'utf-8');
@@ -201,15 +193,19 @@ describe('StructuralSearcher - replace (AST-based)', () => {
 
   it('preserves surrounding code during replacement', () => {
     // Reset the file
-    writeFileSync(WRITE_FILE, [
-      'import { helper } from "./helper.js";',
-      '',
-      'function greet(name: string) {',
-      '  return `Hello, ${name}!`;',
-      '}',
-      '',
-      'export default greet;',
-    ].join('\n'), 'utf-8');
+    writeFileSync(
+      WRITE_FILE,
+      [
+        'import { helper } from "./helper.js";',
+        '',
+        'function greet(name: string) {',
+        '  return `Hello, ${name}!`;',
+        '}',
+        '',
+        'export default greet;',
+      ].join('\n'),
+      'utf-8',
+    );
 
     const result = searcher.replace(
       {
@@ -234,10 +230,11 @@ describe('StructuralSearcher - replace (AST-based)', () => {
 
   it('replaces expression nodes correctly', () => {
     const EXPR_FILE = join(FIXTURE_DIR, 'expr-test.ts');
-    writeFileSync(EXPR_FILE, [
-      'const x = console.log("hello");',
-      'const y = 42;',
-    ].join('\n'), 'utf-8');
+    writeFileSync(
+      EXPR_FILE,
+      ['const x = console.log("hello");', 'const y = 42;'].join('\n'),
+      'utf-8',
+    );
 
     const result = searcher.replace(
       {
@@ -258,11 +255,15 @@ describe('StructuralSearcher - replace (AST-based)', () => {
 
   it('handles multiple matches in one file', () => {
     const MULTI_FILE = join(FIXTURE_DIR, 'multi-test.ts');
-    writeFileSync(MULTI_FILE, [
-      'function alpha() { return 1; }',
-      'function beta() { return 2; }',
-      'function gamma() { return 3; }',
-    ].join('\n'), 'utf-8');
+    writeFileSync(
+      MULTI_FILE,
+      [
+        'function alpha() { return 1; }',
+        'function beta() { return 2; }',
+        'function gamma() { return 3; }',
+      ].join('\n'),
+      'utf-8',
+    );
 
     const result = searcher.replace(
       {
@@ -320,9 +321,7 @@ describe('StructuralSearcher - replace (AST-based)', () => {
 describe('StructuralSearcher - AST replacement parsing edge cases', () => {
   it('handles identifier replacement for name nodes', () => {
     const ID_FILE = join(FIXTURE_DIR, 'rename-test.ts');
-    writeFileSync(ID_FILE, [
-      'function oldName() { return 1; }',
-    ].join('\n'), 'utf-8');
+    writeFileSync(ID_FILE, ['function oldName() { return 1; }'].join('\n'), 'utf-8');
 
     // Replace the function declaration with a new one — should work
     const result = searcher.replace(
@@ -343,9 +342,7 @@ describe('StructuralSearcher - AST replacement parsing edge cases', () => {
 
   it('gracefully handles invalid replacement syntax', () => {
     const ERR_FILE = join(FIXTURE_DIR, 'error-test.ts');
-    writeFileSync(ERR_FILE, [
-      'function target() {}',
-    ].join('\n'), 'utf-8');
+    writeFileSync(ERR_FILE, ['function target() {}'].join('\n'), 'utf-8');
 
     const result = searcher.replace(
       {

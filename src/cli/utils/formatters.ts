@@ -1,5 +1,6 @@
 import type { DebtItemDTO } from '../../types/mcp-types.js';
 import { logger } from '@/utils/logger.js';
+import { toActionableError } from '@/utils/actionable-error.js';
 
 export function formatGenomeScore(score: number): string {
   const pct = (score * 100).toFixed(1);
@@ -41,8 +42,9 @@ export function formatDebtReport(report: {
 }
 
 export function handleCliError(error: unknown, context?: string): void {
-  const message = error instanceof Error ? error.message : String(error);
-  logger.error(`${context ? `${context}: ` : ''}${message}`);
+  const problem = toActionableError(error);
+  logger.error(`${context ? `${context}: ` : ''}[${problem.code}] ${problem.summary}`);
+  for (const nextAction of problem.nextActions) logger.error(`Next action: ${nextAction}`);
   if (error instanceof Error && error.stack) {
     logger.debug(error.stack);
   }

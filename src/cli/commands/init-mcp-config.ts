@@ -1,11 +1,22 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { reportSuppressedError } from '@/utils/errors.js';
+import { writeFileAtomically } from '@/utils/atomic-write.js';
 
 export type JsonValue =
   string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
 export type AgentKind = 'json-mcp' | 'opencode' | 'portable' | 'kilo' | 'codex';
+
+export interface McpConfigVerification {
+  ok: boolean;
+  path: string;
+  format: AgentKind;
+  projectmindEntry: boolean;
+  duplicateProjectMindEntries: number;
+  checks: Array<{ name: string; status: 'pass' | 'warn' | 'fail'; detail: string }>;
+  nextActions: string[];
+}
 
 const INSTRUCTIONS_START = '<!-- projectmind:mcp-instructions:start -->';
 const INSTRUCTIONS_END = '<!-- projectmind:mcp-instructions:end -->';
@@ -222,7 +233,7 @@ export function writeInstructions(path: string, agent: string, force: boolean): 
   const merged = mergeProjectMindInstructions(current, agent, force);
   if (!merged.changed) return false;
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, merged.content, 'utf8');
+  writeFileAtomically(path, merged.content);
   return true;
 }
 
@@ -272,7 +283,7 @@ export function writeMcpConfig(
       force,
     );
     if (!merged.changed) return false;
-    writeFileSync(path, merged.content, 'utf8');
+    writeFileAtomically(path, merged.content);
     return true;
   }
 
@@ -287,6 +298,175 @@ export function writeMcpConfig(
   // Keep JSONC comments/formatting untouched when the semantic configuration
   // is already current. A real change is written as valid JSON.
   if (existing && JSON.stringify(existing) === JSON.stringify(merged)) return false;
-  writeFileSync(path, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+  writeFileAtomically(path, `${JSON.stringify(merged, null, 2)}\n`);
   return true;
+}
+
+/** Read-only verification of the generated entry; never mutates user config. */
+export function verifyMcpConfig(
+  path: string,
+  root: string,
+  kind: AgentKind,
+): McpConfigVerification {
+  const checks: McpConfigVerification['checks'] = [];
+  const add = (name: string, status: 'pass' | 'warn' | 'fail', detail: string): void => {
+    checks.push({ name, status, detail });
+  };
+  if (!existsSync(path)) {
+    add(
+      'config-file',
+      'fail',
+      'Configuration file does not exist. Run mcp-init without --verify first.',
+    );
+    return {
+      ok: false,
+      path,
+      format: kind,
+      projectmindEntry: false,
+      duplicateProjectMindEntries: 0,
+      checks,
+      nextActions: [`Run pm mcp-init <agent> --force to create ${path}.`],
+    };
+  }
+
+  if (kind === 'codex') {
+    const content = readFileSync(path, 'utf8');
+    const occurrences = (content.match(/\[mcp_servers\.projectmind\]/g) ?? []).length;
+    const entry =
+      occurrences === 1 && content.includes('command = "npx"') && content.includes(' mcp"');
+    add(
+      'config-syntax',
+      content.includes('[mcp_servers.projectmind]') ? 'pass' : 'fail',
+      'TOML ProjectMind table marker inspected.',
+    );
+    add(
+      'projectmind-entry',
+      entry ? 'pass' : 'fail',
+      entry
+        ? 'ProjectMind npx/mcp entry is present.'
+        : 'ProjectMind command or MCP argument is missing.',
+    );
+    add(
+      'project-root',
+      content.includes(`PROJECTMIND_ROOT = ${JSON.stringify(resolve(root))}`) ? 'pass' : 'warn',
+      'PROJECTMIND_ROOT should point to the active project root.',
+    );
+    return {
+      ok: checks.every((check) => check.status !== 'fail'),
+      path,
+      format: kind,
+      projectmindEntry: entry,
+      duplicateProjectMindEntries: Math.max(0, occurrences - 1),
+      checks,
+      nextActions: checks.some((check) => check.status === 'fail')
+        ? ['Run with --force to replace only the marked ProjectMind block.']
+        : [],
+    };
+  }
+
+  let config: JsonObject;
+  try {
+    config = readJson(path);
+    add('config-syntax', 'pass', 'JSON/JSONC parsed successfully.');
+  } catch (error) {
+    add('config-syntax', 'fail', error instanceof Error ? error.message : String(error));
+    return {
+      ok: false,
+      path,
+      format: kind,
+      projectmindEntry: false,
+      duplicateProjectMindEntries: 0,
+      checks,
+      nextActions: ['Fix the JSON/JSONC syntax and rerun --verify.'],
+    };
+  }
+
+  let entry: JsonValue | undefined;
+  let duplicateCount = 0;
+  if (kind === 'opencode') {
+    const mcp = config.mcp;
+    const servers =
+      mcp && typeof mcp === 'object' && !Array.isArray(mcp)
+        ? (mcp as JsonObject).servers
+        : undefined;
+    entry =
+      servers && typeof servers === 'object' && !Array.isArray(servers)
+        ? (servers as JsonObject).projectmind
+        : undefined;
+  } else if (kind === 'kilo') {
+    const mcp = config.mcp;
+    entry =
+      mcp && typeof mcp === 'object' && !Array.isArray(mcp)
+        ? (mcp as JsonObject).projectmind
+        : undefined;
+  } else {
+    const servers = config.mcpServers;
+    entry =
+      servers && typeof servers === 'object' && !Array.isArray(servers)
+        ? (servers as JsonObject).projectmind
+        : undefined;
+  }
+  // Count only structural `projectmind:` keys in the raw config. Counting
+  // package names or PROJECTMIND_ROOT values made a valid single entry look
+  // duplicated, while JSON.parse alone would silently collapse duplicate
+  // object keys and hide the actual config defect.
+  const rawConfig = readFileSync(path, 'utf8');
+  const structuralEntries = rawConfig.match(/["']projectmind["']\s*:/g) ?? [];
+  duplicateCount = Math.max(0, structuralEntries.length - 1);
+  const serialized = JSON.stringify(config);
+  const entryRecord =
+    entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as JsonObject) : undefined;
+  const command = entryRecord?.command;
+  const args = entryRecord?.args;
+  const commandParts = Array.isArray(command) ? command : Array.isArray(args) ? args : [];
+  const commandOk = command === 'npx' || commandParts[0] === 'npx';
+  const argsOk =
+    commandParts.some(
+      (arg) => typeof arg === 'string' && arg.includes('@emirhanturker/projectmind'),
+    ) && commandParts.some((arg) => arg === 'mcp');
+  const projectRootOk = serialized.includes(resolve(root));
+  add(
+    'projectmind-entry',
+    entryRecord ? 'pass' : 'fail',
+    entryRecord
+      ? 'ProjectMind entry exists at the expected client location.'
+      : 'No ProjectMind entry found at the expected client location.',
+  );
+  add(
+    'command',
+    commandOk ? 'pass' : 'fail',
+    commandOk ? 'Entry uses npx without a shell wrapper.' : 'Entry command should be npx.',
+  );
+  add(
+    'mcp-argument',
+    argsOk ? 'pass' : 'fail',
+    argsOk
+      ? 'Entry launches the MCP subcommand and package.'
+      : 'Entry must contain the ProjectMind package and mcp argument.',
+  );
+  add(
+    'project-root',
+    projectRootOk ? 'pass' : 'warn',
+    projectRootOk
+      ? 'Project root is pinned.'
+      : 'PROJECTMIND_ROOT/cwd is not visibly pinned to the active project root.',
+  );
+  add(
+    'duplicate-entry',
+    duplicateCount === 0 ? 'pass' : 'warn',
+    duplicateCount === 0
+      ? 'No duplicate ProjectMind server blocks detected.'
+      : `${duplicateCount} possible duplicate ProjectMind mentions detected; inspect before --force.`,
+  );
+  return {
+    ok: checks.every((check) => check.status !== 'fail'),
+    path,
+    format: kind,
+    projectmindEntry: !!entryRecord,
+    duplicateProjectMindEntries: duplicateCount,
+    checks,
+    nextActions: checks.some((check) => check.status === 'fail')
+      ? ['Run with --force to update only ProjectMind configuration.']
+      : [],
+  };
 }

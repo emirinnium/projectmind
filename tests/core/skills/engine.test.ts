@@ -13,7 +13,13 @@ import {
   loadAgentProfile,
   adaptiveCoherenceCheck,
 } from '../../../src/core/skills/engine.js';
-import { SKILL_CATALOG, SkillDefinition, SkillEvidence, ProficiencyEvidence, SkillGap } from '../../../src/core/skills/skill-catalog.js';
+import {
+  SKILL_CATALOG,
+  SkillDefinition,
+  SkillEvidence,
+  ProficiencyEvidence,
+  SkillGap,
+} from '../../../src/core/skills/skill-catalog.js';
 import { DatabaseSync } from 'node:sqlite';
 import { SCHEMA_SQL } from '../../../src/storage/schema.js';
 import { AgentFingerprintExtractor } from '../../../src/core/skills/fingerprint.js';
@@ -73,10 +79,12 @@ describe('Skill Engine', () => {
     });
 
     it('limits evidence files to MAX_EVIDENCE_FILES per skill', () => {
-      const files = Array(20).fill(null).map((_, i) => ({
-        relativePath: `src/utils/file${i}.ts`,
-        language: 'typescript',
-      }));
+      const files = Array(20)
+        .fill(null)
+        .map((_, i) => ({
+          relativePath: `src/utils/file${i}.ts`,
+          language: 'typescript',
+        }));
 
       const evidence = extractCodebaseSkills([{ files }]);
 
@@ -89,14 +97,10 @@ describe('Skill Engine', () => {
     it('does not duplicate files in evidence', () => {
       const modules = [
         {
-          files: [
-            { relativePath: 'src/utils/helper.ts', language: 'typescript' },
-          ],
+          files: [{ relativePath: 'src/utils/helper.ts', language: 'typescript' }],
         },
         {
-          files: [
-            { relativePath: 'src/utils/helper.ts', language: 'typescript' },
-          ],
+          files: [{ relativePath: 'src/utils/helper.ts', language: 'typescript' }],
         },
       ];
 
@@ -150,9 +154,7 @@ describe('Skill Engine', () => {
     it('normalizes Windows-style paths', () => {
       const modules = [
         {
-          files: [
-            { relativePath: 'src\\utils\\helper.ts', language: 'typescript' },
-          ],
+          files: [{ relativePath: 'src\\utils\\helper.ts', language: 'typescript' }],
         },
       ];
 
@@ -194,9 +196,7 @@ describe('Skill Engine', () => {
     it('preserves skill metadata in evidence', () => {
       const modules = [
         {
-          files: [
-            { relativePath: 'src/utils/helper.ts', language: 'typescript' },
-          ],
+          files: [{ relativePath: 'src/utils/helper.ts', language: 'typescript' }],
         },
       ];
 
@@ -257,8 +257,14 @@ describe('Skill Engine', () => {
       const evidence: ProficiencyEvidence = {
         sessionCount: 100,
         touchedPaths: [
-          'src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts',
-          'src/e.ts', 'src/f.ts', 'src/g.ts', 'src/h.ts',
+          'src/a.ts',
+          'src/b.ts',
+          'src/c.ts',
+          'src/d.ts',
+          'src/e.ts',
+          'src/f.ts',
+          'src/g.ts',
+          'src/h.ts',
         ],
         decisionsText: 'typescript tsx types',
         asyncPreference: 1,
@@ -702,20 +708,22 @@ describe('Skill Engine', () => {
     });
 
     it('limits gaps to top 8', () => {
-      const gaps: SkillGap[] = Array(15).fill(null).map((_, i) => ({
-        skill: `skill-${i}`,
-        label: `Skill ${i}`,
-        description: `Description ${i}`,
-        whyItHelps: `Why ${i}`,
-        currentLevel: 0,
-        targetLevel: 0.9,
-        gap: 0.9 - i * 0.01,
-        priority: 'high',
-        learningResources: ['Resource'],
-        estimatedHours: 18,
-        relatedFiles: [],
-        suggestedCommands: ['pm test'],
-      }));
+      const gaps: SkillGap[] = Array(15)
+        .fill(null)
+        .map((_, i) => ({
+          skill: `skill-${i}`,
+          label: `Skill ${i}`,
+          description: `Description ${i}`,
+          whyItHelps: `Why ${i}`,
+          currentLevel: 0,
+          targetLevel: 0.9,
+          gap: 0.9 - i * 0.01,
+          priority: 'high',
+          learningResources: ['Resource'],
+          estimatedHours: 18,
+          relatedFiles: [],
+          suggestedCommands: ['pm test'],
+        }));
 
       const doc = generateSkillDoc({
         agentName: 'agent-1',
@@ -781,7 +789,9 @@ describe('Skill Engine', () => {
     });
 
     it('limits touched files to 12', () => {
-      const paths = Array(20).fill(null).map((_, i) => `src/file${i}.ts`);
+      const paths = Array(20)
+        .fill(null)
+        .map((_, i) => `src/file${i}.ts`);
 
       const doc = generateSkillDoc({
         agentName: 'agent-1',

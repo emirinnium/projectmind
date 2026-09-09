@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { resolve } from 'node:path';
 import { trackAgentAccess } from './types.js';
+import { resolveProjectRoot } from '@/core/project/roots.js';
 
 export function registerProjectTools(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -70,7 +71,11 @@ export function registerProjectTools(server: McpServer, deps: McpDependencies): 
         if (deps.agentName) {
           trackAgentAccess(deps.kg, deps.agentName, 'create-project');
         }
-        const project = deps.kg.createProject(args.name, args.rootPath, args.description);
+        const project = deps.kg.createProject(
+          args.name,
+          resolveProjectRoot(args.rootPath),
+          args.description,
+        );
         return {
           content: [
             {

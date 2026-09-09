@@ -13,15 +13,15 @@ describe('PR preview input boundaries', () => {
     },
   );
 
-  it.each(['--output=outside.txt', ' main', 'main ', 'main\nother', ''])
-    ('rejects option-looking or control-containing revision: %j', (revision) => {
+  it.each(['--output=outside.txt', ' main', 'main ', 'main\nother', ''])(
+    'rejects option-looking or control-containing revision: %j',
+    (revision) => {
       expect(() => validateGitRevision(revision, 'head')).toThrow(/Invalid head Git revision/);
-    });
+    },
+  );
 
   it('rejects an excessively long revision before Git is invoked', () => {
-    expect(() => validateGitRevision('a'.repeat(257), 'base')).toThrow(
-      /Invalid base Git revision/,
-    );
+    expect(() => validateGitRevision('a'.repeat(257), 'base')).toThrow(/Invalid base Git revision/);
   });
 
   it('emits SARIF 2.1.0 with actionable locations and stable fingerprints', () => {

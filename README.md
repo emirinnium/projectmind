@@ -47,6 +47,13 @@ pm graph snapshot               # Save a reproducible graph snapshot
 pm proof verify --format json   # Verify source hashes before trusting analysis
 pm proof claim "claim" --files src/index.ts # Keep claim evidence explicit
 pm pr-preview --format sarif    # Export CI/code-scanning review findings
+pm review --policy .projectmind/review-policy.json # Deterministic policy + reflected findings
+pm range src/index.ts --start 0 --end 512 --format json # Byte-bounded source retrieval
+pm benchmark prepare            # Create a metadata-first golden fixture manifest
+pm benchmark search -q "auth token" # Measure deterministic lexical retrieval
+pm benchmark review --base main --head HEAD # Measure review coverage/evidence
+pm doctor install               # Diagnose Node/npm/config/provider installation
+pm mcp-init codex --verify      # Verify MCP entry without changing config
 pm health --json               # Machine-readable health summary
 pm audit --all                 # Production-code security audit
 pm audit --all --include-tests # Include test/spec fixtures explicitly
@@ -85,7 +92,21 @@ The generated server uses the published package through `npx`, pins
 Re-running the command is idempotent; `--force` refreshes only a generated
 ProjectMind block and never replaces a user's complete instruction file.
 See [`docs/MCP.md`](docs/MCP.md) for client-specific details and the complete
-66-dedicated-tool MCP surface (plus two resource-subscription tools).
+core MCP surface (plus resource-subscription tools). Use `pm mcp --profile
+core|review|security|maintenance|full` to control discovery breadth.
+
+## Deterministic review and retrieval
+
+Review output is generated from a versioned `.projectmind/review-policy.json`
+when present. Changed files are sorted and split into source-hashed bundles;
+line positions and rule evidence are independently reflected before SARIF or
+PR output is published. `get_source_range`/`pm range` returns only a bounded
+UTF-8 byte range with line coordinates and a source hash, which helps agents
+reduce context payload without treating truncation as complete coverage. See
+[`docs/BENCHMARK.md`](docs/BENCHMARK.md) and
+[`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md). Optional graph/vector
+adapter boundaries are documented in [`docs/BACKENDS.md`](docs/BACKENDS.md);
+SQLite remains the default and no remote service is required.
 
 ## Project boundary and configuration
 

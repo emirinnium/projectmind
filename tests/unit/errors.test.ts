@@ -18,7 +18,9 @@ describe('Errors - tryCatch', () => {
   });
 
   it('returns error result for throwing functions', () => {
-    const result = tryCatch(() => { throw new Error('test error'); });
+    const result = tryCatch(() => {
+      throw new Error('test error');
+    });
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe('test error');
@@ -26,7 +28,9 @@ describe('Errors - tryCatch', () => {
   });
 
   it('handles non-Error throws', () => {
-    const result = tryCatch(() => { throw 'string error'; });
+    const result = tryCatch(() => {
+      throw 'string error';
+    });
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe('string error');
@@ -44,7 +48,9 @@ describe('Errors - tryCatchAsync', () => {
   });
 
   it('returns error for rejected promises', async () => {
-    const result = await tryCatchAsync(async () => { throw new Error('async error'); });
+    const result = await tryCatchAsync(async () => {
+      throw new Error('async error');
+    });
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.message).toBe('async error');
@@ -56,7 +62,9 @@ describe('Errors - reportSuppressedError', () => {
   it('logs normalized errors without throwing', () => {
     const debug = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
 
-    expect(() => reportSuppressedError(new Error('optional failure'), 'version lookup')).not.toThrow();
+    expect(() =>
+      reportSuppressedError(new Error('optional failure'), 'version lookup'),
+    ).not.toThrow();
     expect(() => reportSuppressedError('string failure', 'rollback')).not.toThrow();
     expect(debug).toHaveBeenNthCalledWith(1, 'version lookup: optional failure');
     expect(debug).toHaveBeenNthCalledWith(2, 'rollback: string failure');

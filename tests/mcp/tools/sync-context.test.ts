@@ -12,9 +12,9 @@ interface ServerToolRegistry {
   _registeredTools: Record<string, RegisteredTool>;
 }
 
-function payloadFrom(
-  result: { content: Array<{ type: string; text: string }> },
-): Record<string, unknown> {
+function payloadFrom(result: {
+  content: Array<{ type: string; text: string }>;
+}): Record<string, unknown> {
   return JSON.parse(result.content[0]?.text ?? '{}') as Record<string, unknown>;
 }
 

@@ -58,6 +58,10 @@ import { registerFindSymbolReferencesTool } from '../symbol-refs.js';
 import { registerFindSymbolDefinitionTool } from '../symbol-def.js';
 import { registerSuggestNextFilesTool } from '../smart-context.js';
 import { registerRecommendSkillsTool } from '../skill-recommend.js';
+import { registerReviewProjectTool } from '../review.js';
+import { registerSourceRangeTool } from '../source-range.js';
+import { registerInvocationMetricsTool } from '../metrics.js';
+import { registerCanonicalExampleTool } from '../canonical-example.js';
 import { annotateToolRegistration, shouldRegisterParityTools } from '../guard.js';
 import { logger } from '../../../utils/logger.js';
 
@@ -181,7 +185,7 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   registerCliBridgeTool(server, deps);
 
   // Auto-generated 1:1 CLI-parity tools (pm_<command>[_<sub>]).
-  // Registered when PROJECTMIND_TOOLS=all. Default is `core` (~66 dedicated tools)
+  // Registered when PROJECTMIND_TOOLS=all. Default is `core` (dedicated tools)
   // for clients with a small active-tool budget (e.g. Cursor).
   if (shouldRegisterParityTools()) {
     const parityCount = await registerCliParityTools(server, deps);
@@ -202,4 +206,8 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   // before trusting any analysis result.
   registerProveClaimTool(server, deps);
   registerVerifyFreshnessTool(server, deps);
+  registerSourceRangeTool(server, deps);
+  registerInvocationMetricsTool(server, deps);
+  registerReviewProjectTool(server, deps);
+  registerCanonicalExampleTool(server, deps);
 }

@@ -29,7 +29,7 @@ async function seedProject(): Promise<string> {
       compilerOptions: { target: 'ES2022', module: 'commonjs', strict: true },
       include: ['src/**/*.ts'],
     }),
-    'utf-8'
+    'utf-8',
   );
   await writeFile(
     join(root, 'src', 'counter.ts'),
@@ -41,7 +41,7 @@ async function seedProject(): Promise<string> {
       '}',
       '',
     ].join('\n'),
-    'utf-8'
+    'utf-8',
   );
   return root;
 }
@@ -107,7 +107,7 @@ describe('find_symbol_references (findSymbolReferencesForTool)', () => {
       findSymbolReferencesForTool(makeDeps(root), {
         file: 'src/counter.ts',
         symbol: 'doesNotExist',
-      })
+      }),
     ).toThrow(/not found as a whole word/i);
   });
 
@@ -121,7 +121,7 @@ describe('find_symbol_references (findSymbolReferencesForTool)', () => {
       findSymbolReferencesForTool(makeDeps(root), {
         file: 'src/counter.ts',
         symbol: 'counter',
-      })
+      }),
     ).toThrow(/no usable tsconfig/i);
   });
 
@@ -133,7 +133,7 @@ describe('find_symbol_references (findSymbolReferencesForTool)', () => {
       findSymbolReferencesForTool(makeDeps(root), {
         file: '../outside.ts',
         symbol: 'counter',
-      })
+      }),
     ).toThrow(/escapes project root/i);
   });
 });

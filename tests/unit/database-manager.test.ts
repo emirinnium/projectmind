@@ -24,7 +24,9 @@ describe('DatabaseManager', () => {
       manager.init();
 
       // In-memory databases may not support WAL, but foreign_keys should be ON
-      const fkResult = manager.getDb().prepare('PRAGMA foreign_keys').get() as { foreign_keys: number };
+      const fkResult = manager.getDb().prepare('PRAGMA foreign_keys').get() as {
+        foreign_keys: number;
+      };
       expect(fkResult.foreign_keys).toBe(1);
     });
 
@@ -32,9 +34,10 @@ describe('DatabaseManager', () => {
       manager = new DatabaseManager();
       manager.init();
 
-      const tables = manager.getDb().prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='files'"
-      ).get();
+      const tables = manager
+        .getDb()
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='files'")
+        .get();
       expect(tables).toBeDefined();
     });
 
@@ -78,10 +81,15 @@ describe('DatabaseManager', () => {
       manager.init();
 
       manager.runInTransaction(() => {
-        manager.getDb().prepare("INSERT INTO projects (name, root_path) VALUES (?, ?)").run('test', '/test');
+        manager
+          .getDb()
+          .prepare('INSERT INTO projects (name, root_path) VALUES (?, ?)')
+          .run('test', '/test');
       });
 
-      const row = manager.getDb().prepare('SELECT * FROM projects WHERE name = ?').get('test') as { name: string };
+      const row = manager.getDb().prepare('SELECT * FROM projects WHERE name = ?').get('test') as {
+        name: string;
+      };
       expect(row.name).toBe('test');
     });
 
@@ -91,7 +99,10 @@ describe('DatabaseManager', () => {
 
       expect(() => {
         manager.runInTransaction(() => {
-          manager.getDb().prepare("INSERT INTO projects (name, root_path) VALUES (?, ?)").run('test', '/test');
+          manager
+            .getDb()
+            .prepare('INSERT INTO projects (name, root_path) VALUES (?, ?)')
+            .run('test', '/test');
           throw new Error('Intentional error');
         });
       }).toThrow('Intentional error');
@@ -105,15 +116,27 @@ describe('DatabaseManager', () => {
       manager.init();
 
       manager.runInTransaction(() => {
-        manager.getDb().prepare("INSERT INTO projects (name, root_path) VALUES (?, ?)").run('outer', '/outer');
+        manager
+          .getDb()
+          .prepare('INSERT INTO projects (name, root_path) VALUES (?, ?)')
+          .run('outer', '/outer');
 
         manager.runInTransaction(() => {
-          manager.getDb().prepare("INSERT INTO projects (name, root_path) VALUES (?, ?)").run('inner', '/inner');
+          manager
+            .getDb()
+            .prepare('INSERT INTO projects (name, root_path) VALUES (?, ?)')
+            .run('inner', '/inner');
         });
       });
 
-      const outer = manager.getDb().prepare('SELECT * FROM projects WHERE name = ?').get('outer') as { name: string };
-      const inner = manager.getDb().prepare('SELECT * FROM projects WHERE name = ?').get('inner') as { name: string };
+      const outer = manager
+        .getDb()
+        .prepare('SELECT * FROM projects WHERE name = ?')
+        .get('outer') as { name: string };
+      const inner = manager
+        .getDb()
+        .prepare('SELECT * FROM projects WHERE name = ?')
+        .get('inner') as { name: string };
       expect(outer.name).toBe('outer');
       expect(inner.name).toBe('inner');
     });

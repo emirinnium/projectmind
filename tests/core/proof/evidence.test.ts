@@ -14,7 +14,9 @@ import {
 
 const temporaryDirectories: string[] = [];
 
-function fakeGraph(files: Array<{ path: string; relativePath: string; hash: string; lastScanned: string }>) {
+function fakeGraph(
+  files: Array<{ path: string; relativePath: string; hash: string; lastScanned: string }>,
+) {
   return {
     getFileByPath: (path: string) =>
       files.find((file) => file.path === path || file.relativePath === path) ?? null,
@@ -45,12 +47,14 @@ describe('evidence and freshness verification', () => {
       await writeFile(absolutePath, 'export const answer = 42;\n', 'utf8');
     });
     const content = 'export const answer = 42;\n';
-    const graph = fakeGraph([{
-      path: absolutePath,
-      relativePath,
-      hash: stableHash(content),
-      lastScanned: '2026-09-08 12:00:00',
-    }]);
+    const graph = fakeGraph([
+      {
+        path: absolutePath,
+        relativePath,
+        hash: stableHash(content),
+        lastScanned: '2026-09-08 12:00:00',
+      },
+    ]);
 
     const result = await verifyFileFreshness(graph, root, relativePath);
     expect(result.status).toBe('fresh');
@@ -64,12 +68,14 @@ describe('evidence and freshness verification', () => {
     const unindexed = join(root, 'unindexed.ts');
     await writeFile(existing, 'export const value = 1;\n', 'utf8');
     await writeFile(unindexed, 'export const value = 2;\n', 'utf8');
-    const graph = fakeGraph([{
-      path: existing,
-      relativePath: 'existing.ts',
-      hash: stableHash('different'),
-      lastScanned: '2026-09-08 12:00:00',
-    }]);
+    const graph = fakeGraph([
+      {
+        path: existing,
+        relativePath: 'existing.ts',
+        hash: stableHash('different'),
+        lastScanned: '2026-09-08 12:00:00',
+      },
+    ]);
 
     const stale = await verifyFileFreshness(graph, root, 'existing.ts');
     const freshButUnindexed = await verifyFileFreshness(graph, root, 'unindexed.ts');
@@ -83,12 +89,14 @@ describe('evidence and freshness verification', () => {
     const root = await createProject();
     const file = join(root, 'one.ts');
     await writeFile(file, 'export const one = 1;\n', 'utf8');
-    const graph = fakeGraph([{
-      path: file,
-      relativePath: 'one.ts',
-      hash: stableHash('export const one = 1;\n'),
-      lastScanned: '2026-09-08 12:00:00',
-    }]);
+    const graph = fakeGraph([
+      {
+        path: file,
+        relativePath: 'one.ts',
+        hash: stableHash('export const one = 1;\n'),
+        lastScanned: '2026-09-08 12:00:00',
+      },
+    ]);
 
     const summary = await verifyProjectFreshness(graph, root, ['one.ts', 'missing.ts']);
     expect(summary.status).toBe('partial');

@@ -9,6 +9,7 @@ export interface KGGraphLike {
     threshold?: number,
     limit?: number,
   ): Array<{ path: string; score?: number }>;
+  getHistoryScore?(filePath: string): number | undefined;
 }
 
 export interface KgAdapterSource {
@@ -22,6 +23,7 @@ export interface KgAdapterSource {
   ): Array<{ id?: number; path?: string; relativePath?: string; score?: number }>;
   /** Optional access to the persisted vector so measured similarity is kept. */
   getFileEmbedding?(fileId: number): number[] | null;
+  getHistoryScore?(filePath: string): number | undefined;
 }
 
 /**
@@ -69,5 +71,6 @@ export function createKgGraphAdapter(kg: KgAdapterSource): KGGraphLike {
             };
           })
       : undefined,
+    getHistoryScore: kg.getHistoryScore ? (filePath) => kg.getHistoryScore!(filePath) : undefined,
   };
 }

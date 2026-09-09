@@ -127,7 +127,12 @@ describe('ContextBudgetOptimizer', () => {
   });
 
   it('test task type boosts test files', () => {
-    const testFile: ContextItem = { path: 'a.test.ts', tokens: 5, relevanceScore: 0.5, isTestFile: true };
+    const testFile: ContextItem = {
+      path: 'a.test.ts',
+      tokens: 5,
+      relevanceScore: 0.5,
+      isTestFile: true,
+    };
     const srcFile: ContextItem = { path: 'a.ts', tokens: 5, relevanceScore: 0.51 };
     const plan = new ContextBudgetOptimizer({ taskType: 'test' }).optimize([testFile, srcFile], 5);
     expect(plan.files.map((f) => f.path)).toEqual(['a.test.ts']);

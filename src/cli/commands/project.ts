@@ -1,5 +1,8 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
+import { resolveProjectRoot } from '@/core/project/roots.js';
+import { getWorktreeIdentity } from '@/core/project/worktree-identity.js';
+import { listWorktreeIdentities, recordWorktreeIdentity } from '@/core/project/index-identity.js';
 
 export function createProjectCommand(): Command {
   const projectCmd = new Command('project').description(
@@ -39,7 +42,7 @@ export function createProjectCommand(): Command {
       asyncHandler(async (name: string, rootPath: string, opts: { description?: string }) => {
         await withService(['scale'], async (ctx) => {
           const kg = ctx.kg;
-          const project = kg.createProject(name, rootPath, opts.description);
+          const project = kg.createProject(name, resolveProjectRoot(rootPath), opts.description);
           output.success(`Project '${project.name}' created with ID ${project.id}`);
         });
       }),
@@ -104,9 +107,39 @@ export function createProjectCommand(): Command {
             output.kv('ID', String(project.id));
             output.kv('Name', project.name);
             output.kv('Root', project.rootPath);
+            const identity = getWorktreeIdentity(project.rootPath);
+            if (identity) {
+              const stored = recordWorktreeIdentity(ctx.db, project.id, identity);
+              output.kv('Branch', stored.branch);
+              output.kv('HEAD', stored.headSha);
+              output.kv('Index namespace', stored.key);
+            }
           } else {
             output.warn('No project selected. Using default project.');
           }
+        });
+      }),
+    );
+
+  projectCmd
+    .command('worktrees')
+    .description('List persisted branch/worktree index namespaces')
+    .action(
+      asyncHandler(async () => {
+        await withService(['scale'], async (ctx) => {
+          const rows = listWorktreeIdentities(ctx.db);
+          output.section(`Worktree namespaces (${rows.length})`);
+          for (const row of rows) {
+            output.kv(
+              `${row.branch} — ${row.worktreePath}`,
+              `project ${row.projectId}, HEAD ${row.headSha}`,
+            );
+            output.kv('  Namespace', row.key);
+          }
+          if (rows.length === 0)
+            output.info(
+              'No worktree identity recorded yet. Run `pm project current` inside a Git worktree.',
+            );
         });
       }),
     );

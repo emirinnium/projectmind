@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildModuleSizeChart, buildLanguageChart, buildDebtChart, buildScanForm, buildGenomeSummary } from '../../src/mcp/apps/builders.js';
+import {
+  buildModuleSizeChart,
+  buildLanguageChart,
+  buildDebtChart,
+  buildScanForm,
+  buildGenomeSummary,
+} from '../../src/mcp/apps/builders.js';
 import { attachApps, buildAppsPayload } from '../../src/mcp/apps/content.js';
 import type { AppComponent, BarChartOptions, PieChartOptions } from '../../src/mcp/apps/types.js';
 import type { ScaleReport } from '../../src/core/scale/reporting/types.js';
@@ -43,7 +49,16 @@ function makeDebtReport(): DebtReport {
   return {
     totalItems: 10,
     bySeverity: { high: 1, medium: 3, low: 6 },
-    byType: { pattern_drift: 2, architectural_drift: 3, redundancy: 4, agent_conflict: 0, complexity: 1, code_age: 0, cognitive_load: 0, change_frequency: 0 },
+    byType: {
+      pattern_drift: 2,
+      architectural_drift: 3,
+      redundancy: 4,
+      agent_conflict: 0,
+      complexity: 1,
+      code_age: 0,
+      cognitive_load: 0,
+      change_frequency: 0,
+    },
     coherenceGenomeScore: 0.8,
     items: [],
     hasMore: false,
@@ -110,10 +125,9 @@ describe('apps content envelope', () => {
   });
 
   it('attachApps appends a text block and keeps the original content', () => {
-    const result = attachApps(
-      { content: [{ type: 'text' as const, text: 'hi' }] },
-      [buildModuleSizeChart(makeScaleReport())]
-    );
+    const result = attachApps({ content: [{ type: 'text' as const, text: 'hi' }] }, [
+      buildModuleSizeChart(makeScaleReport()),
+    ]);
     expect(result.content).toHaveLength(2);
     expect(result.content[0].text).toBe('hi');
     const parsed = JSON.parse(result.content[1].text) as { components: AppComponent[] };

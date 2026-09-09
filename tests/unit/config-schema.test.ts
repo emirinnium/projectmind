@@ -35,13 +35,15 @@ describe('Config Schema - validateConfig', () => {
 
   it('accepts valid contracts', () => {
     const config = validateConfig({
-      contracts: [{
-        id: 'no-eval',
-        name: 'No Eval',
-        sourcePattern: '**/*.ts',
-        forbiddenKeywords: ['dangerousFunc('],
-        severity: 'error' as const,
-      }],
+      contracts: [
+        {
+          id: 'no-eval',
+          name: 'No Eval',
+          sourcePattern: '**/*.ts',
+          forbiddenKeywords: ['dangerousFunc('],
+          severity: 'error' as const,
+        },
+      ],
     });
     // Contracts may or may not be defined depending on validation
     if (config.contracts) {

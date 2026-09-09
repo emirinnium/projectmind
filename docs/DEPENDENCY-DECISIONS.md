@@ -1,54 +1,34 @@
-# Dependency and publisher decisions
+# Dependency decisions
 
 ## `@xenova/transformers`
 
-ProjectMind currently keeps `@xenova/transformers@^2.17.2` as an optional
-dependency. The embedding adapter imports the v2 API (`pipeline`) lazily, so
-installing the base CLI does not require the transformer runtime.
+ProjectMind currently uses `@xenova/transformers` 2.x as an optional embedding
+provider. It is not imported by the core CLI/MCP path unless a transformer
+provider is requested. A migration to a newer Transformers.js package is not
+performed solely for scanner score: model names, ONNX runtime behavior and
+embedding dimensions must be benchmarked together. The simple provider keeps
+installation and offline operation usable when optional packages are absent.
 
-Transformers.js moved to the `@huggingface/transformers` package in v3 and the
-current package line is a major-version change. Migrating only to satisfy a
-freshness scanner would risk changing model loading, runtime selection, model
-cache behavior, and embedding compatibility for existing users. The current
-decision is therefore:
+## `onnxruntime-node` / `adm-zip` / `sharp`
 
-- classify the old package as a confirmed maintenance/freshness finding;
-- keep it for 1.0.x compatibility;
-- plan a separately benchmarked migration to `@huggingface/transformers` for a
-  future breaking or explicitly opted-in release;
-- validate output dimensions, model downloads, ONNX/WebAssembly runtimes, and
-  persisted embedding compatibility before changing the default.
+The package pins safe compatible `sharp`, `hono`, `adm-zip` and related
+transitive versions through `overrides`. `npm audit --omit=dev` may still show
+the optional `onnxruntime-node` → `adm-zip` moderate advisory because the
+available audit fix is a breaking runtime downgrade. The package does not
+recommend `npm audit fix --force`; the optional provider can be omitted and
+core analysis remains available.
 
-This is an intentional compatibility decision, not a claim that the package is
-current or actively maintained.
+## Native install warning
+
+Some optional native dependency chains can still emit a `prebuild-install`
+deprecation warning. It is not hidden or converted into a false success.
+`pm doctor install` reports optional-provider availability and the simple
+fallback path, so a clean core installation does not require
+`--legacy-peer-deps`.
 
 ## Publisher identity
 
-The published package is intentionally named `@emirhanturker/projectmind`,
-while the canonical source repository and GitHub owner are
-`emirinnium/projectmind`. The mismatch is an npm scope/maintainer identity
-choice, not a second ProjectMind repository.
-
-The canonical metadata is kept aligned as follows:
-
-- npm package: https://www.npmjs.com/package/@emirhanturker/projectmind
-- repository: https://github.com/emirinnium/projectmind
-- issues: https://github.com/emirinnium/projectmind/issues
-- homepage: https://github.com/emirinnium/projectmind#readme
-
-The npm package name and GitHub repository must not be renamed without an
-explicit migration decision because that would break existing installations,
-links, and MCP initialization commands.
-
-## M8ven classification
-
-The M8ven findings are tracked independently from this decision record:
-
-- MCP annotations, explicit schemas, and registration contracts are MCP
-  compliance improvements.
-- Shell invocation review is a security-hardening item; fixed-argument
-  execution is retained without shell parsing.
-- The Transformers.js finding is maintenance/freshness debt with migration
-  deferred for compatibility.
-- The npm/GitHub identity mismatch is a metadata and reputation concern, not a
-  code vulnerability.
+The npm scope `@emirhanturker` and GitHub owner `emirinnium` are intentionally
+different publisher identities. Package metadata, homepage, issues URL and
+README all point to the canonical ProjectMind repository and npm package; no
+rename is made without explicit maintainer approval.

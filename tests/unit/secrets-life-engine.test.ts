@@ -28,10 +28,10 @@ describe('secrets-life engine', () => {
   });
 
   it('filters low-entropy values and still recognizes private-key markers', () => {
-    expect(scanForSecrets('const token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa";', 'a.ts', 2)).toHaveLength(0);
-    expect(
-      scanForSecrets('-----BEGIN RSA PRIVATE KEY-----', 'keys/key.pem', 0),
-    ).toMatchObject([
+    expect(scanForSecrets('const token = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa";', 'a.ts', 2)).toHaveLength(
+      0,
+    );
+    expect(scanForSecrets('-----BEGIN RSA PRIVATE KEY-----', 'keys/key.pem', 0)).toMatchObject([
       {
         type: 'private-key',
         file: 'keys/key.pem',
