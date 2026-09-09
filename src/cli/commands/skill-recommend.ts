@@ -1,7 +1,8 @@
 import { Command } from 'commander';
-import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
+import { withService, asyncHandler, output, loadConfig } from '@/cli/utils/shared.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { confineToProject } from '@/mcp/tools/_shared.js';
 import {
   SKILL_CATALOG,
   analyzeSkillGaps,
@@ -44,6 +45,21 @@ export function createSkillRecommendCommand(): Command {
           await withService(['scale', 'coherence'], async (ctx, services) => {
             const scale = services.scale!;
             const kg = ctx.kg;
+            const gapThreshold = Number.parseFloat(opts.gapThreshold);
+            const top = Number.parseInt(opts.top, 10);
+            if (!Number.isFinite(gapThreshold) || gapThreshold < 0 || gapThreshold > 1) {
+              throw new Error(
+                `--gap-threshold must be a number between 0 and 1: ${opts.gapThreshold}`,
+              );
+            }
+            if (!Number.isSafeInteger(top) || top < 1 || top > 1000) {
+              throw new Error(`--top must be an integer between 1 and 1000: ${opts.top}`);
+            }
+            if (!['text', 'json', 'html'].includes(opts.format)) {
+              throw new Error(`--format must be text, json, or html: ${opts.format}`);
+            }
+            const root = loadConfig().projectRoot;
+            const outputPath = opts.output ? confineToProject(opts.output, root) : undefined;
 
             output.section('Agent Skill Gap Analysis (evidence-based)');
             output.kv('Gap threshold', opts.gapThreshold);
@@ -99,11 +115,7 @@ export function createSkillRecommendCommand(): Command {
                 decisionsText,
                 asyncPreference: profile.fingerprint?.asyncPreference ?? -1,
               });
-              const gaps = analyzeSkillGaps(
-                proficiencies,
-                codebaseSkills,
-                parseFloat(opts.gapThreshold),
-              );
+              const gaps = analyzeSkillGaps(proficiencies, codebaseSkills, gapThreshold);
               allGaps.push({ agent: profile.name, gaps });
 
               output.info(
@@ -119,16 +131,16 @@ export function createSkillRecommendCommand(): Command {
                   gaps,
                   generatedAt: new Date().toISOString(),
                 });
-                writeSkillDoc(profile.name, doc);
+                writeSkillDoc(root, profile.name, doc);
               }
             }
 
             if (opts.format === 'json') {
               const result = { agents: allGaps, codebaseSkills, catalogVersion: 2 };
               const content = JSON.stringify(result, null, 2);
-              if (opts.output) {
-                writeFileSync(opts.output, content);
-                output.success(`Written to ${opts.output}`);
+              if (outputPath) {
+                writeFileSync(outputPath, content);
+                output.success(`Written to ${outputPath}`);
               } else {
                 output.raw(content);
               }
@@ -137,9 +149,9 @@ export function createSkillRecommendCommand(): Command {
 
             if (opts.format === 'html') {
               const content = generateHtmlSkillReport(allGaps);
-              if (opts.output) {
-                writeFileSync(opts.output, content);
-                output.success(`Written to ${opts.output}`);
+              if (outputPath) {
+                writeFileSync(outputPath, content);
+                output.success(`Written to ${outputPath}`);
               } else {
                 output.raw(content);
               }
@@ -155,7 +167,7 @@ export function createSkillRecommendCommand(): Command {
                 continue;
               }
 
-              for (const [i, gap] of gaps.slice(0, parseInt(opts.top, 10)).entries()) {
+              for (const [i, gap] of gaps.slice(0, top).entries()) {
                 const priorityIcon =
                   gap.priority === 'critical'
                     ? '🔴'
@@ -195,12 +207,12 @@ export function createSkillRecommendCommand(): Command {
               );
             }
 
-            if (opts.output) {
+            if (outputPath) {
               writeFileSync(
-                opts.output,
+                outputPath,
                 JSON.stringify({ agents: allGaps, codebaseSkills }, null, 2),
               );
-              output.success(`Written to ${opts.output}`);
+              output.success(`Written to ${outputPath}`);
             }
             if (opts.write) {
               output.success(
@@ -215,8 +227,8 @@ export function createSkillRecommendCommand(): Command {
   return skillCmd;
 }
 
-function writeSkillDoc(agentName: string, doc: string): void {
-  const dir = join(process.cwd(), 'skills', agentName);
+function writeSkillDoc(projectRoot: string, agentName: string, doc: string): void {
+  const dir = confineToProject(join(projectRoot, 'skills', agentName), projectRoot);
   mkdirSync(dir, { recursive: true });
   const file = join(dir, 'SKILL.md');
   writeFileSync(file, doc);

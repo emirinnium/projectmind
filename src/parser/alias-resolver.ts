@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../utils/errors.js';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { loadConfig } from '../utils/config.js';
@@ -68,7 +69,9 @@ export class AliasResolver {
             if (Array.isArray(targetList)) {
               this.aliases.push({
                 prefix: prefix.replace(/\*$/, ''),
-                targets: targetList.map((p) => (p as string).replace(/\*$/, '')),
+                targets: targetList.map((p) =>
+                  (p as string).replace(/\*$/, '').replace(/\\/g, '/'),
+                ),
               });
             }
           }
@@ -76,7 +79,8 @@ export class AliasResolver {
         // Also check for baseUrl to resolve relative imports
         this.baseUrl = tsconfig.compilerOptions?.baseUrl;
         break;
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/parser/alias-resolver.ts:81');
         // Invalid JSON or no readable tsconfig - alias resolution stays off
       }
     }
@@ -112,6 +116,14 @@ export class AliasResolver {
     return true;
   }
 
+  /** Return whether an import specifier targets a project-local module. */
+  isProjectLocalSource(source: string): boolean {
+    if (source.startsWith('./') || source.startsWith('../')) return true;
+    if (source.startsWith('node:')) return false;
+    this.loadAliases();
+    return this.aliases.some((alias) => source.startsWith(alias.prefix));
+  }
+
   /**
    * Resolve an import source against the configured aliases.
    *
@@ -141,7 +153,7 @@ export class AliasResolver {
         const remainder = source.slice(alias.prefix.length);
         for (const target of alias.targets) {
           // Resolve target + remainder relative to the tsconfig location
-          const candidate = join(target, remainder);
+          const candidate = join(target, remainder).replace(/\\/g, '/');
           result.resolvedCandidates.push(candidate);
         }
         result.matched = true;
@@ -165,44 +177,54 @@ export class AliasResolver {
     extensions: string[] = [
       '.ts',
       '.tsx',
+      '.mts',
+      '.cts',
       '.js',
       '.jsx',
       '.mjs',
       '.cjs',
       '/index.ts',
       '/index.tsx',
+      '/index.mts',
+      '/index.cts',
       '/index.js',
       '/index.jsx',
+      '/index.mjs',
+      '/index.cjs',
     ],
   ): string | null {
     const result = this.resolveAlias(source);
     if (!result.matched) return null;
 
     for (const candidate of result.resolvedCandidates) {
-      const fullPath = resolve(this.projectRoot, candidate);
+      const normalizedCandidate = candidate.replace(/\\/g, '/');
+      const moduleBase = normalizedCandidate.replace(/\.(?:[cm]?[jt]sx?)$/i, '');
+      const fullPath = resolve(this.projectRoot, normalizedCandidate);
 
       // Try direct file match
       if (existsSync(fullPath)) {
         try {
           const stats = statSync(fullPath);
           if (stats.isFile()) {
-            return candidate;
+            return normalizedCandidate;
           }
-        } catch {
+        } catch (error) {
+          reportSuppressedError(error, 'Intentional fallback src/parser/alias-resolver.ts:209');
           // ignore stat errors
         }
       }
 
       // Try with extensions
       for (const ext of extensions) {
-        const withExt = fullPath + ext;
+        const withExt = resolve(this.projectRoot, `${moduleBase}${ext}`);
         if (existsSync(withExt)) {
           try {
             const stats = statSync(withExt);
             if (stats.isFile()) {
-              return candidate + ext;
+              return `${moduleBase}${ext}`.replace(/\\/g, '/');
             }
-          } catch {
+          } catch (error) {
+            reportSuppressedError(error, 'Intentional fallback src/parser/alias-resolver.ts:223');
             // ignore stat errors
           }
         }

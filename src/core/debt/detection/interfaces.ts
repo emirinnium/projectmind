@@ -60,9 +60,11 @@ export interface DebtPersistence {
     includeResolved?: boolean;
   }): DebtReport;
 
-  resolveDebt(debtId: number): void;
+  resolveDebt(debtId: number): boolean;
 
   clearAll(): void;
+
+  clearUnresolvedType(type: DebtType): void;
 
   clearPatterns(): void;
 

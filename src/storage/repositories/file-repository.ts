@@ -1,4 +1,6 @@
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
+import { decodeEmbedding, encodeEmbedding } from '../../core/embeddings/embedding-codec.js';
+import { codeToEmbedding } from '../../parser/embeddings.js';
 import { getDatabase } from '../database.js';
 
 export interface FileRecord {
@@ -34,26 +36,6 @@ export interface FileAttributes {
  * write, dual-format decode (BLOB or legacy JSON TEXT) on read so rows written
  * before v0.5.0 keep working until the next rescan converts them.
  */
-function encodeEmbedding(values: number[]): Buffer {
-  return Buffer.from(new Float32Array(values).buffer);
-}
-
-function decodeEmbedding(raw: SQLOutputValue | null): number[] {
-  if (raw instanceof Uint8Array) {
-    const floats = new Float32Array(raw.buffer, raw.byteOffset, Math.floor(raw.byteLength / 4));
-    return Array.from(floats);
-  }
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw as string) as number[];
-      return Array.isArray(parsed) ? parsed.map(Number) : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
 export class FileRepository {
   constructor(private readonly db: DatabaseSync = getDatabase()) {}
 
@@ -218,6 +200,7 @@ export class FileRepository {
     }>,
     imports: Array<{
       source: string;
+      named?: string[];
       kind: string;
     }>,
     _filePath: string,
@@ -237,7 +220,7 @@ export class FileRepository {
         fn.startLine,
         fn.endLine,
         fn.cyclomaticComplexity,
-        null,
+        encodeEmbedding(codeToEmbedding(fn.signature)),
       );
     }
     const clsStmt = this.db.prepare(
@@ -253,14 +236,14 @@ export class FileRepository {
         cls.endLine,
         cls.methodsCount,
         cls.propertiesCount,
-        null,
+        encodeEmbedding(codeToEmbedding(cls.signature)),
       );
     }
     const impStmt = this.db.prepare(
-      'INSERT INTO imports (file_id, source, kind, resolved, resolved_path) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO imports (file_id, source, named, kind, resolved, resolved_path) VALUES (?, ?, ?, ?, ?, ?)',
     );
     for (const imp of imports) {
-      impStmt.run(fileId, imp.source, imp.kind, 0, null);
+      impStmt.run(fileId, imp.source, JSON.stringify(imp.named ?? []), imp.kind, 0, null);
     }
   }
 
@@ -275,11 +258,8 @@ export class FileRepository {
       hash: (row.hash as string | null) ?? '',
       embedding: row.embedding
         ? (() => {
-            try {
-              return JSON.parse(row.embedding as string);
-            } catch {
-              return null;
-            }
+            const decoded = decodeEmbedding(row.embedding);
+            return decoded.length > 0 ? decoded : null;
           })()
         : null,
       lastScanned: row.last_scanned as string,

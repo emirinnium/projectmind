@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { cosineSimilarity, textToEmbedding, codeToEmbedding, findSimilar } from '../../src/parser/embeddings.js';
+import {
+  clearEmbeddingCache,
+  codeToEmbedding,
+  cosineSimilarity,
+  findSimilar,
+  generateEmbeddingBatch,
+  getCurrentProvider,
+  initEmbeddingProvider,
+  textToEmbedding,
+} from '../../src/parser/embeddings.js';
+import { generateOpenaiEmbedding } from '../../src/parser/embedding-providers.js';
 
 describe('Embeddings - cosineSimilarity', () => {
   it('returns 1 for identical vectors', () => {
@@ -28,6 +38,11 @@ describe('Embeddings - cosineSimilarity', () => {
 
   it('returns 0 for empty vectors', () => {
     expect(cosineSimilarity([], [])).toBe(0);
+  });
+
+  it('returns 0 instead of NaN for non-finite vectors', () => {
+    expect(cosineSimilarity([Number.NaN], [1])).toBe(0);
+    expect(cosineSimilarity([Number.POSITIVE_INFINITY], [1])).toBe(0);
   });
 });
 
@@ -65,6 +80,66 @@ describe('Embeddings - textToEmbedding', () => {
     const magnitude = Math.sqrt(vector.reduce((s, v) => s + v * v, 0));
     expect(magnitude).toBe(0);
   });
+
+  it('keeps token cache entries isolated by dimension', () => {
+    clearEmbeddingCache();
+
+    const short = textToEmbedding('dimension-safe token', 8);
+    const long = textToEmbedding('dimension-safe token', 32);
+    const shortAgain = textToEmbedding('dimension-safe token', 8);
+
+    expect(short).toHaveLength(8);
+    expect(long).toHaveLength(32);
+    expect(shortAgain).toEqual(short);
+    expect(long.every(Number.isFinite)).toBe(true);
+    expect(short.every(Number.isFinite)).toBe(true);
+
+    clearEmbeddingCache();
+  });
+});
+
+describe('Embeddings - provider initialization', () => {
+  it('is idempotent for the complete simple-provider configuration', async () => {
+    const first = await initEmbeddingProvider({ provider: 'simple', dimension: 8 });
+    const second = await initEmbeddingProvider({ provider: 'simple', dimension: 32 });
+
+    expect(first.provider).toBe('simple');
+    expect(first.fellBack).toBe(false);
+    expect(second.provider).toBe('simple');
+    expect(second.reinitialized).toBe(false);
+    expect(getCurrentProvider()).toBe('simple');
+  });
+
+  it('processes every item when a batch crosses the provider safety cap', async () => {
+    await initEmbeddingProvider({ provider: 'simple' });
+    const texts = Array.from({ length: 35 }, (_, index) => `batch item ${index}`);
+    const vectors = await generateEmbeddingBatch(texts, 16);
+
+    expect(vectors).toHaveLength(texts.length);
+    expect(vectors.every((vector) => vector.length === 16)).toBe(true);
+  });
+
+  it('sends requested dimensions only to OpenAI v3 embedding models', async () => {
+    const originalFetch = globalThis.fetch;
+    const requestBodies: Array<Record<string, unknown>> = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({ data: [{ embedding: [1, 0, 0] }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    try {
+      await generateOpenaiEmbedding('x', 'test-key', 'text-embedding-3-small', 3);
+      await generateOpenaiEmbedding('x', 'test-key', 'text-embedding-ada-002', 3);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(requestBodies[0]).toMatchObject({ model: 'text-embedding-3-small', dimensions: 3 });
+    expect(requestBodies[1]).not.toHaveProperty('dimensions');
+  });
 });
 
 describe('Embeddings - codeToEmbedding', () => {
@@ -97,9 +172,7 @@ describe('Embeddings - findSimilar', () => {
 
   it('returns empty array when no candidates match', () => {
     const target = textToEmbedding('hello');
-    const candidates = [
-      { id: 1, embedding: textToEmbedding('xyz') },
-    ];
+    const candidates = [{ id: 1, embedding: textToEmbedding('xyz') }];
 
     const results = findSimilar(target, candidates, 0.99);
     expect(results).toHaveLength(0);

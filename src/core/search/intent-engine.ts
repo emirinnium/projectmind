@@ -1,117 +1,35 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
-import type { IntentQuery, IntentType, HybridScore, SearchResult, TaskType } from './types.js';
+import type {
+  IntentQuery,
+  IntentType,
+  HybridScore,
+  SearchResult,
+  SemanticEvidence,
+} from './types.js';
 import { VecIndex, getVecIndex } from '../embeddings/vector-index.js';
 import { generateEmbedding, codeToEmbeddingAsync } from '../../parser/embeddings.js';
 import { logger } from '../../utils/logger.js';
-import { DEFAULT_DIMENSION } from '../llm/types.js';
+import { loadConfig } from '../../utils/config.js';
+import { executeIntentSearch, type SemanticSearchCandidate } from './intent-search.js';
+import type { KGGraphLike } from './graph-adapter.js';
+import { cosineSimilarity, safeScore } from './scoring.js';
+
+export { createKgGraphAdapter } from './graph-adapter.js';
+export type { KGGraphLike, KgAdapterSource } from './graph-adapter.js';
+export { classifyTask, TASK_KEYWORDS } from './task-classifier.js';
+export { cosineSimilarity } from './scoring.js';
 
 const SIMILARITY_THRESHOLD = 0.5;
 const RANK_DECAY_FACTOR = 0.15;
 const MAX_SIMILAR_RESULTS = 10;
 
-export interface KGGraphLike {
-  getFileByPath(path: string): { id?: number; path: string } | null;
-  getImports?(fileId: number): Array<{ source: string; named: string[]; kind: string }>;
-  getDependents?(fileId: number): Array<{ source: string; named: string[]; kind: string }>;
-  findSimilarFiles?(
-    embedding: number[],
-    threshold?: number,
-    limit?: number,
-  ): Array<{ path: string; score?: number }>;
-}
-
-/**
- * Minimal structural surface of KnowledgeGraph that the adapter consumes.
- * Kept structural (no storage import) so core stays independent of storage.
- */
-export interface KgAdapterSource {
-  getFileByPath(path: string): { id?: number; path?: string; relativePath?: string } | null;
-  getImports?(fileId: number): Array<{ source: string; named?: string[]; kind?: string }>;
-  getDependents?(fileId: number): Array<{ path?: string; relativePath?: string }>;
-  findSimilarFiles?(
-    embedding: number[],
-    threshold?: number,
-    limit?: number,
-  ): Array<{ path?: string; relativePath?: string }>;
-}
-
-/**
- * Adapt a KnowledgeGraph-shaped object to the {@link KGGraphLike} contract
- * expected by {@link IntentEngine.search}. KnowledgeGraph.getDependents
- * returns file records (not import rows), so dependent paths are mapped to
- * `source` entries the engine can seed structural expansion from.
- */
-export function createKgGraphAdapter(kg: KgAdapterSource): KGGraphLike {
-  return {
-    getFileByPath: (p) => {
-      const f = kg.getFileByPath(p);
-      if (!f) return null;
-      return { id: f.id, path: f.relativePath ?? f.path ?? p };
-    },
-    getImports: kg.getImports
-      ? (fileId) =>
-          kg.getImports!(fileId).map((i) => ({
-            source: i.source,
-            named: i.named ?? [],
-            kind: i.kind ?? 'import',
-          }))
-      : undefined,
-    getDependents: kg.getDependents
-      ? (fileId) =>
-          kg.getDependents!(fileId).map((d) => ({
-            source: d.relativePath ?? d.path ?? '',
-            named: [],
-            kind: 'import',
-          }))
-      : undefined,
-    findSimilarFiles: kg.findSimilarFiles
-      ? (embedding, threshold, limit) =>
-          kg.findSimilarFiles!(embedding, threshold, limit).map((f) => ({
-            path: f.relativePath ?? f.path ?? '',
-          }))
-      : undefined,
-  };
-}
-
-export const TASK_KEYWORDS: Record<TaskType, string[]> = {
-  'bug fix': ['fix', 'bug', 'error', 'crash', 'defect', 'issue', 'broken', 'fail'],
-  feature: ['add', 'new', 'feature', 'implement', 'support', 'create', 'build', 'introduce'],
-  refactor: ['refactor', 'cleanup', 'restructure', 'extract', 'simplify', 'reorganize', 'optimize'],
-  test: ['test', 'coverage', 'spec', 'assert', 'verify', 'check', 'validate', 'lint'],
-};
-
-export function classifyTask(queryText: string): TaskType {
-  const text = queryText.toLowerCase();
-  const scores: Record<TaskType, number> = {
-    'bug fix': 0,
-    feature: 0,
-    refactor: 0,
-    test: 0,
-  };
-  for (const [task, kws] of Object.entries(TASK_KEYWORDS)) {
-    for (const kw of kws) {
-      if (text.includes(kw)) scores[task as TaskType] += 1;
-    }
-  }
-  // Heuristic tie-break: if multiple, pick highest; default feature
-  let best: TaskType = 'feature';
-  let bestScore = -1;
-  for (const [t, s] of Object.entries(scores)) {
-    if (s > bestScore) {
-      bestScore = s;
-      best = t as TaskType;
-    }
-  }
-  if (bestScore <= 0) best = 'feature';
-  return best;
-}
-
 export class IntentEngine {
   private readonly vecIndex?: VecIndex;
   private readonly db?: DatabaseSync;
   private readonly projectRoot?: string;
+  private readonly embeddingDimension: number;
   public weights = { semantic: 0.4, structural: 0.3, intent: 0.3 };
 
   constructor(options?: {
@@ -123,11 +41,12 @@ export class IntentEngine {
      *  (e.g. MCP) do not silently score 0 / return empty snippets. */
     projectRoot?: string;
   }) {
+    this.embeddingDimension = loadConfig().embeddings.dimension;
     if (options?.vecIndex) {
       this.vecIndex = options.vecIndex;
     } else if (options?.db) {
       this.db = options.db;
-      this.vecIndex = getVecIndex(options.db);
+      this.vecIndex = getVecIndex(options.db, this.embeddingDimension);
     }
     if (options?.weights) {
       this.weights = { ...this.weights, ...options.weights };
@@ -304,17 +223,25 @@ export class IntentEngine {
   async computeSemanticScore(
     queryText: string,
     filePath: string,
-  ): Promise<{ score: number; source: 'embedding' | 'lexical' }> {
+  ): Promise<{
+    score: number;
+    source: 'embedding' | 'lexical';
+    semanticEvidence: SemanticEvidence;
+  }> {
     const readablePath = this.resolveFilePath(filePath);
     try {
       // Outside the project root — never read it; degrade to a zero lexical score.
-      if (!readablePath) return { score: 0, source: 'lexical' };
-      const queryEmb = await generateEmbedding(queryText, DEFAULT_DIMENSION);
+      if (!readablePath) return { score: 0, source: 'lexical', semanticEvidence: 'lexical' };
+      const queryEmb = await generateEmbedding(queryText, this.embeddingDimension);
       // If we have a file, try to embed file content and compare
       const fileContent = readFileSync(readablePath, 'utf-8');
-      const fileEmb = await codeToEmbeddingAsync(fileContent, DEFAULT_DIMENSION);
+      const fileEmb = await codeToEmbeddingAsync(fileContent, this.embeddingDimension);
       const sim = cosineSimilarity(queryEmb, fileEmb);
-      return { score: Math.max(0, Math.min(1, sim)), source: 'embedding' };
+      return {
+        score: safeScore(sim) ?? 0,
+        source: 'embedding',
+        semanticEvidence: 'measured',
+      };
     } catch (e) {
       // Graceful lexical fallback
       logger.warn(
@@ -334,7 +261,7 @@ export class IntentEngine {
       const intersection = new Set([...queryTokens].filter((t) => fileTokens.has(t)));
       const union = new Set([...queryTokens, ...fileTokens]);
       const jaccard = union.size > 0 ? intersection.size / union.size : 0;
-      return { score: Math.min(1, jaccard), source: 'lexical' };
+      return { score: Math.min(1, jaccard), source: 'lexical', semanticEvidence: 'lexical' };
     }
   }
 
@@ -345,8 +272,8 @@ export class IntentEngine {
     semanticScore?: number,
     _semanticSource?: 'embedding' | 'lexical',
   ): HybridScore {
-    const intent = this.classifyIntent(query);
-    const intentScore = this.intentScore(intent, filePath);
+    const intentType = this.classifyIntent(query);
+    const intentScore = this.intentScore(intentType, filePath);
 
     // F5: structural = KG graph relatedness (shared imports/dependents with seed files)
     let structuralScore = 0.3;
@@ -365,30 +292,36 @@ export class IntentEngine {
       structuralScore = 0.3;
     }
 
-    const sem = semanticScore ?? SIMILARITY_THRESHOLD;
+    const sem = safeScore(semanticScore ?? SIMILARITY_THRESHOLD) ?? 0;
+    const structural = safeScore(structuralScore) ?? 0;
+    const intentComponent = safeScore(intentScore) ?? 0;
     const total =
       this.weights.semantic * sem +
-      this.weights.structural * structuralScore +
-      this.weights.intent * intentScore;
+      this.weights.structural * structural +
+      this.weights.intent * intentComponent;
     return {
       semantic: sem,
-      structural: structuralScore,
-      intent: intentScore,
-      total: Math.min(1, Math.round(total * 100) / 100),
+      structural,
+      intent: intentComponent,
+      total: safeScore(Math.round(total * 100) / 100) ?? 0,
     };
   }
 
   // F4: fix KG adapter — findSimilarFiles returns FileInfo[] WITHOUT score; derive from rank
   deriveSemanticFromSimilar(
-    queryEmb: number[],
     similarResults: Array<{ path: string; score?: number }>,
-    _limit = 5,
-  ): Array<{ path: string; score: number; source: 'embedding' | 'lexical' }> {
-    const out: Array<{ path: string; score: number; source: 'embedding' | 'lexical' }> = [];
+  ): SemanticSearchCandidate[] {
+    const out: SemanticSearchCandidate[] = [];
     for (let i = 0; i < similarResults.length; i++) {
       const rank = i + 1;
       const derived = Math.max(0, 1 - (rank - 1) * RANK_DECAY_FACTOR); // 1→1.0, 2→0.85, 3→0.7...
-      out.push({ path: similarResults[i].path, score: derived, source: 'embedding' });
+      const measured = safeScore(similarResults[i].score);
+      out.push({
+        path: similarResults[i].path,
+        score: measured ?? derived,
+        source: 'embedding',
+        semanticEvidence: measured === undefined ? 'rank-derived' : 'measured',
+      });
     }
     return out;
   }
@@ -398,157 +331,26 @@ export class IntentEngine {
     kgGraph?: KGGraphLike,
     limit = MAX_SIMILAR_RESULTS,
   ): Promise<SearchResult[]> {
-    const results: SearchResult[] = [];
-    const queryText = this.resolveQueryText(query);
-    const intent = this.classifyIntent(query);
-
-    // Semantic baseline using real embeddings
-    let semanticFiles: Array<{ path: string; score: number; source: 'embedding' | 'lexical' }> = [];
-    try {
-      const queryEmb = await generateEmbedding(queryText, DEFAULT_DIMENSION);
-      if (kgGraph && typeof kgGraph.findSimilarFiles === 'function') {
-        const similar = kgGraph.findSimilarFiles(queryEmb, SIMILARITY_THRESHOLD, limit);
-        const derived = this.deriveSemanticFromSimilar(queryEmb, similar, limit);
-        semanticFiles = derived;
-      }
-    } catch (e) {
-      logger.warn(`Semantic baseline search failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-
-    // Fallback: VecIndex
-    if (semanticFiles.length === 0 && this.vecIndex?.isAvailable && this.vecIndex.isAvailable()) {
-      try {
-        const queryEmb = await generateEmbedding(queryText, DEFAULT_DIMENSION);
-        const similar = this.vecIndex.findSimilar(queryEmb, limit);
-        for (let i = 0; i < similar.length; i++) {
-          const s = similar[i];
-          let path = '';
-          if (this.db) {
-            const row = this.db.prepare('SELECT path FROM files WHERE id = ?').get(Number(s.id)) as
-              { path?: string } | undefined;
-            if (row?.path) path = row.path;
-          }
-          if (path) {
-            const derived = Math.max(0, 1 - i * RANK_DECAY_FACTOR);
-            semanticFiles.push({ path, score: derived, source: 'embedding' });
-          }
-        }
-      } catch (e) {
-        logger.warn(
-          `VecIndex fallback search failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
-      }
-    }
-
-    // If still empty, try lexical fallback for query filePath
-    if (semanticFiles.length === 0 && query.filePath) {
-      try {
-        const lexical = await this.computeSemanticScore(queryText, query.filePath);
-        semanticFiles.push({ path: query.filePath, score: lexical.score, source: lexical.source });
-      } catch (e) {
-        logger.warn(
-          `Lexical fallback search failed: ${e instanceof Error ? e.message : String(e)}`,
-          { filePath: query.filePath },
-        );
-      }
-    }
-
-    const seen = new Set<string>();
-    for (const sf of semanticFiles) {
-      if (seen.has(sf.path)) continue;
-      seen.add(sf.path);
-      const score = this.computeHybridScore(
-        query,
-        sf.path,
-        kgGraph || { getFileByPath: () => null },
-        sf.score,
-        sf.source,
-      );
-      // F5: snippet = actual file content snippet (most relevant line window)
-      let snippet = '';
-      try {
-        const resolved = this.resolveFilePath(sf.path);
-        if (resolved) {
-          const content = readFileSync(resolved, 'utf-8');
-          const lines = content.split(/\r?\n/);
-          // Pick a window around first marker match or first 3 lines
-          const markerIdx = lines.findIndex((l) => this.getMarkers(intent, l) > 0);
-          const start = Math.max(0, (markerIdx >= 0 ? markerIdx : 0) - 1);
-          snippet = lines
-            .slice(start, start + 3)
-            .join('\n')
-            .substring(0, 200);
-        }
-      } catch {
-        snippet = '';
-      }
-      results.push({
-        filePath: sf.path,
-        score,
-        rank: 0,
-        snippet: snippet || sf.path,
-        source: sf.source,
-      });
-    }
-
-    // Structural neighbors
-    if (kgGraph && query.filePath) {
-      try {
-        const info = kgGraph.getFileByPath(query.filePath);
-        if (info && typeof info.id === 'number') {
-          const imports = kgGraph.getImports ? kgGraph.getImports(info.id) : [];
-          const dependents = kgGraph.getDependents ? kgGraph.getDependents(info.id) : [];
-          const seedPaths = new Set<string>();
-          for (const imp of imports) if (imp.source) seedPaths.add(imp.source);
-          for (const dep of dependents) if (dep.source) seedPaths.add(dep.source);
-          // Relatedness: shared imports/dependents with seed files
-          for (const seed of seedPaths) {
-            if (!seen.has(seed)) {
-              seen.add(seed);
-              const score = this.computeHybridScore(query, seed, kgGraph, 0.4, 'embedding');
-              let snippet = '';
-              try {
-                const resolved = this.resolveFilePath(seed);
-                if (resolved) {
-                  const content = readFileSync(resolved, 'utf-8');
-                  snippet = content.split(/\r?\n/).slice(0, 3).join('\n').substring(0, 200);
-                }
-              } catch {
-                snippet = seed;
-              }
-              results.push({
-                filePath: seed,
-                score,
-                rank: 0,
-                snippet: snippet || seed,
-                source: 'embedding',
-              });
-            }
-          }
-        }
-      } catch (e) {
-        logger.warn(
-          `Structural neighbor expansion failed: ${e instanceof Error ? e.message : String(e)}`,
-          { filePath: query.filePath },
-        );
-      }
-    }
-
-    results.sort((a, b) => b.score.total - a.score.total);
-    results.forEach((r, i) => (r.rank = i + 1));
-    return results.slice(0, limit);
+    return executeIntentSearch(
+      {
+        embeddingDimension: this.embeddingDimension,
+        vecIndex: this.vecIndex,
+        db: this.db,
+        generateEmbedding,
+        resolveQueryText: (intentQuery) => this.resolveQueryText(intentQuery),
+        classifyIntent: (intentQuery) => this.classifyIntent(intentQuery),
+        computeSemanticScore: (queryText, filePath) =>
+          this.computeSemanticScore(queryText, filePath),
+        computeHybridScore: (intentQuery, filePath, graph, semanticScore, semanticSource) =>
+          this.computeHybridScore(intentQuery, filePath, graph, semanticScore, semanticSource),
+        deriveSemanticFromSimilar: (similarResults) =>
+          this.deriveSemanticFromSimilar(similarResults),
+        resolveFilePath: (filePath) => this.resolveFilePath(filePath),
+        getMarkers: (intentType, content) => this.getMarkers(intentType, content),
+      },
+      query,
+      kgGraph,
+      limit,
+    );
   }
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) return 0;
-  let dot = 0,
-    na = 0,
-    nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
 }

@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { DatabaseSync } from 'node:sqlite';
 import type {
   CodeChange,
@@ -171,7 +172,11 @@ export class ImpactPredictor {
       // temp file in os.tmpdir().
       try {
         fs.unlinkSync(prevPath);
-      } catch {
+      } catch (error) {
+        reportSuppressedError(
+          error,
+          'Intentional fallback src/core/predictive/impact-predictor.ts:174',
+        );
         // ignore cleanup errors
       }
     }
@@ -294,7 +299,11 @@ export class ImpactPredictor {
     let historical = { avgFailureRate: 0, commonBrokenTests: [] as string[] };
     try {
       historical = this.correlateHistoricalFailures(change.filePath, this.db);
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional fallback src/core/predictive/impact-predictor.ts:297',
+      );
       // ignore
     }
 
@@ -340,7 +349,11 @@ export class ImpactPredictor {
           actual.failureOccurred ? 1 : 0,
           actual.severity,
         );
-      } catch {
+      } catch (error) {
+        reportSuppressedError(
+          error,
+          'Intentional fallback src/core/predictive/impact-predictor.ts:343',
+        );
         // ignore persistence errors
       }
     }
@@ -386,7 +399,11 @@ export class ImpactPredictor {
                     }
                   }
                 }
-              } catch {
+              } catch (error) {
+                reportSuppressedError(
+                  error,
+                  'Intentional fallback src/core/predictive/impact-predictor.ts:389',
+                );
                 // ignore unreadable test files
               }
             }

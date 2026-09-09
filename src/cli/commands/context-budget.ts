@@ -1,11 +1,11 @@
 import { Command } from 'commander';
-import { resolve } from 'node:path';
 import { BaseCommand, asyncHandler, output } from '@/cli/utils/shared.js';
 import { ContextBudgetOptimizer } from '@/core/context/budget-optimizer.js';
 import type { ContextItem } from '@/core/context/types.js';
 import { classifyTask } from '@/core/search/intent-engine.js';
 import type { TaskType } from '@/core/search/types.js';
 import { isTestPath } from '@/utils/test-detection.js';
+import { confineToProject } from '@/mcp/tools/_shared.js';
 
 interface ContextBudgetOptions {
   budget: string;
@@ -48,13 +48,13 @@ class ContextBudgetCommand extends BaseCommand {
         asyncHandler(async (task: string | undefined, opts: ContextBudgetOptions) => {
           await this.withContext(async (ctx) => {
             const budget = parseInt(opts.budget, 10);
-            if (!Number.isFinite(budget) || budget <= 0) {
+            if (!Number.isSafeInteger(budget) || budget <= 0 || budget > 10_000_000) {
               throw new Error(
                 `Invalid --budget value: "${opts.budget}" (expected a positive integer)`,
               );
             }
             const limit = parseInt(opts.limit, 10);
-            if (!Number.isFinite(limit) || limit <= 0) {
+            if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100_000) {
               throw new Error(
                 `Invalid --limit value: "${opts.limit}" (expected a positive integer)`,
               );
@@ -69,6 +69,9 @@ class ContextBudgetCommand extends BaseCommand {
               );
             }
             const strategy = opts.strategy;
+            if (!['text', 'json'].includes(opts.format)) {
+              throw new Error(`Invalid --format value: "${opts.format}" (expected text|json)`);
+            }
 
             // F31: the optional task description selects the task-type used
             // for relevance boosts BEFORE selection.
@@ -80,14 +83,15 @@ class ContextBudgetCommand extends BaseCommand {
             // like the MCP plan_context_budget tool.
             let items: ContextItem[];
             if (opts.files && opts.files.length > 0) {
-              items = opts.files.slice(0, limit).map((path) => ({
-                path,
-                tokens: ContextBudgetOptimizer.tokenEstimator(
-                  resolve(ctx.config.projectRoot, path),
-                ),
-                relevanceScore: 0.5,
-                isTestFile: isTestPath(path),
-              }));
+              items = opts.files.slice(0, limit).map((path) => {
+                const absolutePath = confineToProject(path, ctx.config.projectRoot);
+                return {
+                  path,
+                  tokens: ContextBudgetOptimizer.tokenEstimator(absolutePath),
+                  relevanceScore: 0.5,
+                  isTestFile: isTestPath(path),
+                };
+              });
             } else {
               const files = ctx.kg.getAllFiles().slice(0, limit);
               if (files.length === 0) {

@@ -24,23 +24,34 @@ export function createOnboardCommand(): Command {
           output: string;
           interactive: boolean;
         }) => {
-          await withService(['scale', 'coherence'], async (_ctx, services) => {
+          if (!['backend', 'frontend', 'fullstack', 'devops', 'ml'].includes(opts.role)) {
+            throw new Error(
+              `--role must be backend, frontend, fullstack, devops, or ml: ${opts.role}`,
+            );
+          }
+          const depth = Number.parseInt(opts.depth, 10);
+          if (!Number.isInteger(depth) || depth < 1 || depth > 5) {
+            throw new Error(`--depth must be an integer between 1 and 5: ${opts.depth}`);
+          }
+          if (!['text', 'json', 'markdown', 'interactive'].includes(opts.format)) {
+            throw new Error(
+              `--format must be text, json, markdown, or interactive: ${opts.format}`,
+            );
+          }
+          await withService(['scale'], async (_ctx, services) => {
             const scale = services.scale!;
-            services.coherence!;
 
-            output.section(`Onboarding Path Generator - ${opts.role.toUpperCase()}`);
-            output.kv('Depth', opts.depth);
-            output.kv('Format', opts.format);
+            const interactive = opts.interactive || opts.format === 'interactive';
+            if (opts.format === 'text' && !interactive) {
+              output.section(`Onboarding Path Generator - ${opts.role.toUpperCase()}`);
+              output.kv('Depth', depth);
+              output.kv('Format', opts.format);
+            }
 
             const report = scale.getScaleReport();
             const allFiles = report.modules.flatMap((m) => m.files || []);
 
-            const path = generateOnboardingPath(
-              opts.role,
-              parseInt(opts.depth, 10),
-              report,
-              allFiles,
-            );
+            const path = generateOnboardingPath(opts.role, depth, report, allFiles);
 
             if (opts.format === 'json') {
               const content = JSON.stringify(path, null, 2);
@@ -48,7 +59,7 @@ export function createOnboardCommand(): Command {
                 writeFileSync(opts.output, content);
                 output.success(`Written to ${opts.output}`);
               } else {
-                output.info(content);
+                output.raw(content);
               }
               return;
             }
@@ -59,12 +70,12 @@ export function createOnboardCommand(): Command {
                 writeFileSync(opts.output, content);
                 output.success(`Written to ${opts.output}`);
               } else {
-                output.info(content);
+                output.raw(content);
               }
               return;
             }
 
-            if (opts.format === 'interactive') {
+            if (interactive) {
               await runInteractiveOnboarding(path);
               return;
             }

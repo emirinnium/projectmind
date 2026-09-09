@@ -10,16 +10,18 @@ export {
 } from './legacy-embeddings.js';
 export type { EmbeddingVector } from './legacy-embeddings.js';
 
-export type EmbeddingProvider = 'simple' | 'unixcoder' | 'codebert';
+// Keep the compatibility facade aligned with the advanced provider implementation.
+// This prevents CLI/MCP-supported providers from disappearing from the public type
+// surface and from becoming impossible to configure through typed consumers.
+export type { EmbeddingProvider, EmbeddingOptions, EmbeddingInitResult } from './embeddings-v2.js';
 
-export interface EmbeddingOptions {
-  provider?: EmbeddingProvider;
-  dimension?: number;
-  modelPath?: string;
-}
-
-// Advanced provider initialization
-export { initEmbeddingProvider, getCurrentProvider } from './embeddings-v2.js';
+// Advanced provider initialization and bounded batch generation
+export {
+  initEmbeddingProvider,
+  initializeConfiguredEmbeddingProvider,
+  getCurrentProvider,
+  generateEmbeddingBatch,
+} from './embeddings-v2.js';
 
 /**
  * Async embedding generation with provider support.

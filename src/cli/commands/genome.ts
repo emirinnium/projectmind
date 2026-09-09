@@ -43,8 +43,12 @@ export function createGenomeCommand(): Command {
           if (b.violationPenalty) output.warn(`Violation penalty applied: ${b.violationPenalty}`);
           if (b.markerCount !== undefined)
             output.kv('Breakdown marker count', String(b.markerCount));
-        } catch {
-          // Genome payload is informational — never block on parse issues.
+        } catch (error) {
+          // Genome payload is informational — never block on parse issues,
+          // but make malformed persisted data observable to the operator.
+          output.warn(
+            `Genome breakdown could not be decoded: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
         output.kv('Genome data length', genome.genomeData.length);
       });

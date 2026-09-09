@@ -5,6 +5,7 @@
  * - {@link Result} type for explicit error propagation
  * - {@link tryCatch} / {@link tryCatchAsync} for converting exceptions to values
  * - {@link safeExecute} / {@link safeExecuteAsync} for logging swallowed errors
+ * - {@link reportSuppressedError} for observable intentional fallbacks
  * - {@link assert} / {@link require} for invariants
  *
  * @example
@@ -97,6 +98,17 @@ export async function safeExecuteAsync(fn: () => Promise<void>, context: string)
     const err = error instanceof Error ? error : new Error(String(error));
     logger.warn(`${context} - suppressed error: ${err.message}`);
   }
+}
+
+/**
+ * Report an error from an intentional fallback without changing the fallback's behavior.
+ *
+ * This is deliberately debug-level: optional discovery, rollback, and compatibility paths
+ * may continue successfully, but their failures must remain observable during diagnosis.
+ */
+export function reportSuppressedError(error: unknown, context: string): void {
+  const err = error instanceof Error ? error : new Error(String(error));
+  logger.debug(`${context}: ${err.message}`);
 }
 
 /**

@@ -19,9 +19,28 @@ parity tools. `run_cli` remains available in both profiles.
 - `debt_report` — Report cognitive debt by severity.
 - `scale_report` — Report project size, languages, coverage, and hotspots.
 - `genome_score` — Compute the project coherence score.
-- `scan_project` — Build or refresh the knowledge graph.
+- `scan_project` — Build or refresh the knowledge graph. When a non-simple
+  embedding provider is configured, the scan initializes it and writes
+  file/function/class vectors with the same provider and configured dimension
+  as later queries. Optional-provider fallback is reported rather than hidden.
 - `start_session` / `end_session` / `get_agent_sessions` — Manage agent sessions.
 - `resource_subscribe` / `resource_unsubscribe` — Manage session resource-update subscriptions.
+
+## Evidence and reproducibility
+
+- `prove_claim` — Check a claim against explicitly supplied source files. A
+  fresh source hash is reported as source-backed evidence only; semantic, AST,
+  typecheck, and runtime verification remain separate claims.
+- `verify_freshness` — Compare current source hashes with the indexed graph and
+  return per-file freshness states plus actionable next steps.
+- `kg_query` with `action: "feature-map"` — Map conservative path-derived
+  feature candidates and cross-feature import flows. Labels are evidence for
+  structure, not proof of business semantics.
+
+For reproducible CI review, use the CLI `pm graph snapshot` / `pm graph verify`
+pair and export `pm pr-preview --format sarif`. Snapshots are content-addressed
+and portable; verification detects graph drift but does not claim runtime
+correctness.
 
 ## Imports, graph, and paths
 
@@ -30,7 +49,7 @@ parity tools. `run_cli` remains available in both profiles.
 - `resolve_import` — Resolve an import in the knowledge graph.
 - `get_dependents` — Find reverse dependencies.
 - `get_dependency_graph` — Get a module dependency graph.
-- `kg_query` — Run graph algorithms (stats, PageRank, communities, paths, BFS).
+- `kg_query` — Run graph algorithms (stats, PageRank, communities, paths, BFS, and path-derived feature/flow mapping).
 - `kg_stats` — Get node, edge, and PageRank statistics.
 - `export_architecture_diagram` — Export SVG, PNG, or Mermaid architecture data.
 - `resolve_path` — Resolve TypeScript/JavaScript paths and aliases.
@@ -59,8 +78,19 @@ parity tools. `run_cli` remains available in both profiles.
 
 ## Search, symbols, and code analysis
 
-- `search_intent` — Hybrid natural-language task search.
-- `semantic_search` — Embedding-based file search.
+- `search_intent` — Hybrid natural-language task search. Each result includes
+  `semanticEvidence`: `measured` for an observed vector similarity,
+  `rank-derived` when only graph ordering was available, and
+  `structural-heuristic` for import/dependent expansion. This prevents a
+  heuristic rank from being presented as a measured semantic score.
+- `semantic_search` — Embedding-based file or symbol search. Use
+  `scope: "file"` for whole-file retrieval or `scope: "symbol"` for indexed
+  functions/classes with source locations. Every response includes the active
+  provider, query/index dimensions, source hash/scan metadata, index coverage,
+  the persisted provider/model manifest, and explicit limitations. The query
+  re-reads every indexed source path and reports freshness counts; stale,
+  missing, unindexed, or unknown paths downgrade evidence to `partial`. A
+  missing or incompatible manifest also downgrades evidence to `partial`.
 - `structural_search` — AST search with optional dry-run replacement.
 - `find_symbol_references` — Find symbol references through the TypeScript language service.
 - `find_symbol_definition` — Find a symbol definition through the TypeScript language service.
@@ -72,7 +102,12 @@ parity tools. `run_cli` remains available in both profiles.
 
 - `list_projects` / `create_project` / `switch_project` — Manage graph projects.
 - `store_team_memory` / `get_team_memories` / `search_team_memories` — Share durable team knowledge.
-- `init_embedding_provider` — Select and initialize an embedding provider.
+- `init_embedding_provider` — Select and initialize `simple`, `openai`,
+  `transformers`, `unixcoder`, or `codebert`. Optional providers report an
+  explicit fallback and limitations when credentials, model files, or runtime
+  dependencies are unavailable. Repeating the call is idempotent for the full
+  provider/model/key/path configuration; changing that configuration causes a
+  deliberate reinitialization.
 - `generate_embedding` — Generate a vector for text or code.
 - `get_embedding_provider` — Inspect embedding configuration.
 - `ingest_trace` — Persist runtime call-trace data.

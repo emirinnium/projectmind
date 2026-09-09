@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import ts from 'typescript';
 import { CoherenceCache } from '../../cache/index.js';
 import { FileInfo } from '../../../storage/knowledge-graph.js';
 import { ContractEngine } from '../../contracts/engine.js';
@@ -72,7 +73,7 @@ export class FastCoherenceAnalyzer {
     const suggestions: string[] = [];
 
     // Semantic Analysis
-    const semanticIssues = this.semanticAnalysis(options.code, options.filePath);
+    const semanticIssues = this.semanticAnalysis(options.code);
     issues += semanticIssues.issues;
     reasoningTrace.push(...semanticIssues.reasoningTrace);
     suggestions.push(...semanticIssues.suggestions);
@@ -92,9 +93,14 @@ export class FastCoherenceAnalyzer {
       issues++;
     }
 
-    const anyUsage = (options.code.match(/\bany\b/g) || []).length;
+    // Count actual TypeScript AnyKeyword nodes instead of matching text. A
+    // regex also counts comments, documentation and string literals, which
+    // turned harmless files into false-positive debt findings.
+    const anyUsage = countExplicitAnyTypes(options.code, options.filePath);
     if (anyUsage > MAX_ANY_USAGE) {
-      reasoningTrace.push(`Warning: Found ${anyUsage} uses of "any" — type safety concern`);
+      reasoningTrace.push(
+        `Warning: Found ${anyUsage} explicit "any" type annotations — type safety concern`,
+      );
       suggestions.push('Replace "any" with specific types or unknown');
       issues++;
     }
@@ -206,10 +212,7 @@ export class FastCoherenceAnalyzer {
   /**
    * Perform semantic analysis on the code.
    */
-  private semanticAnalysis(
-    code: string,
-    filePath: string,
-  ): {
+  private semanticAnalysis(code: string): {
     issues: number;
     reasoningTrace: string[];
     suggestions: string[];
@@ -278,20 +281,37 @@ export class FastCoherenceAnalyzer {
       issues += complexFunctions.length;
     }
 
-    // Check for type usage
-    const typeUsage = (code.match(/\b[A-Z][a-zA-Z0-9]*\b/g) || []).length;
-    if (typeUsage < 5 && filePath.endsWith('.ts')) {
-      reasoningTrace.push(
-        `Warning: Low type usage in TypeScript file (${typeUsage} types detected)`,
-      );
-      suggestions.push('Consider using more specific types for better type safety');
-      issues++;
-    }
-
     return { issues, reasoningTrace, suggestions };
   }
 
   private hashCode(str: string): string {
     return stableHash(str);
   }
+}
+
+/**
+ * Count explicit `any` type annotations with the TypeScript AST.
+ *
+ * This deliberately does not infer whether a type is "good" or "bad"; it
+ * only reports syntax that is objectively an explicit AnyKeyword. Comments,
+ * strings and prose such as "Replace any with unknown" are not AST nodes of
+ * that kind and therefore cannot inflate the result.
+ */
+function countExplicitAnyTypes(code: string, filePath: string): number {
+  const lowerPath = filePath.toLowerCase();
+  const scriptKind = lowerPath.endsWith('.tsx')
+    ? ts.ScriptKind.TSX
+    : lowerPath.endsWith('.jsx')
+      ? ts.ScriptKind.JSX
+      : lowerPath.endsWith('.js') || lowerPath.endsWith('.mjs') || lowerPath.endsWith('.cjs')
+        ? ts.ScriptKind.JS
+        : ts.ScriptKind.TS;
+  const sourceFile = ts.createSourceFile(filePath, code, ts.ScriptTarget.Latest, true, scriptKind);
+  let count = 0;
+  const visit = (node: ts.Node): void => {
+    if (node.kind === ts.SyntaxKind.AnyKeyword) count++;
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return count;
 }

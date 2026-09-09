@@ -9,6 +9,10 @@ function addDirOption(cmd: Command): Command {
 export function createAdrCommand(): Command {
   const adrCmd = new Command('adr').description('Architecture Decision Records management');
 
+  adrCmd.action(() => {
+    adrCmd.outputHelp();
+  });
+
   addDirOption(
     adrCmd
       .command('new <title>')
@@ -108,7 +112,7 @@ Describe the decision made.
           const filtered = opts.status ? adrs.filter((a) => a.status === opts.status) : adrs;
 
           if (opts.format === 'json') {
-            output.info(JSON.stringify(filtered, null, 2));
+            output.json(filtered);
             return;
           }
 

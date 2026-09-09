@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { Command } from 'commander';
 import { withService, asyncHandler, output, loadConfig, join } from '@/cli/utils/shared.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -48,27 +49,37 @@ export function createContractTestCommand(): Command {
           format: string;
           output: string;
         }) => {
+          if (!['vitest', 'jest'].includes(opts.framework)) {
+            throw new Error(`--framework must be vitest or jest: ${opts.framework}`);
+          }
+          if (!['text', 'json'].includes(opts.format)) {
+            throw new Error(`--format must be text or json: ${opts.format}`);
+          }
           await withService(['scale', 'coherence'], async (_ctx, _services) => {
             const config = loadConfig();
 
-            output.section('Contract Test Generator');
-            output.kv('Framework', opts.framework);
-            output.kv('Output dir', opts.outputDir);
+            if (opts.format === 'text') {
+              output.section('Contract Test Generator');
+              output.kv('Framework', opts.framework);
+              output.kv('Output dir', opts.outputDir);
+            }
 
             // Get contracts from contract engine
             const contracts = await getContracts(config);
 
             if (contracts.length === 0) {
-              output.warn('No contracts found. Configure contracts in .projectmindrc.json');
+              if (opts.format === 'json') output.json({ contracts: [], testFiles: 0 });
+              else output.warn('No contracts found. Configure contracts in .projectmindrc.json');
               return;
             }
 
-            output.kv('Contracts found', contracts.length);
+            if (opts.format === 'text') output.kv('Contracts found', contracts.length);
 
             const testFiles: { fileName: string; content: string }[] = [];
+            let evaluation: ReturnType<typeof runContractEvaluation> | undefined;
 
             if (opts.generate) {
-              output.section('Generating Contract Tests');
+              if (opts.format === 'text') output.section('Generating Contract Tests');
 
               const generated = generateContractTests(contracts, opts.framework, config);
               testFiles.push(...generated);
@@ -81,58 +92,81 @@ export function createContractTestCommand(): Command {
               for (const { fileName, content } of generated) {
                 const outputPath = join(outDir, fileName);
                 writeFileSync(outputPath, content);
-                output.success(`Generated: ${outputPath}`);
+                if (opts.format === 'text') output.success(`Generated: ${outputPath}`);
               }
 
-              output.success(`Generated ${generated.length} test file(s) in ${opts.outputDir}`);
+              if (opts.format === 'text') {
+                output.success(`Generated ${generated.length} test file(s) in ${opts.outputDir}`);
+              }
             }
 
             if (opts.run) {
-              output.section('Running Contract Tests');
-              output.info('Evaluating contracts against source files...');
+              if (opts.format === 'text') {
+                output.section('Running Contract Tests');
+                output.info('Evaluating contracts against source files...');
+              }
 
               // Real evaluation: the ContractEngine scans actual project sources
               // for violations of every configured contract.
-              const results = runContractEvaluation(config.projectRoot, contracts);
+              evaluation = runContractEvaluation(config.projectRoot, contracts);
 
-              output.kv('Files scanned', results.filesScanned);
-              output.kv('Contracts evaluated', results.total);
-              output.kv('Passed', results.passed);
-              output.kv('Failed', results.failed);
+              if (opts.format === 'text') {
+                output.kv('Files scanned', evaluation.filesScanned);
+                output.kv('Contracts evaluated', evaluation.total);
+                output.kv('Passed', evaluation.passed);
+                output.kv('Failed', evaluation.failed);
+              }
 
-              if (results.failed > 0) {
-                output.warn('Some contract tests failed');
-                for (const failure of results.failures.slice(0, 10)) {
-                  output.kv(`  ❌ ${failure.contract}`, failure.reason);
+              if (evaluation.failed > 0) {
+                if (opts.format === 'text') {
+                  output.warn('Some contract tests failed');
+                  for (const failure of evaluation.failures.slice(0, 10)) {
+                    output.kv(`  ❌ ${failure.contract}`, failure.reason);
+                  }
                 }
               } else {
-                output.success('All contract tests passed!');
+                if (opts.format === 'text') output.success('All contract tests passed!');
               }
             }
 
             if (!opts.generate && !opts.run) {
               // List contracts with test suggestions
-              output.section('Contract Test Suggestions');
+              if (opts.format === 'text') output.section('Contract Test Suggestions');
 
               for (const contract of contracts) {
                 const tests = suggestContractTests(contract);
-                output.kv(`${contract.name} (${contract.id})`, `${tests.length} test(s)`);
-                for (const test of tests.slice(0, 3)) {
-                  output.kv(`  • ${test.description}`, test.type);
+                if (opts.format === 'text') {
+                  output.kv(`${contract.name} (${contract.id})`, `${tests.length} test(s)`);
+                  for (const test of tests.slice(0, 3)) {
+                    output.kv(`  • ${test.description}`, test.type);
+                  }
                 }
               }
+            }
+
+            if (opts.format === 'json') {
+              output.json({
+                protocolVersion: 1,
+                contracts,
+                generatedFiles: testFiles.map((file) => file.fileName),
+                ...(evaluation ? { evaluation } : {}),
+              });
             }
 
             if (opts.output) {
               writeFileSync(
                 opts.output,
                 JSON.stringify(
-                  { contracts, testFiles: opts.generate ? testFiles.length : 0 },
+                  {
+                    contracts,
+                    generatedFiles: testFiles.map((file) => file.fileName),
+                    ...(evaluation ? { evaluation } : {}),
+                  },
                   null,
                   2,
                 ),
               );
-              output.success(`Written to ${opts.output}`);
+              if (opts.format === 'text') output.success(`Written to ${opts.output}`);
             }
           });
         },
@@ -167,43 +201,43 @@ function generateContractTests(
 
   for (const [pattern, patternContracts] of byPattern) {
     const fileName = `contract-${pattern.replace(/[^a-zA-Z0-9]/g, '-')}.test.ts`;
-    const content = generateTestFile(patternContracts, pattern, framework);
+    const content = generateTestFile(patternContracts, framework);
     testFiles.push({ fileName, content });
   }
 
   return testFiles;
 }
 
-function generateTestFile(contracts: ContractLike[], pattern: string, framework: string): string {
+function generateTestFile(contracts: ContractLike[], framework: string): string {
   const isVitest = framework === 'vitest';
   const importStmt = isVitest
-    ? `import { describe, it, expect, vi } from 'vitest';`
-    : `import { describe, it, expect, vi } from '@jest/globals';`;
+    ? `import { describe, it, expect } from 'vitest';`
+    : `import { describe, it, expect } from '@jest/globals';`;
 
   const contractTests = contracts
     .map((contract) => {
       const testCases = generateContractTestCases(contract)
         .map(
           (tc) => `
-  it('${tc.description}', () => {
-    const code = \`${tc.testCode}\`;
-    const violations = contractEngine.evaluate('${tc.filePath}', code);
-    const hasViolation = violations.some(v => v.contractId === '${contract.id}');
+  it(${asJsString(tc.description)}, () => {
+    const code = ${asJsString(tc.testCode)};
+    const violations = contractEngine.evaluate(${asJsString(tc.filePath)}, code);
+    const hasViolation = violations.some(v => v.contractId === ${asJsString(contract.id)});
     
-    if ('${tc.expectedResult}' === 'pass') {
+    if (${asJsString(tc.expectedResult)} === 'pass') {
       expect(hasViolation).toBe(false);
     } else {
       expect(hasViolation).toBe(true);
-      const violation = violations.find(v => v.contractId === '${contract.id}');
-      expect(violation?.severity).toBe('${contract.severity}');
-      expect(violation?.message).toContain('${tc.description}');
+      const violation = violations.find(v => v.contractId === ${asJsString(contract.id)});
+      expect(violation?.severity).toBe(${asJsString(contract.severity)});
+      expect(violation?.message).toContain(${asJsString(tc.description)});
     }
   }`,
         )
         .join('\n');
 
       return `
-describe('${contract.name} (${contract.id})', () => {
+describe(${asJsString(`${contract.name} (${contract.id})`)}, () => {
 ${testCases}
 });`;
     })
@@ -220,6 +254,10 @@ const contractEngine = new ContractEngine(config.contracts);
 
 ${contractTests}
 `;
+}
+
+function asJsString(value: string): string {
+  return JSON.stringify(value);
 }
 
 function generateContractTestCases(
@@ -377,7 +415,8 @@ function runContractEvaluation(
           list.push(`${relPath}${v.line ? `:${v.line}` : ''} — ${v.message}`);
         }
       }
-    } catch {
+    } catch (error) {
+      reportSuppressedError(error, 'Intentional fallback src/cli/commands/contract-test.ts:417');
       // Unreadable/unparseable file: skip rather than fail the whole run.
     }
   }

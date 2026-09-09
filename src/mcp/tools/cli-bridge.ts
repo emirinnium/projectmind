@@ -39,6 +39,8 @@ export const ALLOWLISTED_CLI_COMMANDS = new Set([
   'find_symbol_references',
   'onboard',
   'migrate',
+  'graph',
+  'proof',
 ]);
 
 /**
@@ -62,6 +64,11 @@ const SUBCOMMAND_WHITELIST: Record<string, ReadonlyArray<ReadonlyArray<string>>>
   doctor: [['scan-health']],
   license: [['check'], ['report']],
   migrate: [['check-deps']],
+  // These bridge only the non-mutating graph views plus the default snapshot
+  // capture. Positional file selection remains available through the typed
+  // MCP proof tool, where paths are explicitly confined and validated.
+  graph: [['circular'], ['feature-map'], ['snapshot']],
+  proof: [['verify']],
 };
 
 /**

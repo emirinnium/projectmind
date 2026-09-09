@@ -69,6 +69,7 @@ export async function buildProgram(): Promise<Command> {
     { path: './commands/taint.js', name: 'createTaintCommand' },
     { path: './commands/parser-capabilities.js', name: 'createParserCapabilitiesCommand' },
     { path: './commands/init-mcp.js', name: 'createInitMcpCommand' },
+    { path: './commands/proof.js', name: 'createProofCommand' },
     { path: './commands/watch.js', name: 'createWatchCommand' },
   ];
 

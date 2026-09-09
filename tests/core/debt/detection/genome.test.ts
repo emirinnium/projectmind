@@ -22,10 +22,12 @@ function createTestDb(): DatabaseSync {
 function createMockKg(opts: {
   files?: Array<{ path: string }>;
   sessions?: unknown[];
+  cycles?: string[][];
 }) {
   return {
     getAllFiles: () => opts.files ?? [],
     getAgentSessions: () => opts.sessions ?? [],
+    findCircularDependencies: () => opts.cycles ?? [],
   } as unknown as KnowledgeGraph;
 }
 
@@ -87,13 +89,31 @@ describe('GenomeComputer', () => {
       // Insert test patterns
       db.prepare(
         `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run('test-pattern-1', 'naming', 'Test pattern 1', 'hash1', 0.9, new Date().toISOString(), new Date().toISOString(), 5);
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        'test-pattern-1',
+        'naming',
+        'Test pattern 1',
+        'hash1',
+        0.9,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        5,
+      );
 
       db.prepare(
         `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run('test-pattern-2', 'structure', 'Test pattern 2', 'hash2', 0.7, new Date().toISOString(), new Date().toISOString(), 3);
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        'test-pattern-2',
+        'structure',
+        'Test pattern 2',
+        'hash2',
+        0.7,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        3,
+      );
 
       const kg = createMockKg({});
       const computer = new GenomeComputer(kg, db);
@@ -106,13 +126,31 @@ describe('GenomeComputer', () => {
     it('counts high confidence patterns (>= 0.8)', () => {
       db.prepare(
         `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run('high-conf', 'naming', 'High confidence', 'hash1', 0.95, new Date().toISOString(), new Date().toISOString(), 1);
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        'high-conf',
+        'naming',
+        'High confidence',
+        'hash1',
+        0.95,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        1,
+      );
 
       db.prepare(
         `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run('low-conf', 'naming', 'Low confidence', 'hash2', 0.5, new Date().toISOString(), new Date().toISOString(), 1);
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        'low-conf',
+        'naming',
+        'Low confidence',
+        'hash2',
+        0.5,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        1,
+      );
 
       const kg = createMockKg({});
       const computer = new GenomeComputer(kg, db);
@@ -127,13 +165,31 @@ describe('GenomeComputer', () => {
       // Pattern with high usage should pull weighted average up
       db.prepare(
         `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run('heavy-pattern', 'naming', 'Heavy usage', 'hash1', 0.95, new Date().toISOString(), new Date().toISOString(), 100);
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        'heavy-pattern',
+        'naming',
+        'Heavy usage',
+        'hash1',
+        0.95,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        100,
+      );
 
       db.prepare(
         `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run('light-pattern', 'naming', 'Light usage', 'hash2', 0.3, new Date().toISOString(), new Date().toISOString(), 1);
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        'light-pattern',
+        'naming',
+        'Light usage',
+        'hash2',
+        0.3,
+        new Date().toISOString(),
+        new Date().toISOString(),
+        1,
+      );
 
       const kg = createMockKg({});
       const computer = new GenomeComputer(kg, db);
@@ -148,12 +204,12 @@ describe('GenomeComputer', () => {
     it('counts high severity unresolved debt items', () => {
       db.prepare(
         `INSERT INTO debt_items (type, description, severity, suggestion, reasoning_trace, resolved)
-         VALUES (?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?)`,
       ).run('complexity', 'High complexity function', 'high', 'Refactor', '[]', 0);
 
       db.prepare(
         `INSERT INTO debt_items (type, description, severity, suggestion, reasoning_trace, resolved)
-         VALUES (?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?)`,
       ).run('complexity', 'Another high severity', 'high', 'Refactor', '[]', 0);
 
       const kg = createMockKg({});
@@ -167,7 +223,7 @@ describe('GenomeComputer', () => {
     it('does not count resolved debt items as violations', () => {
       db.prepare(
         `INSERT INTO debt_items (type, description, severity, suggestion, reasoning_trace, resolved)
-         VALUES (?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?)`,
       ).run('complexity', 'Resolved issue', 'high', 'Refactor', '[]', 1);
 
       const kg = createMockKg({});
@@ -181,7 +237,7 @@ describe('GenomeComputer', () => {
       // Insert 20 high severity items (20 * 0.02 = 0.4, capped at 0.3)
       const stmt = db.prepare(
         `INSERT INTO debt_items (type, description, severity, suggestion, reasoning_trace, resolved)
-         VALUES (?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?)`,
       );
       for (let i = 0; i < 20; i++) {
         stmt.run('complexity', `Issue ${i}`, 'high', 'Refactor', '[]', 0);
@@ -198,12 +254,15 @@ describe('GenomeComputer', () => {
   describe('TODO/FIXME marker counting', () => {
     it('counts TODO and FIXME markers in project files', () => {
       const file1 = join(tmpDir, 'file1.ts');
-      writeFileSync(file1, `
+      writeFileSync(
+        file1,
+        `
         // TODO: implement this function
         const x = 1;
         // FIXME: this is broken
         const y = 2;
-      `);
+      `,
+      );
 
       const kg = createMockKg({ files: [{ path: file1 }] });
       const computer = new GenomeComputer(kg, db);
@@ -244,46 +303,6 @@ describe('GenomeComputer', () => {
 
       // Only "TODO:" should match, not "TODOlist"
       expect(result.breakdown.markerCount).toBe(1);
-    });
-  });
-
-  describe('circular dependency detection', () => {
-    it('applies penalty when circular dependencies exist', () => {
-      db.prepare(
-        `INSERT INTO circular_dependencies (cycle_path, file_count)
-         VALUES (?, ?)`
-      ).run('a.ts -> b.ts -> a.ts', 2);
-
-      const kg = createMockKg({});
-      const computer = new GenomeComputer(kg, db);
-      const result = computer.compute();
-
-      // 1 circular dep * 0.05 = 0.05 penalty
-      expect(result.breakdown.circularDepPenalty).toBeCloseTo(0.05, 2);
-    });
-
-    it('caps circular dependency penalty at 0.2', () => {
-      const stmt = db.prepare(
-        `INSERT INTO circular_dependencies (cycle_path, file_count)
-         VALUES (?, ?)`
-      );
-      for (let i = 0; i < 10; i++) {
-        stmt.run(`cycle${i}: a.ts -> b.ts -> a.ts`, 2);
-      }
-
-      const kg = createMockKg({});
-      const computer = new GenomeComputer(kg, db);
-      const result = computer.compute();
-
-      expect(result.breakdown.circularDepPenalty).toBeLessThanOrEqual(0.2);
-    });
-
-    it('returns zero penalty when no circular dependencies', () => {
-      const kg = createMockKg({});
-      const computer = new GenomeComputer(kg, db);
-      const result = computer.compute();
-
-      expect(result.breakdown.circularDepPenalty).toBe(0);
     });
   });
 
@@ -347,7 +366,7 @@ describe('GenomeComputer', () => {
       // Insert worst-case data
       const debtStmt = db.prepare(
         `INSERT INTO debt_items (type, description, severity, suggestion, reasoning_trace, resolved)
-         VALUES (?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?)`,
       );
       for (let i = 0; i < 50; i++) {
         debtStmt.run('complexity', `Issue ${i}`, 'high', 'Fix', '[]', 0);
@@ -355,7 +374,7 @@ describe('GenomeComputer', () => {
 
       const circStmt = db.prepare(
         `INSERT INTO circular_dependencies (cycle_path, file_count)
-         VALUES (?, ?)`
+         VALUES (?, ?)`,
       );
       for (let i = 0; i < 20; i++) {
         circStmt.run(`cycle${i}`, 3);

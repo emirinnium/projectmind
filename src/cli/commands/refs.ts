@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { asyncHandler, output } from '@/cli/utils/shared.js';
 import { loadConfig } from '@/cli/utils/shared.js';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { confineToProject } from '@/mcp/tools/_shared.js';
 import ts from 'typescript';
 import { createProjectLanguageService } from '@/cli/utils/language-service.js';
 
@@ -20,9 +20,10 @@ export function createRefsCommand(): Command {
     .action(
       asyncHandler(async (filePath: string, symbol: string, opts: { max: string }) => {
         const root = loadConfig().projectRoot;
+        const targetPath = confineToProject(filePath, root);
 
-        if (!existsSync(resolve(root, filePath))) {
-          output.warn(`File not found: ${resolve(root, filePath)}`);
+        if (!existsSync(targetPath)) {
+          output.warn(`File not found: ${targetPath}`);
           return;
         }
 
@@ -30,13 +31,18 @@ export function createRefsCommand(): Command {
         output.kv('File', filePath);
         output.info('Building language-service program (first run may take a few seconds)...');
 
-        const ls = createProjectLanguageService(root, [resolve(root, filePath)]);
+        const max = Number.parseInt(opts.max, 10);
+        if (!Number.isSafeInteger(max) || max < 1 || max > 10_000) {
+          throw new Error(`--max must be an integer between 1 and 10000: ${opts.max}`);
+        }
+
+        const ls = createProjectLanguageService(root, [targetPath]);
         if (!ls) {
           output.warn('No usable tsconfig.json at project root — language-service unavailable.');
           return;
         }
         try {
-          const targetFile = ls.norm(resolve(root, filePath));
+          const targetFile = ls.norm(targetPath);
           const sourceText = ts.sys.readFile(targetFile) ?? '';
           const position = pickDeclarationPosition(sourceText, symbol);
           if (position < 0) {
@@ -51,7 +57,7 @@ export function createRefsCommand(): Command {
           for (const refSym of referencedSymbols) {
             for (const ref of [refSym.definition, ...refSym.references]) {
               total++;
-              if (shown >= parseInt(opts.max, 10)) continue;
+              if (shown >= max) continue;
               const sfPath = ref.fileName.replace(/\\/g, '/');
               const sfText = ts.sys.readFile(ref.fileName) ?? '';
               const { line, column, snippet } = describeSpan(sfText, ref.textSpan.start);

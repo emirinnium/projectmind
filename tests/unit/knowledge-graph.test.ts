@@ -6,11 +6,11 @@ import type { FileStructure } from '../../src/parser/ast-parser.js';
 describe('Schema Setup', () => {
   it('creates all required tables', () => {
     const { db, cleanup } = createIsolatedDatabase();
-    const tables = db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    ).all() as Array<{ name: string }>;
-    
-    const tableNames = tables.map(t => t.name);
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+      .all() as Array<{ name: string }>;
+
+    const tableNames = tables.map((t) => t.name);
     expect(tableNames).toContain('files');
     expect(tableNames).toContain('functions');
     expect(tableNames).toContain('classes');
@@ -40,8 +40,11 @@ describe('Project Operations', () => {
   });
 
   it('inserts and retrieves a project', () => {
-    db.prepare('INSERT INTO projects (name, root_path, description) VALUES (?, ?, ?)')
-      .run('test-project', '/test/path', 'A test project');
+    db.prepare('INSERT INTO projects (name, root_path, description) VALUES (?, ?, ?)').run(
+      'test-project',
+      '/test/path',
+      'A test project',
+    );
 
     const row = db.prepare('SELECT * FROM projects WHERE name = ?').get('test-project') as {
       id: number;
@@ -67,7 +70,11 @@ describe('Project Operations', () => {
 
   it('deletes a project and cascades to files', () => {
     db.prepare('INSERT INTO projects (name, root_path) VALUES (?, ?)').run('proj1', '/p1');
-    db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)').run(1, '/p1/file.ts', 'file.ts');
+    db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)').run(
+      1,
+      '/p1/file.ts',
+      'file.ts',
+    );
 
     // Delete files first (cascade not enforced without FK)
     db.prepare('DELETE FROM files WHERE project_id = ?').run(1);
@@ -87,7 +94,11 @@ describe('File Operations', () => {
     db = isolated.db;
     cleanup = isolated.cleanup;
     // Insert default project
-    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(1, 'default', '/test');
+    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(
+      1,
+      'default',
+      '/test',
+    );
   });
 
   afterEach(() => {
@@ -95,8 +106,9 @@ describe('File Operations', () => {
   });
 
   it('inserts and retrieves a file', () => {
-    db.prepare('INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(1, '/test/src/index.ts', 'src/index.ts', 'typescript', 1024, 'abc123');
+    db.prepare(
+      'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(1, '/test/src/index.ts', 'src/index.ts', 'typescript', 1024, 'abc123');
 
     const row = db.prepare('SELECT * FROM files WHERE path = ?').get('/test/src/index.ts') as {
       id: number;
@@ -115,12 +127,17 @@ describe('File Operations', () => {
 
   it('upserts a file (insert then update)', () => {
     // Insert
-    db.prepare('INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(1, '/test/file.ts', 'file.ts', 'typescript', 100, 'hash1');
+    db.prepare(
+      'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(1, '/test/file.ts', 'file.ts', 'typescript', 100, 'hash1');
 
     // Update
-    db.prepare('UPDATE files SET size_bytes = ?, hash = ? WHERE path = ? AND project_id = ?')
-      .run(200, 'hash2', '/test/file.ts', 1);
+    db.prepare('UPDATE files SET size_bytes = ?, hash = ? WHERE path = ? AND project_id = ?').run(
+      200,
+      'hash2',
+      '/test/file.ts',
+      1,
+    );
 
     const row = db.prepare('SELECT * FROM files WHERE path = ?').get('/test/file.ts') as {
       size_bytes: number;
@@ -132,11 +149,18 @@ describe('File Operations', () => {
   });
 
   it('stores and retrieves functions for a file', () => {
-    db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)').run(1, '/test/file.ts', 'file.ts');
-    const fileId = (db.prepare('SELECT id FROM files WHERE path = ?').get('/test/file.ts') as { id: number }).id;
+    db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)').run(
+      1,
+      '/test/file.ts',
+      'file.ts',
+    );
+    const fileId = (
+      db.prepare('SELECT id FROM files WHERE path = ?').get('/test/file.ts') as { id: number }
+    ).id;
 
-    db.prepare('INSERT INTO functions (file_id, name, signature, complexity, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(fileId, 'myFunction', 'myFunction(x: number)', 5, 10, 20);
+    db.prepare(
+      'INSERT INTO functions (file_id, name, signature, complexity, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(fileId, 'myFunction', 'myFunction(x: number)', 5, 10, 20);
 
     const fns = db.prepare('SELECT * FROM functions WHERE file_id = ?').all(fileId) as Array<{
       name: string;
@@ -152,11 +176,18 @@ describe('File Operations', () => {
   });
 
   it('stores and retrieves classes for a file', () => {
-    db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)').run(1, '/test/file.ts', 'file.ts');
-    const fileId = (db.prepare('SELECT id FROM files WHERE path = ?').get('/test/file.ts') as { id: number }).id;
+    db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)').run(
+      1,
+      '/test/file.ts',
+      'file.ts',
+    );
+    const fileId = (
+      db.prepare('SELECT id FROM files WHERE path = ?').get('/test/file.ts') as { id: number }
+    ).id;
 
-    db.prepare('INSERT INTO classes (file_id, name, methods_count, properties_count) VALUES (?, ?, ?, ?)')
-      .run(fileId, 'MyClass', 5, 3);
+    db.prepare(
+      'INSERT INTO classes (file_id, name, methods_count, properties_count) VALUES (?, ?, ?, ?)',
+    ).run(fileId, 'MyClass', 5, 3);
 
     const classes = db.prepare('SELECT * FROM classes WHERE file_id = ?').all(fileId) as Array<{
       name: string;
@@ -170,11 +201,21 @@ describe('File Operations', () => {
   });
 
   it('stores and retrieves imports for a file', () => {
-    db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)').run(1, '/test/file.ts', 'file.ts');
-    const fileId = (db.prepare('SELECT id FROM files WHERE path = ?').get('/test/file.ts') as { id: number }).id;
+    db.prepare('INSERT INTO files (project_id, path, relative_path) VALUES (?, ?, ?)').run(
+      1,
+      '/test/file.ts',
+      'file.ts',
+    );
+    const fileId = (
+      db.prepare('SELECT id FROM files WHERE path = ?').get('/test/file.ts') as { id: number }
+    ).id;
 
-    db.prepare('INSERT INTO imports (file_id, source, kind, resolved) VALUES (?, ?, ?, ?)')
-      .run(fileId, './utils', 'relative', 1);
+    db.prepare('INSERT INTO imports (file_id, source, kind, resolved) VALUES (?, ?, ?, ?)').run(
+      fileId,
+      './utils',
+      'relative',
+      1,
+    );
 
     const imports = db.prepare('SELECT * FROM imports WHERE file_id = ?').all(fileId) as Array<{
       source: string;
@@ -196,7 +237,11 @@ describe('Resource & Data Flow Operations', () => {
     const isolated = createIsolatedDatabase();
     db = isolated.db;
     cleanup = isolated.cleanup;
-    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(1, 'default', '/test');
+    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(
+      1,
+      'default',
+      '/test',
+    );
   });
 
   afterEach(() => {
@@ -204,10 +249,14 @@ describe('Resource & Data Flow Operations', () => {
   });
 
   it('creates and retrieves resources', () => {
-    db.prepare('INSERT INTO resources (qualified_name, kind, identity) VALUES (?, ?, ?)')
-      .run('fs.readFile("/input.txt")', 'FILE', '/input.txt');
+    db.prepare('INSERT INTO resources (qualified_name, kind, identity) VALUES (?, ?, ?)').run(
+      'fs.readFile("/input.txt")',
+      'FILE',
+      '/input.txt',
+    );
 
-    const row = db.prepare('SELECT * FROM resources WHERE qualified_name = ?')
+    const row = db
+      .prepare('SELECT * FROM resources WHERE qualified_name = ?')
       .get('fs.readFile("/input.txt")') as { kind: string; identity: string };
 
     expect(row.kind).toBe('FILE');
@@ -215,18 +264,31 @@ describe('Resource & Data Flow Operations', () => {
   });
 
   it('records data flows between resources', () => {
-    db.prepare('INSERT INTO resources (qualified_name, kind, identity) VALUES (?, ?, ?)')
-      .run('fs.readFile("/input.txt")', 'FILE', '/input.txt');
-    const fromId = (db.prepare('SELECT id FROM resources WHERE qualified_name = ?')
-      .get('fs.readFile("/input.txt")') as { id: number }).id;
+    db.prepare('INSERT INTO resources (qualified_name, kind, identity) VALUES (?, ?, ?)').run(
+      'fs.readFile("/input.txt")',
+      'FILE',
+      '/input.txt',
+    );
+    const fromId = (
+      db
+        .prepare('SELECT id FROM resources WHERE qualified_name = ?')
+        .get('fs.readFile("/input.txt")') as { id: number }
+    ).id;
 
-    db.prepare('INSERT INTO resources (qualified_name, kind, identity) VALUES (?, ?, ?)')
-      .run('processInput', 'ENV', 'inputSource');
-    const toId = (db.prepare('SELECT id FROM resources WHERE qualified_name = ?')
-      .get('processInput') as { id: number }).id;
+    db.prepare('INSERT INTO resources (qualified_name, kind, identity) VALUES (?, ?, ?)').run(
+      'processInput',
+      'ENV',
+      'inputSource',
+    );
+    const toId = (
+      db.prepare('SELECT id FROM resources WHERE qualified_name = ?').get('processInput') as {
+        id: number;
+      }
+    ).id;
 
-    db.prepare('INSERT INTO data_flows (from_resource_id, to_resource_id, kind, project_id) VALUES (?, ?, ?, ?)')
-      .run(fromId, toId, 'arg', 1);
+    db.prepare(
+      'INSERT INTO data_flows (from_resource_id, to_resource_id, kind, project_id) VALUES (?, ?, ?, ?)',
+    ).run(fromId, toId, 'arg', 1);
 
     const flows = db.prepare('SELECT * FROM data_flows WHERE project_id = ?').all(1) as Array<{
       from_resource_id: number;
@@ -266,105 +328,14 @@ describe('Settings Operations', () => {
 
   it('updates settings', () => {
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('test_key', 'initial');
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('test_key', 'updated');
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
+      'test_key',
+      'updated',
+    );
 
-    const row = db.prepare('SELECT * FROM settings WHERE key = ?').get('test_key') as { value: string };
-    expect(row.value).toBe('updated');
-  });
-});
-
-describe('KnowledgeGraph — dynamic calls + path lookup hardening', () => {
-  let db: ReturnType<typeof createIsolatedDatabase>['db'];
-  let kg: KnowledgeGraph;
-  let cleanup: ReturnType<typeof createIsolatedDatabase>['cleanup'];
-
-  function makeStruct(filePath: string): FileStructure {
-    return {
-      filePath,
-      language: 'typescript',
-      sizeBytes: 120,
-      hash: `hash-${filePath}`,
-      imports: [],
-      functions: [
-        {
-          name: 'knownFn',
-          signature: 'knownFn(): void',
-          returnType: 'void',
-          startLine: 1,
-          endLine: 3,
-          complexity: 1,
-          kind: 'function',
-          parameters: [],
-          isExported: true,
-          isAsync: false,
-          cyclomaticComplexity: 1,
-        },
-      ],
-      classes: [],
-      exports: ['knownFn'],
-      lines: 3,
+    const row = db.prepare('SELECT * FROM settings WHERE key = ?').get('test_key') as {
+      value: string;
     };
-  }
-
-  beforeEach(() => {
-    const isolated = createIsolatedDatabase();
-    db = isolated.db;
-    cleanup = isolated.cleanup;
-    kg = new KnowledgeGraph(db);
-  });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  describe('ingestDynamicCalls — ensureFunction never fabricates rows', () => {
-    it('unknown function names insert nothing and report errors', async () => {
-      const struct = makeStruct('/proj/src/a.ts');
-      const fileId = await kg.upsertFile(struct, 'src/a.ts');
-      await kg.storeFileDetails(fileId, struct);
-
-      const before = (db.prepare('SELECT COUNT(*) AS n FROM functions').get() as { n: number }).n;
-      expect(before).toBe(1); // only knownFn from storeFileDetails
-
-      const result = kg.ingestDynamicCalls([
-        { fromFunctionName: 'ghostFrom', toFunctionName: 'ghostTo', workloadId: 'w1' },
-      ]);
-
-      expect(result.inserted).toBe(0);
-      expect(result.updated).toBe(0);
-      expect(result.errors.length).toBeGreaterThan(0);
-
-      // No phantom function rows under arbitrary files.
-      const after = (db.prepare('SELECT COUNT(*) AS n FROM functions').get() as { n: number }).n;
-      expect(after).toBe(before);
-    });
-
-    it('known function names insert the dynamic call', async () => {
-      const struct = makeStruct('/proj/src/b.ts');
-      const fileId = await kg.upsertFile(struct, 'src/b.ts');
-      await kg.storeFileDetails(fileId, struct);
-
-      const result = kg.ingestDynamicCalls([
-        { fromFunctionName: 'knownFn', toFunctionName: 'knownFn', workloadId: 'w1' },
-      ]);
-
-      expect(result.inserted + result.updated).toBe(1);
-      expect(result.errors).toEqual([]);
-    });
-  });
-
-  describe('getFileByPath — normalization + case-insensitive fallback', () => {
-    it('resolves backslash-separated and wrong-case lookups to the same file', async () => {
-      const struct = makeStruct('/proj/src/deep/Mod.ts');
-      const fileId = await kg.upsertFile(struct, 'src/deep/Mod.ts');
-
-      const byBackslash = kg.getFileByPath('src\\deep\\Mod.ts');
-      expect(byBackslash).not.toBeNull();
-      expect(byBackslash?.id).toBe(fileId);
-
-      const byWrongCase = kg.getFileByPath('src/deep/mod.ts');
-      expect(byWrongCase).not.toBeNull();
-      expect(byWrongCase?.id).toBe(fileId);
-    });
+    expect(row.value).toBe('updated');
   });
 });

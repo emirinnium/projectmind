@@ -1,5 +1,12 @@
+import { reportSuppressedError } from '../../../src/utils/errors.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { IntentEngine, classifyTask, TASK_KEYWORDS } from '../../../src/core/search/intent-engine.js';
+import {
+  IntentEngine,
+  classifyTask,
+  createKgGraphAdapter,
+  cosineSimilarity,
+  TASK_KEYWORDS,
+} from '../../../src/core/search/intent-engine.js';
 import type { IntentQuery } from '../../../src/core/search/types.js';
 import { writeFileSync, mkdirSync, rmSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,7 +21,11 @@ describe('IntentEngine WP1', () => {
       expect(engine.classifyIntent(q)).toBe('read');
     });
     it('naturalLanguage + structuralHints + expectedOutputs accepted', () => {
-      const q: IntentQuery = { naturalLanguage: 'validate login', structuralHints: ['auth'], expectedOutputs: ['test'] };
+      const q: IntentQuery = {
+        naturalLanguage: 'validate login',
+        structuralHints: ['auth'],
+        expectedOutputs: ['test'],
+      };
       expect(engine.classifyIntent(q)).toBe('validate');
     });
     it('throws if neither naturalLanguage nor text', () => {
@@ -46,13 +57,28 @@ describe('IntentEngine WP1', () => {
 
   describe('F3 intentScore on file content', () => {
     const tmpDir = join(tmpdir(), 'intent-test-' + Date.now());
-    beforeAll(() => { mkdirSync(tmpDir, { recursive: true }); });
-    afterAll(() => { try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ } });
+    beforeAll(() => {
+      mkdirSync(tmpDir, { recursive: true });
+    });
+    afterAll(() => {
+      try {
+        rmSync(tmpDir, { recursive: true, force: true });
+      } catch (error) {
+        reportSuppressedError(
+          error,
+          'Intentional test fallback tests/core/search/intent-engine.test.ts:65',
+        );
+        /* ignore */
+      }
+    });
 
     it('ranks validate-heavy file above unrelated for validate query', () => {
       const validateFile = join(tmpDir, 'validate.ts');
       const unrelatedFile = join(tmpDir, 'unrelated.ts');
-      writeFileSync(validateFile, 'if (x) throw new Error("bad"); assert(true); z.object({}); isString(x);');
+      writeFileSync(
+        validateFile,
+        'if (x) throw new Error("bad"); assert(true); z.object({}); isString(x);',
+      );
       writeFileSync(unrelatedFile, 'const a = 1; console.log(a);');
       const scoreValidate = engine.intentScore('validate', validateFile);
       const scoreUnrelated = engine.intentScore('validate', unrelatedFile);
@@ -62,10 +88,14 @@ describe('IntentEngine WP1', () => {
 
   describe('F4 semantic + lexical fallback', () => {
     it('hybrid weights sum to configured defaults', () => {
-      expect(engine.weights.semantic + engine.weights.structural + engine.weights.intent).toBeCloseTo(1, 5);
+      expect(
+        engine.weights.semantic + engine.weights.structural + engine.weights.intent,
+      ).toBeCloseTo(1, 5);
     });
     it('lexical fallback when embedding provider absent (stub)', async () => {
-      const stubEngine = new IntentEngine({ weights: { semantic: 0.4, structural: 0.3, intent: 0.3 } });
+      const stubEngine = new IntentEngine({
+        weights: { semantic: 0.4, structural: 0.3, intent: 0.3 },
+      });
       const tmpDir = join(tmpdir(), 'lexical-test-' + Date.now());
       mkdirSync(tmpDir, { recursive: true });
       // Use non-existent file so file embedding fails -> lexical fallback
@@ -75,6 +105,42 @@ describe('IntentEngine WP1', () => {
       expect(res.score).toBeGreaterThanOrEqual(0);
       rmSync(tmpDir, { recursive: true, force: true });
     });
+
+    it('keeps measured graph similarity instead of replacing it with rank decay', () => {
+      const results = engine.deriveSemanticFromSimilar([
+        { path: 'src/strong.ts', score: 0.91 },
+        { path: 'src/unknown.ts' },
+      ]);
+
+      expect(results[0]).toMatchObject({
+        path: 'src/strong.ts',
+        score: 0.91,
+        semanticEvidence: 'measured',
+      });
+      expect(results[1]).toMatchObject({
+        path: 'src/unknown.ts',
+        score: 0.85,
+        semanticEvidence: 'rank-derived',
+      });
+    });
+
+    it('does not emit non-finite cosine scores', () => {
+      expect(cosineSimilarity([1, Number.NaN], [1, 1])).toBe(0);
+      expect(cosineSimilarity([Number.POSITIVE_INFINITY], [1])).toBe(0);
+      expect(cosineSimilarity([0, 0], [1, 1])).toBe(0);
+      expect(cosineSimilarity([1, 0], [1, 0])).toBe(1);
+    });
+
+    it('adapter computes measured similarity from persisted vectors when available', () => {
+      const adapter = createKgGraphAdapter({
+        getFileByPath: (path) => ({ id: 7, path }),
+        findSimilarFiles: () => [{ id: 7, relativePath: 'src/measured.ts' }],
+        getFileEmbedding: () => [1, 0],
+      });
+
+      const results = adapter.findSimilarFiles?.([1, 0], 0.5, 5);
+      expect(results).toEqual([{ path: 'src/measured.ts', score: 1 }]);
+    });
   });
 
   describe('F5 structural and snippet', () => {
@@ -83,11 +149,15 @@ describe('IntentEngine WP1', () => {
       mkdirSync(tmpDir, { recursive: true });
       const f = join(tmpDir, 'snippet.ts');
       writeFileSync(f, 'export const foo = 1;\nexport const bar = 2;');
-      const results = await engine.search({ naturalLanguage: 'find foo', filePath: f }, {
-        getFileByPath: (p: string) => ({ id: 1, path: p }),
-        getImports: () => [{ source: f, named: [], kind: 'default' }],
-      }, 5);
-      const r = results.find(x => x.filePath === f);
+      const results = await engine.search(
+        { naturalLanguage: 'find foo', filePath: f },
+        {
+          getFileByPath: (p: string) => ({ id: 1, path: p }),
+          getImports: () => [{ source: f, named: [], kind: 'default' }],
+        },
+        5,
+      );
+      const r = results.find((x) => x.filePath === f);
       expect(r).toBeDefined();
       if (r) {
         expect(r.snippet).not.toContain('find foo');
@@ -110,7 +180,7 @@ describe('IntentEngine WP1', () => {
       // Marker content full of 'read' markers so any leak scores > 0.
       writeFileSync(
         join(parent, 'SECRET.txt'),
-        'readFileSync(secret); readFileSync(secret); readFileSync(secret);'
+        'readFileSync(secret); readFileSync(secret); readFileSync(secret);',
       );
       writeFileSync(join(root, 'inside.ts'), 'readFileSync(x); readFileSync(y);');
     });
@@ -118,7 +188,11 @@ describe('IntentEngine WP1', () => {
     afterAll(() => {
       try {
         rmSync(parent, { recursive: true, force: true });
-      } catch {
+      } catch (error) {
+        reportSuppressedError(
+          error,
+          'Intentional test fallback tests/core/search/intent-engine.test.ts:186',
+        );
         /* ignore */
       }
     });
@@ -153,7 +227,7 @@ describe('IntentEngine WP1', () => {
       const results = await rooted.search(
         { naturalLanguage: 'read the secret', filePath: '../SECRET.txt' },
         { getFileByPath: () => null },
-        5
+        5,
       );
       for (const r of results) {
         expect(r.snippet ?? '').not.toContain('readFileSync(secret)');

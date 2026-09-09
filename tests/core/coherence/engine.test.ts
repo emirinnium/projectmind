@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../../src/utils/errors.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -38,7 +39,11 @@ describe('CoherenceEngine', () => {
   afterEach(() => {
     try {
       db.close();
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional test fallback tests/core/coherence/engine.test.ts:41',
+      );
       // already closed
     }
     rmSync(tmpDir, { recursive: true, force: true });
@@ -75,9 +80,9 @@ describe('CoherenceEngine', () => {
     it('initializes schema on construction', () => {
       new CoherenceEngine(db);
       // Verify the coherence_decisions table exists
-      const result = db.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='coherence_decisions'"
-      ).get() as { name: string } | undefined;
+      const result = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='coherence_decisions'")
+        .get() as { name: string } | undefined;
       expect(result).toBeDefined();
       expect(result?.name).toBe('coherence_decisions');
     });
@@ -89,7 +94,7 @@ describe('CoherenceEngine', () => {
   describe('checkCoherence() fast mode', () => {
     it('returns a pass verdict for clean code', async () => {
       const engine = new CoherenceEngine(db);
-      // Need ≥5 capitalized words to pass the type usage check for .ts files
+      // Use explicit TypeScript syntax in the representative fixture.
       const code = `interface MyType {
   Alpha: string;
   Beta: number;
@@ -132,7 +137,8 @@ function hello(): MyType {
       const code =
         Array.from({ length: 8 }, (_, i) => `const x${i}: any = ${i};`).join('\n') +
         '\n' +
-        Array.from({ length: 5 }, (_, i) => `console.log("msg ${i}");`).join('\n');
+        Array.from({ length: 5 }, (_, i) => `console.log("msg ${i}");`).join('\n') +
+        '\nfunction BadName(): void { return; }';
       const result = await engine.checkCoherence({
         code,
         filePath: 'src/fail.ts',
@@ -410,7 +416,7 @@ function hello(): MyType {
 
     it('handles file paths with special characters', async () => {
       const engine = new CoherenceEngine(db);
-      // Need ≥5 capitalized words to pass the type usage check for .ts files
+      // Use explicit TypeScript syntax in the representative fixture.
       const code = `interface MyType {\n  Alpha: string;\n  Beta: number;\n}\nfunction hello(): MyType {\n  return { Alpha: 'world', Beta: 1 };\n}\n`;
       const result = await engine.checkCoherence({
         code,

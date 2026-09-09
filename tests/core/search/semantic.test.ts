@@ -57,7 +57,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10, threshold: 0 }
+        { limit: 10, threshold: 0 },
       );
 
       expect(results.length).toBeGreaterThan(0);
@@ -81,7 +81,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10, threshold: 0 }
+        { limit: 10, threshold: 0 },
       );
 
       expect(results.length).toBeGreaterThan(0);
@@ -101,7 +101,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10, threshold: 0 }
+        { limit: 10, threshold: 0 },
       );
 
       expect(results.length).toBeGreaterThan(0);
@@ -118,7 +118,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10, threshold: 0 }
+        { limit: 10, threshold: 0 },
       );
 
       expect(results.length).toBeGreaterThan(0);
@@ -138,7 +138,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10, threshold: 0.9 }
+        { limit: 10, threshold: 0.9 },
       );
 
       // Only the very similar file should pass the high threshold
@@ -158,7 +158,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10, threshold: 0.99 }
+        { limit: 10, threshold: 0.99 },
       );
 
       expect(results).toEqual([]);
@@ -175,7 +175,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10 }
+        { limit: 10 },
       );
 
       for (const r of results) {
@@ -196,7 +196,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 5, threshold: 0 }
+        { limit: 5, threshold: 0 },
       );
 
       expect(results.length).toBeLessThanOrEqual(5);
@@ -213,7 +213,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { threshold: 0 }
+        { threshold: 0 },
       );
 
       expect(results.length).toBeLessThanOrEqual(5);
@@ -230,7 +230,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 100, threshold: 0 }
+        { limit: 100, threshold: 0 },
       );
 
       expect(results.length).toBe(2);
@@ -248,7 +248,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10 }
+        { limit: 10 },
       );
 
       // Empty query produces zero vector → cosine similarity is 0 for all
@@ -267,7 +267,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10 }
+        { limit: 10 },
       );
 
       expect(results).toEqual([]);
@@ -284,7 +284,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10 }
+        { limit: 10 },
       );
 
       expect(results).toEqual([]);
@@ -300,7 +300,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10, threshold: 0 }
+        { limit: 10, threshold: 0 },
       );
 
       expect(results).toEqual([]);
@@ -318,7 +318,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10, threshold: 0 }
+        { limit: 10, threshold: 0 },
       );
 
       const paths = results.map((r) => r.filePath);
@@ -339,7 +339,7 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10, threshold: 0 }
+        { limit: 10, threshold: 0 },
       );
 
       for (const r of results) {
@@ -358,11 +358,25 @@ describe('searchSemantic', () => {
         mockEmbeddingGenerator,
         mockCosineSimilarity,
         fileEmbeddings,
-        { limit: 10, threshold: 0 }
+        { limit: 10, threshold: 0 },
       );
 
       expect(results.length).toBe(1);
       expect(results[0].score).toBeCloseTo(1, 5);
+    });
+
+    it('filters invalid custom similarity scores instead of returning NaN', async () => {
+      const fileEmbeddings = new Map<string, number[]>([['src/a.ts', [1, 0]]]);
+      const results = await searchSemantic(
+        'query',
+        async () => [1, 0],
+        () => Number.NaN,
+        fileEmbeddings,
+        { limit: 10, threshold: 0 },
+      );
+
+      expect(results).toEqual([{ filePath: 'src/a.ts', score: 0 }]);
+      expect(results.every((result) => Number.isFinite(result.score))).toBe(true);
     });
   });
 });

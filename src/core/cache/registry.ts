@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import type { CacheStats } from './types.js';
 
 /**
@@ -68,7 +69,8 @@ export const globalCacheRegistry = new CacheRegistry();
 process.on('exit', () => {
   try {
     globalCacheRegistry.destroyAll();
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional fallback src/core/cache/registry.ts:71');
     // Shutdown must never throw.
   }
 });

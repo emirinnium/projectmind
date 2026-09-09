@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { loadConfig } from '../utils/config.js';
-import { initDatabase, setDatabase } from '../storage/database.js';
+import { initDatabase } from '../storage/database.js';
 import { SCHEMA_SQL } from '../storage/schema.js';
 import { KnowledgeGraph } from '../storage/knowledge-graph.js';
 import { CoherenceEngine } from '../core/coherence/engine.js';
@@ -10,6 +10,7 @@ import { DebtTracker } from '../core/debt/tracker.js';
 import { ScaleManager } from '../core/scale/manager.js';
 import { createLLMProvider } from '../core/llm/index.js';
 import { logger } from '../utils/logger.js';
+import { initializeConfiguredEmbeddingProvider } from '../parser/embeddings.js';
 import type { McpDependencies } from './tools/types.js';
 
 let _db: DatabaseSync | null = null;
@@ -44,7 +45,6 @@ export async function initializeDependencies(): Promise<McpDependencies> {
 
   _db = initDatabase(dbPath);
   _db.exec(SCHEMA_SQL);
-  setDatabase(_db);
 
   const kg = new KnowledgeGraph(_db);
   const coherence = new CoherenceEngine(_db, config.llm.maxCacheSize, 300_000);
@@ -65,6 +65,30 @@ export async function initializeDependencies(): Promise<McpDependencies> {
   const sessionId = kg.startAgentSession('mcp-client');
   _mcpSessionId = sessionId;
   logger.info(`MCP agent session started: ${sessionId}`);
+
+  // Make the configured embedding runtime available before any MCP query is
+  // served. This keeps semantic_search and an initial scan in the same
+  // provider/model space instead of silently querying a persisted non-simple
+  // index with the default simple provider.
+  if (config.embeddings.provider !== 'simple') {
+    try {
+      const embeddingInit = await initializeConfiguredEmbeddingProvider();
+      if (embeddingInit?.fellBack) {
+        logger.warn(
+          'Configured embedding provider is unavailable; semantic results use fallback.',
+          {
+            requestedProvider: embeddingInit.requestedProvider,
+            provider: embeddingInit.provider,
+            limitations: embeddingInit.limitations.join(' | '),
+          },
+        );
+      }
+    } catch (e) {
+      logger.warn('Configured embedding provider initialization failed; using simple embeddings.', {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
 
   if (config.scanOnStartup !== false) {
     const files = kg.getAllFiles();

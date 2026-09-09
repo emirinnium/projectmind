@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { Command } from 'commander';
 import { asyncHandler, output } from '@/cli/utils/shared.js';
 import { loadConfig } from '@/cli/utils/shared.js';
@@ -106,7 +107,8 @@ export function createWorkspaceCommand(): Command {
               private: pkg.private,
               deps: { ...pkg.dependencies, ...pkg.devDependencies },
             });
-          } catch {
+          } catch (error) {
+            reportSuppressedError(error, 'Intentional fallback src/cli/commands/workspace.ts:109');
             /* unreadable package.json — skip */
           }
         }

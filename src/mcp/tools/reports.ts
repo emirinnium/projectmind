@@ -9,6 +9,43 @@ import {
   buildLanguageChart,
   buildGenomeSummary,
 } from '../apps/builders.js';
+import {
+  attachEvidence,
+  buildEvidencePacket,
+  verifyProjectFreshness,
+} from '../../core/proof/evidence.js';
+
+async function projectEvidence(
+  deps: McpDependencies,
+  limitation: string,
+): Promise<ReturnType<typeof buildEvidencePacket>> {
+  const full = await verifyProjectFreshness(deps.kg, deps.projectRoot);
+  // Counts remain complete while references are bounded so a large project
+  // does not turn every report into an unbounded MCP response.
+  const bounded = {
+    ...full,
+    details: full.details.slice(0, 100),
+  };
+  return buildEvidencePacket(bounded, {
+    evidence: bounded.details.map((detail) => ({
+      filePath: detail.filePath,
+      kind: 'indexed-graph' as const,
+      sourceHash: detail.sourceHash,
+      indexedHash: detail.indexedHash,
+      lineStart: detail.lineCount === undefined ? undefined : 1,
+      lineEnd: detail.lineCount,
+      note: `report evidence; freshness=${detail.status}`,
+    })),
+    limitations: [
+      limitation,
+      ...(full.details.length > 100
+        ? [
+            'Only the first 100 file references are included; aggregate freshness counts cover the complete scan.',
+          ]
+        : []),
+    ],
+  });
+}
 
 export function registerDebtReportTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -33,9 +70,18 @@ export function registerDebtReportTool(server: McpServer, deps: McpDependencies)
           await progress(90, 100, 'detection complete, building report');
         }
         const report = deps.debt.getReport();
+        const evidence = await projectEvidence(
+          deps,
+          'Debt findings are persisted analysis results; freshness verification does not prove that a finding is a real defect.',
+        );
         await progress(100, 100, 'done');
         const base = {
-          content: [{ type: 'text' as const, text: JSON.stringify(report, null, 2) }],
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(attachEvidence(report, evidence), null, 2),
+            },
+          ],
         };
         return attachApps(base, [buildDebtChart(report)]);
       } catch (error) {
@@ -90,8 +136,17 @@ export function registerScaleReportTool(server: McpServer, deps: McpDependencies
           };
         }
         const report = deps.scale.getScaleReport();
+        const evidence = await projectEvidence(
+          deps,
+          'Scale metrics are derived from the indexed graph; no fresh typecheck or runtime trace is performed here.',
+        );
         const base = {
-          content: [{ type: 'text' as const, text: JSON.stringify(report, null, 2) }],
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(attachEvidence(report, evidence), null, 2),
+            },
+          ],
         };
         return attachApps(base, [buildModuleSizeChart(report), buildLanguageChart(report)]);
       } catch (error) {
@@ -121,16 +176,23 @@ export function registerGenomeScoreTool(server: McpServer, deps: McpDependencies
     async () => {
       try {
         const genome = deps.debt.computeGenome();
+        const evidence = await projectEvidence(
+          deps,
+          'Genome score is a derived quality metric; it is not a guarantee of runtime correctness.',
+        );
         const base = {
           content: [
             {
               type: 'text' as const,
               text: JSON.stringify(
-                {
-                  coherenceScore: genome.coherenceScore,
-                  scorePercentage: `${(genome.coherenceScore * 100).toFixed(1)}%`,
-                  genomeData: genome.genomeData,
-                },
+                attachEvidence(
+                  {
+                    coherenceScore: genome.coherenceScore,
+                    scorePercentage: `${(genome.coherenceScore * 100).toFixed(1)}%`,
+                    genomeData: genome.genomeData,
+                  },
+                  evidence,
+                ),
                 null,
                 2,
               ),

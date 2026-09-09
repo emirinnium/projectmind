@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../../src/utils/errors.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -44,7 +45,11 @@ describe('CrossProjectPatternEngine', () => {
     engine.close();
     try {
       db.close();
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional test fallback tests/core/patterns/cross-project.test.ts:47',
+      );
       // already closed
     }
     rmSync(tmpDir, { recursive: true, force: true });
@@ -112,7 +117,9 @@ describe('CrossProjectPatternEngine', () => {
     expect(engine.syncPatternToProject(simple, 'proj-target-2')).toBe(true);
 
     // Query from another project with the same abstract template.
-    const query = engine.extractPatterns('proj-query', fixtureDir).find((p) => p.name === 'SimpleFactory')!;
+    const query = engine
+      .extractPatterns('proj-query', fixtureDir)
+      .find((p) => p.name === 'SimpleFactory')!;
     const matches = engine.findSimilarPatternsInProject(query, 'proj-target-2');
 
     expect(matches.length).toBeGreaterThanOrEqual(1);
@@ -131,12 +138,12 @@ describe('CrossProjectPatternEngine', () => {
 
   // (d) constructor without db throws instead of opening projectmind.db
   it('requires an explicit database', () => {
-    expect(
-      () => new CrossProjectPatternEngine(undefined as unknown as string)
-    ).toThrow(/explicit database/i);
-    expect(
-      () => new CrossProjectPatternEngine(null as unknown as string)
-    ).toThrow(/explicit database/i);
+    expect(() => new CrossProjectPatternEngine(undefined as unknown as string)).toThrow(
+      /explicit database/i,
+    );
+    expect(() => new CrossProjectPatternEngine(null as unknown as string)).toThrow(
+      /explicit database/i,
+    );
   });
 
   it('accepts a file path and creates the schema locally', () => {
@@ -179,7 +186,12 @@ describe('CrossProjectPatternEngine', () => {
       embedding: null,
       projectId: 'orig',
       abstractionLevel: 'concrete', // deprecated alias accepted on write
-      abstractTemplate: { interfaceName: 'Legacy', methodSignatures: [], parameters: [], returnType: '' },
+      abstractTemplate: {
+        interfaceName: 'Legacy',
+        methodSignatures: [],
+        parameters: [],
+        returnType: '',
+      },
       variants: [],
     });
     expect(base.abstractionLevel).toBe('idiomatic');

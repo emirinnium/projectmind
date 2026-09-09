@@ -29,27 +29,39 @@ export function createChurnCommand(): Command {
           format: string;
           output: string;
         }) => {
+          const sinceDays = Number.parseInt(opts.since, 10);
+          const riskThreshold = Number.parseFloat(opts.riskThreshold);
+          if (!Number.isInteger(sinceDays) || sinceDays <= 0) {
+            throw new Error(`--since must be a positive integer: ${opts.since}`);
+          }
+          if (!Number.isFinite(riskThreshold) || riskThreshold < 0 || riskThreshold > 1) {
+            throw new Error(`--risk-threshold must be between 0 and 1: ${opts.riskThreshold}`);
+          }
+          if (!['file', 'author', 'module'].includes(opts.by)) {
+            throw new Error(`--by must be one of file, author, module: ${opts.by}`);
+          }
+          if (!['text', 'json', 'html'].includes(opts.format)) {
+            throw new Error(`--format must be one of text, json, html: ${opts.format}`);
+          }
+
           await withService(['scale'], async (_ctx, services) => {
             const scale = services.scale!;
             const config = loadConfig();
 
-            output.section('Code Churn & Risk Analysis');
-            output.kv('Since', `${opts.since} days ago`);
-            output.kv('Risk threshold', opts.riskThreshold);
-            output.kv('Group by', opts.by);
+            if (opts.format === 'text') {
+              output.section('Code Churn & Risk Analysis');
+              output.kv('Since', `${sinceDays} days ago`);
+              output.kv('Risk threshold', riskThreshold);
+              output.kv('Group by', opts.by);
+            }
 
             const report = scale.getScaleReport();
             const allFiles = report.modules.flatMap((m) => m.files || []);
 
-            // Simulate churn data from agent sessions (since we don't have git history)
-            // In a real implementation, this would parse git log
-            const churnData = calculateChurnFromSessions(
-              allFiles,
-              config.projectRoot,
-              parseInt(opts.since, 10),
-            );
+            // Use git history as the primary signal and agent-touch data only
+            // when a file has no matching git entry.
+            const churnData = calculateChurnFromSessions(allFiles, config.projectRoot, sinceDays);
 
-            const riskThreshold = parseFloat(opts.riskThreshold);
             const highRisk = churnData.filter((c) => c.riskScore >= riskThreshold);
 
             if (opts.format === 'json') {
@@ -160,7 +172,7 @@ export function createChurnCommand(): Command {
             output.kv('High-risk files', highRisk.length);
             output.kv(
               'Max risk score',
-              `${(Math.max(...churnData.map((c) => c.riskScore)) * 100).toFixed(1)}%`,
+              `${(Math.max(0, ...churnData.map((c) => c.riskScore)) * 100).toFixed(1)}%`,
             );
 
             if (opts.output) {
@@ -235,11 +247,11 @@ function generateHtmlChurn(
     .map(
       (item) => `
     <tr class="${item.riskScore >= threshold ? 'high-risk' : item.riskScore >= threshold * 0.5 ? 'medium-risk' : 'low-risk'}">
-      <td>${item.path}</td>
+      <td>${escapeHtml(item.path)}</td>
       <td>${item.churnCount}</td>
       <td>${item.cognitiveLoad.toFixed(3)}</td>
       <td>${(item.riskScore * 100).toFixed(1)}%</td>
-      <td>${item.authors.join(', ')}</td>
+      <td>${escapeHtml(item.authors.join(', '))}</td>
     </tr>
   `,
     )
@@ -267,7 +279,7 @@ function generateHtmlChurn(
   <div class="stats">
     <div class="stat"><div class="value">${churnData.length}</div><div class="label">Files Analyzed</div></div>
     <div class="stat"><div class="value" style="color: #c62828;">${highRisk.length}</div><div class="label">High Risk (≥${(threshold * 100).toFixed(0)}%)</div></div>
-    <div class="stat"><div class="value">${(Math.max(...churnData.map((c) => c.riskScore)) * 100).toFixed(1)}%</div><div class="label">Max Risk</div></div>
+    <div class="stat"><div class="value">${(Math.max(0, ...churnData.map((c) => c.riskScore)) * 100).toFixed(1)}%</div><div class="label">Max Risk</div></div>
     <div class="stat"><div class="value">${churnData.reduce((s, c) => s + c.churnCount, 0).toFixed(0)}</div><div class="label">Total Churn Events</div></div>
   </div>
   <table>
@@ -276,4 +288,12 @@ function generateHtmlChurn(
   </table>
 </body>
 </html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!,
+  );
 }

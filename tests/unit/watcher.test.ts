@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../src/utils/errors.js';
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,7 +20,8 @@ describe('ProjectWatcher — cross-platform recursive watching', () => {
     for (const dir of tempDirs.splice(0)) {
       try {
         rmSync(dir, { recursive: true, force: true });
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional test fallback tests/unit/watcher.test.ts:22');
         // best effort cleanup
       }
     }
@@ -29,7 +31,7 @@ describe('ProjectWatcher — cross-platform recursive watching', () => {
     const dir = makeTempDir();
     const kg: WatcherKg = {
       upsertFile: async () => 1,
-      storeFileDetails: async () => {},
+      storeFileDetails: async () => undefined,
     };
     const watcher = new ProjectWatcher(kg, { root: dir });
 
@@ -44,7 +46,7 @@ describe('ProjectWatcher — cross-platform recursive watching', () => {
     const dir = makeTempDir();
     const kg: WatcherKg = {
       upsertFile: async () => 1,
-      storeFileDetails: async () => {},
+      storeFileDetails: async () => undefined,
     };
     const watcher = new ProjectWatcher(kg, { root: dir });
     watcher.start();
@@ -86,6 +88,43 @@ describe('ProjectWatcher — cross-platform recursive watching', () => {
         await new Promise((r) => setTimeout(r, 50));
       }
       expect(detailsCalls).toBeGreaterThan(0);
+    } finally {
+      watcher.stop();
+    }
+  });
+
+  it('removes a deleted source from the KG instead of leaving stale graph state', async () => {
+    const dir = makeTempDir();
+    const filePath = join(dir, 'deleted.ts');
+    writeFileSync(filePath, 'export const deleted = true;\n');
+
+    const removed: string[] = [];
+    const batches: Array<{ updated: string[]; removed: string[]; failed: string[] }> = [];
+    const kg: WatcherKg = {
+      upsertFile: async () => 1,
+      storeFileDetails: async () => undefined,
+      removeFile: async (rel) => {
+        removed.push(rel);
+        return true;
+      },
+    };
+    const watcher = new ProjectWatcher(kg, {
+      root: dir,
+      debounceMs: 50,
+      onBatchProcessed: (batch) => batches.push(batch),
+    });
+    watcher.start();
+    try {
+      rmSync(filePath);
+
+      const deadline = Date.now() + 3000;
+      while (removed.length === 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      expect(removed).toContain('deleted.ts');
+      expect(batches.some((batch) => batch.removed.includes('deleted.ts'))).toBe(true);
+      expect(batches.every((batch) => !batch.failed.includes('deleted.ts'))).toBe(true);
     } finally {
       watcher.stop();
     }

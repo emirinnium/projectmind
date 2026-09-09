@@ -53,9 +53,11 @@ export interface DebtReport {
  */
 export class DebtPersistence {
   private db: DatabaseSync;
+  private projectId: number;
 
-  constructor(db?: DatabaseSync) {
+  constructor(db?: DatabaseSync, projectId = 1) {
     this.db = db || getDatabase();
+    this.projectId = projectId;
   }
 
   private getStmt(sql: string) {
@@ -71,10 +73,9 @@ export class DebtPersistence {
   }): DebtItem {
     const fileId = opts.filePath
       ? (
-          this.getStmt('SELECT id FROM files WHERE path = ? OR relative_path = ?').get(
-            opts.filePath,
-            opts.filePath,
-          ) as { id: number } | undefined
+          this.getStmt(
+            'SELECT id FROM files WHERE project_id = ? AND (path = ? OR relative_path = ?) LIMIT 1',
+          ).get(this.projectId, opts.filePath, opts.filePath) as { id: number } | undefined
         )?.id
       : null;
 
@@ -83,8 +84,8 @@ export class DebtPersistence {
     // so an existing unresolved item with the same type+description is the
     // SAME finding — refresh it instead of inserting another copy.
     const existing = this.getStmt(
-      'SELECT id FROM debt_items WHERE type = ? AND description = ? AND resolved = 0 LIMIT 1',
-    ).get(opts.type, opts.description) as { id: number } | undefined;
+      'SELECT id FROM debt_items WHERE project_id = ? AND type = ? AND description = ? AND resolved = 0 LIMIT 1',
+    ).get(this.projectId, opts.type, opts.description) as { id: number } | undefined;
 
     if (existing) {
       this.getStmt(
@@ -107,8 +108,8 @@ export class DebtPersistence {
 
     const result = this.getStmt(
       `INSERT INTO debt_items 
-       (type, description, severity, suggestion, reasoning_trace, file_id)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+       (type, description, severity, suggestion, reasoning_trace, file_id, project_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       opts.type,
       opts.description,
@@ -116,6 +117,7 @@ export class DebtPersistence {
       opts.suggestion,
       JSON.stringify(opts.reasoningTrace),
       fileId ?? null,
+      this.projectId,
     );
 
     return {
@@ -135,8 +137,8 @@ export class DebtPersistence {
     const { limit = 100, offset = 0, severity, type, includeResolved = false } = options;
 
     // Build WHERE clause for filtering
-    const conditions: string[] = [];
-    const params: Array<string | number | null> = [];
+    const conditions: string[] = ['d.project_id = ?'];
+    const params: Array<string | number | null> = [this.projectId];
 
     if (!includeResolved) {
       conditions.push('d.resolved = 0');
@@ -160,7 +162,7 @@ export class DebtPersistence {
     // Get items with pagination
     const items = this.getStmt(
       `SELECT d.*, f.relative_path as file_path 
-       FROM debt_items d LEFT JOIN files f ON d.file_id = f.id 
+       FROM debt_items d LEFT JOIN files f ON d.file_id = f.id AND f.project_id = d.project_id
        ${whereClause}
        ORDER BY d.detected_at DESC
        LIMIT ? OFFSET ?`,
@@ -218,14 +220,26 @@ export class DebtPersistence {
     };
   }
 
-  resolveDebt(debtId: number): void {
-    this.getStmt(
-      'UPDATE debt_items SET resolved = 1, resolved_at = CURRENT_TIMESTAMP WHERE id = ?',
-    ).run(debtId);
+  resolveDebt(debtId: number): boolean {
+    const result = this.getStmt(
+      'UPDATE debt_items SET resolved = 1, resolved_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?',
+    ).run(debtId, this.projectId);
+    return Number(result.changes) > 0;
   }
 
   clearAll(): void {
-    this.getStmt('DELETE FROM debt_items').run();
+    this.getStmt('DELETE FROM debt_items WHERE project_id = ?').run(this.projectId);
+  }
+
+  /**
+   * Remove unresolved findings for one detector type before that detector
+   * writes a fresh snapshot. Resolved history is intentionally preserved.
+   */
+  clearUnresolvedType(type: DebtType): void {
+    this.getStmt('DELETE FROM debt_items WHERE project_id = ? AND type = ? AND resolved = 0').run(
+      this.projectId,
+      type,
+    );
   }
 
   /**
@@ -250,17 +264,16 @@ export class DebtPersistence {
       for (const item of items) {
         const fileId = item.filePath
           ? (
-              this.getStmt('SELECT id FROM files WHERE path = ? OR relative_path = ?').get(
-                item.filePath,
-                item.filePath,
-              ) as { id: number } | undefined
+              this.getStmt(
+                'SELECT id FROM files WHERE project_id = ? AND (path = ? OR relative_path = ?) LIMIT 1',
+              ).get(this.projectId, item.filePath, item.filePath) as { id: number } | undefined
             )?.id
           : null;
 
         // Check for existing unresolved item
         const existing = this.getStmt(
-          'SELECT id FROM debt_items WHERE type = ? AND description = ? AND resolved = 0 LIMIT 1',
-        ).get(item.type, item.description) as { id: number } | undefined;
+          'SELECT id FROM debt_items WHERE project_id = ? AND type = ? AND description = ? AND resolved = 0 LIMIT 1',
+        ).get(this.projectId, item.type, item.description) as { id: number } | undefined;
 
         if (existing) {
           this.getStmt(
@@ -270,8 +283,8 @@ export class DebtPersistence {
         } else {
           this.getStmt(
             `INSERT INTO debt_items 
-             (type, description, severity, suggestion, reasoning_trace, file_id)
-             VALUES (?, ?, ?, ?, ?, ?)`,
+             (type, description, severity, suggestion, reasoning_trace, file_id, project_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
           ).run(
             item.type,
             item.description,
@@ -279,6 +292,7 @@ export class DebtPersistence {
             item.suggestion,
             JSON.stringify(item.reasoningTrace),
             fileId ?? null,
+            this.projectId,
           );
         }
       }

@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../utils/errors.js';
 import { DatabaseSync } from 'node:sqlite';
 import { runMigrations, getCurrentSchemaVersion } from './migrations.js';
 import { SCHEMA_SQL } from './schema.js';
@@ -101,7 +102,8 @@ export class DatabaseManager {
     if (this.db) {
       try {
         this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/storage/database-core.ts:104');
         // Ignore checkpoint errors
       }
       this.db.close();
@@ -146,13 +148,15 @@ export class DatabaseManager {
       try {
         db.exec(`ROLLBACK TO SAVEPOINT ${savepointName}`);
         db.exec(`RELEASE SAVEPOINT ${savepointName}`);
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/storage/database-core.ts:149');
         // If rollback fails, the outer transaction will handle it
       }
     } else {
       try {
         db.exec('ROLLBACK');
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/storage/database-core.ts:155');
         // Ignore rollback errors
       }
     }
@@ -271,13 +275,15 @@ export function runInTransaction<T>(fn: (db: DatabaseSync) => T): T {
       try {
         db.exec(`ROLLBACK TO SAVEPOINT ${savepointName}`);
         db.exec(`RELEASE SAVEPOINT ${savepointName}`);
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/storage/database-core.ts:274');
         // If rollback fails, the outer transaction will handle it
       }
     } else {
       try {
         db.exec('ROLLBACK');
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/storage/database-core.ts:280');
         // Ignore rollback errors
       }
     }

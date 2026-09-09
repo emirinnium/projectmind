@@ -1,5 +1,6 @@
 import { Command } from 'commander';
-import { BaseCommand, asyncHandler, output } from '@/cli/utils/shared.js';
+import { BaseCommand, asyncHandler, output, loadConfig } from '@/cli/utils/shared.js';
+import { confineToProject } from '@/mcp/tools/_shared.js';
 
 class AgentCommand extends BaseCommand {
   constructor() {
@@ -8,6 +9,10 @@ class AgentCommand extends BaseCommand {
 
   registerCommands(): Command {
     const agentCmd = this.cmd;
+
+    agentCmd.action(() => {
+      agentCmd.outputHelp();
+    });
 
     agentCmd
       .command('status')
@@ -67,7 +72,14 @@ class AgentCommand extends BaseCommand {
       .action(
         asyncHandler(async (id: string) => {
           await this.withContext(async (ctx) => {
-            ctx.kg.endAgentSession(Number(id));
+            const sessionId = Number(id);
+            if (!Number.isSafeInteger(sessionId) || sessionId <= 0) {
+              throw new Error(`Session ID must be a positive integer: ${id}`);
+            }
+            if (!ctx.kg.endAgentSession(sessionId)) {
+              output.warn(`Session ${id} was not found or was already ended.`);
+              return;
+            }
             output.success(`Session ${id} ended.`);
           });
         }),
@@ -81,7 +93,12 @@ class AgentCommand extends BaseCommand {
       .action(
         asyncHandler(async (file: string, opts: { agent: string }) => {
           await this.withContext(async (ctx) => {
-            ctx.kg.markAgentTouched(file, opts.agent);
+            const absolutePath = confineToProject(file, loadConfig().projectRoot);
+            const agent = opts.agent.trim();
+            if (agent.length < 1 || agent.length > 200) {
+              throw new Error('Agent name must contain 1–200 non-whitespace characters.');
+            }
+            await ctx.kg.markAgentTouched(absolutePath, agent);
             output.success(`Marked ${file} as touched by ${opts.agent}`);
           });
         }),

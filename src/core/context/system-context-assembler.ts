@@ -10,7 +10,6 @@
  */
 
 import type { KnowledgeGraph } from '../../storage/knowledge-graph.js';
-import type { FileInfo } from '../../storage/kg/types.js';
 import { logger } from '../../utils/logger.js';
 
 /** Score assigned to direct dependents in system context ranking. */
@@ -41,6 +40,17 @@ export interface SystemContextResult {
   hasCircularDeps: boolean;
 }
 
+/** Reduced graph-node shape used by the ranking algorithm. */
+interface ContextFile {
+  id: number;
+  path: string;
+  relativePath: string;
+  language: string;
+  cognitiveLoad: number;
+  agentTouched: boolean;
+  agentTouchedBy: string | null;
+}
+
 /**
  * Assembles system-level context for impact analysis and architectural checking.
  * Focuses on dependency structure, layer compliance, and system-wide signals.
@@ -59,9 +69,9 @@ export function assembleSystemContext(
   const { fileId } = options;
 
   // ---- Candidate pools -------------------------------------------------
-  const scores = new Map<number, { info: FileInfo; score: number; reasons: Set<string> }>();
+  const scores = new Map<number, { info: ContextFile; score: number; reasons: Set<string> }>();
   const consider = (
-    info: FileInfo,
+    info: ContextFile,
     points: number,
     reason: string,
     layer?: string,
@@ -94,7 +104,7 @@ export function assembleSystemContext(
     }
 
     for (const node of affected) {
-      const pseudoInfo = {
+      const contextFile: ContextFile = {
         id: node.id,
         path: node.path,
         relativePath: node.relativePath,
@@ -102,10 +112,10 @@ export function assembleSystemContext(
         cognitiveLoad: node.cognitiveLoad,
         agentTouched: node.agentTouched,
         agentTouchedBy: node.agentTouchedBy,
-      } as FileInfo;
+      };
       const isDirect = directIds.has(String(node.id));
       consider(
-        pseudoInfo,
+        contextFile,
         isDirect ? DIRECT_DEPENDENT_SCORE : TRANSITIVE_DEPENDENT_SCORE,
         isDirect ? 'direct-dependent' : 'in-blast-radius',
         isDirect ? 'system' : 'core',

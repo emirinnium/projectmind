@@ -100,8 +100,14 @@ export { threeWayMerge, diffHunks } from './team-memory/merge.js';
 export type { DiffHunk, MergeConflict, MergeResult } from './team-memory/merge.js';
 
 // Coordination
-export { predictMergeRisk } from './coordination/risk.js';
-export type { ConflictRiskInput, ConflictRisk } from './coordination/risk.js';
+export { analyzeMergeContents, predictMergeRisk } from './coordination/risk.js';
+export type {
+  ConflictRiskInput,
+  ConflictRisk,
+  MergeContentChange,
+  MergeContentAnalysis,
+  MergeContentConflict,
+} from './coordination/risk.js';
 
 // Embeddings
 export { VectorIndex, VecIndex } from './embeddings/vector-index.js';
@@ -139,6 +145,7 @@ export type {
   IntegrityViolation,
   RepairAction,
   IntegrityReport,
+  IntegrityEvidenceStatus,
   IntegritySuggestedAction,
 } from './kg/types.js';
 
@@ -149,6 +156,7 @@ export type {
   IntentType,
   HybridScore,
   SearchResult,
+  SemanticEvidence,
   TaskType,
 } from './search/types.js';
 export { classifyTask, TASK_KEYWORDS, createKgGraphAdapter } from './search/intent-engine.js';
@@ -193,3 +201,54 @@ export type {
   ExpectedTypeChange,
   IntentScope,
 } from './collaboration/types.js';
+
+// Evidence-first verification and graph freshness
+export {
+  attachEvidence,
+  buildEvidencePacket,
+  insufficientEvidencePacket,
+  verifyFileFreshness,
+  verifyProjectFreshness,
+} from './proof/evidence.js';
+export type {
+  EvidenceAttached,
+  EvidenceKind,
+  EvidencePacket,
+  EvidenceReference,
+  FileFreshness,
+  FreshnessStatus,
+  FreshnessSummary,
+  VerificationDetails,
+  VerificationStatus,
+} from './proof/evidence.js';
+
+// Portable graph snapshots for drift detection and reproducible analysis.
+export {
+  createGraphSnapshot,
+  diffGraphSnapshots,
+  readGraphSnapshot,
+  verifyGraphSnapshot,
+  writeGraphSnapshot,
+  GRAPH_SNAPSHOT_FORMAT,
+  GRAPH_SNAPSHOT_VERSION,
+} from './snapshots/graph-snapshot.js';
+export type {
+  GraphSnapshot,
+  GraphSnapshotCall,
+  GraphSnapshotDiff,
+  GraphSnapshotFile,
+  GraphSnapshotImport,
+  GraphSnapshotVerification,
+} from './snapshots/graph-snapshot.js';
+
+// Deterministic feature candidates and cross-feature import flows.
+export { buildFeatureMap, featureKeyForPath } from './feature-map/feature-map.js';
+export type { FeatureCandidate, FeatureFlow, FeatureMapReport } from './feature-map/feature-map.js';
+
+// Runtime trace adapters for normalized JSON/CSV, Code-Graph-RAG JSONL, and V8 profiles.
+export { convertTraceContent } from './trace/converter.js';
+export type {
+  NormalizedTraceEvent,
+  TraceConversionFormat,
+  TraceConversionResult,
+} from './trace/converter.js';

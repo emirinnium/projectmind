@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../utils/errors.js';
 import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import type { FileStructure } from './ast-parser.js';
@@ -372,7 +373,8 @@ export class TaintAnalyzer {
           targetFunctionName: flow.viaFunction,
         });
         recorded++;
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/parser/taint-analyzer.ts:375');
         // Duplicate or invalid flow records are safe to skip.
       }
     }

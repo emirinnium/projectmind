@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../utils/errors.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
@@ -209,7 +210,8 @@ export class ClientRegistry {
     } catch (error) {
       try {
         this.db.exec('ROLLBACK');
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/auth/registry.ts:212');
         // ignore rollback failure — original error is the one to surface
       }
       throw error;

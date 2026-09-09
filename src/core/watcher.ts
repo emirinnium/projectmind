@@ -22,8 +22,18 @@ import { getProjectIgnorePatterns, isIgnoredRelativePath } from '../utils/ignore
 /** Extensions with a registered parser (mirrors scanner's fast-glob set). */
 const SUPPORTED_EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
+function isMissingPathError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOENT'
+  );
+}
+
 export interface WatcherBatchResult {
   updated: string[];
+  removed: string[];
   failed: string[];
 }
 
@@ -43,6 +53,7 @@ export interface WatcherStats {
   eventsSeen: number;
   batchesProcessed: number;
   filesUpdated: number;
+  filesRemoved: number;
   filesFailed: number;
   lastFileUpdatedAt: number | null;
 }
@@ -61,6 +72,7 @@ export class ProjectWatcher {
     eventsSeen: 0,
     batchesProcessed: 0,
     filesUpdated: 0,
+    filesRemoved: 0,
     filesFailed: 0,
     lastFileUpdatedAt: null,
   };
@@ -69,6 +81,7 @@ export class ProjectWatcher {
     private kg: {
       upsertFile(struct: FileStructure, relPath: string): Promise<number>;
       storeFileDetails(fileId: number, struct: FileStructure): Promise<void> | void;
+      removeFile?: (relPath: string) => Promise<boolean> | boolean;
     },
     private options: ProjectWatcherOptions = {},
   ) {
@@ -215,16 +228,27 @@ export class ProjectWatcher {
     this.stats.batchesProcessed++;
 
     const updated: string[] = [];
+    const removed: string[] = [];
     const failed: string[] = [];
 
     for (const abs of batch) {
+      const rel = canonicalPath(relative(this.root, abs));
       try {
         // File I/O is asynchronous so a slow disk cannot block event delivery.
-        const struct = parseFile(abs, await readFile(abs, 'utf-8'));
-        const rel = canonicalPath(relative(this.root, abs));
+        let content: string;
+        try {
+          content = await readFile(abs, 'utf-8');
+        } catch (error) {
+          if (!isMissingPathError(error)) throw error;
+          const removedFromGraph = this.kg.removeFile ? await this.kg.removeFile(rel) : false;
+          if (removedFromGraph) removed.push(rel);
+          else failed.push(rel);
+          continue;
+        }
+        const struct = parseFile(abs, content);
         if (!struct) {
-          // Deleted or unreadable → count as failure honestly; tombstone
-          // handling (removing the row) belongs to a future full scan.
+          // A live file that cannot be parsed must not delete its last known
+          // graph state; report it for a future successful refresh instead.
           failed.push(rel);
           continue;
         }
@@ -241,11 +265,12 @@ export class ProjectWatcher {
     }
 
     this.stats.filesUpdated += updated.length;
+    this.stats.filesRemoved += removed.length;
     this.stats.filesFailed += failed.length;
-    if (updated.length > 0) this.stats.lastFileUpdatedAt = Date.now();
+    if (updated.length > 0 || removed.length > 0) this.stats.lastFileUpdatedAt = Date.now();
 
     try {
-      this.options.onBatchProcessed?.({ updated, failed });
+      this.options.onBatchProcessed?.({ updated, removed, failed });
     } catch (error) {
       // consumer callback errors must not kill the watch loop
       logger.warn('Watcher onBatchProcessed callback failed:', {

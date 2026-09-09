@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../src/utils/errors.js';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -30,7 +31,8 @@ afterEach(async () => {
   // Cleanup using closeDatabase
   try {
     closeDatabase();
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional test fallback tests/vitest.test.ts:33');
     // already closed
   }
   for (let i = 0; i < 5; i++) {
@@ -49,7 +51,9 @@ describe('Database', () => {
   it('initializes and runs migrations', () => {
     const db = initDatabase(TEST_DB);
     db.exec(SCHEMA_SQL);
-    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+      name: string;
+    }[];
     expect(tables.some((t) => t.name === 'files')).toBe(true);
   });
 });
@@ -88,6 +92,8 @@ function processInput() {
 
     const flows = analyzer.analyzeSource('test.ts', content, 'typescript');
     expect(flows.length).toBeGreaterThanOrEqual(1);
-    expect(flows.some((f) => f.source.kind === 'FILE' && f.sink.qualifiedName === 'exec')).toBe(true);
+    expect(flows.some((f) => f.source.kind === 'FILE' && f.sink.qualifiedName === 'exec')).toBe(
+      true,
+    );
   });
 });

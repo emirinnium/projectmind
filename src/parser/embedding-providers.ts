@@ -86,11 +86,23 @@ export async function generateOpenaiEmbedding(
   text: string,
   apiKey: string,
   model: string,
+  dimension?: number,
 ): Promise<number[]> {
+  const requestBody: { model: string; input: string; dimensions?: number } = {
+    model,
+    input: text.slice(0, 8191),
+  };
+  // The v3 embedding models support server-side dimensionality reduction.
+  // Older models reject this field, so leave their request shape unchanged and
+  // let the response's actual dimension be reported by the index manifest.
+  if (dimension !== undefined && model.startsWith('text-embedding-3-')) {
+    requestBody.dimensions = dimension;
+  }
+
   const response = await fetch('https://api.openai.com/v1/embeddings', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, input: text.slice(0, 8191) }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {

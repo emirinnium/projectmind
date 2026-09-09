@@ -45,18 +45,42 @@ export function createCouplingCommand(): Command {
           output: string;
           thresholdAbstractness: string;
         }) => {
+          if (!['text', 'json', 'mermaid', 'd3'].includes(opts.format)) {
+            throw new Error(`--format must be one of text, json, mermaid, d3: ${opts.format}`);
+          }
+          const instabilityThreshold = Number.parseFloat(opts.threshold);
+          const abstractnessThreshold = Number.parseFloat(opts.thresholdAbstractness);
+          if (
+            !Number.isFinite(instabilityThreshold) ||
+            instabilityThreshold < 0 ||
+            instabilityThreshold > 1
+          ) {
+            throw new Error(`--threshold must be between 0 and 1: ${opts.threshold}`);
+          }
+          if (
+            !Number.isFinite(abstractnessThreshold) ||
+            abstractnessThreshold < 0 ||
+            abstractnessThreshold > 1
+          ) {
+            throw new Error(
+              `--threshold-abstractness must be between 0 and 1: ${opts.thresholdAbstractness}`,
+            );
+          }
           await withService(['scale'], async (ctx, services) => {
             const scale = services.scale!;
 
-            output.section('Module Coupling Analysis');
-            output.kv('Instability threshold', opts.threshold);
-            output.kv('Abstractness threshold', opts.thresholdAbstractness);
+            if (opts.format === 'text') {
+              output.section('Module Coupling Analysis');
+              output.kv('Instability threshold', instabilityThreshold);
+              output.kv('Abstractness threshold', abstractnessThreshold);
+            }
 
             const report = scale.getScaleReport();
             const modules = report.modules;
 
             if (modules.length === 0) {
-              output.warn('No modules found. Run "projectmind scan" first.');
+              if (opts.format === 'json') output.json({ modules: [], summary: { total: 0 } });
+              else output.warn('No modules found. Run "projectmind scan" first.');
               return;
             }
 
@@ -69,13 +93,10 @@ export function createCouplingCommand(): Command {
            WHERE i.resolved_path IS NOT NULL AND f.project_id = ?`,
             ).all(ctx.kg.getCurrentProjectId()) as Array<{ from_path: string; to_path: string }>;
             const realEdges = edgeRows.map((r) => ({ from: r.from_path, to: r.to_path }));
-            output.kv('Resolved import edges', realEdges.length);
+            if (opts.format === 'text') output.kv('Resolved import edges', realEdges.length);
 
             // Build module dependency graph
             const moduleCoupling = calculateCoupling(modules, realEdges);
-
-            const instabilityThreshold = parseFloat(opts.threshold);
-            const abstractnessThreshold = parseFloat(opts.thresholdAbstractness);
 
             // Identify problematic modules
             const highInstability = moduleCoupling.filter(
@@ -103,7 +124,7 @@ export function createCouplingCommand(): Command {
                 writeFileSync(opts.output, content);
                 output.success(`Written to ${opts.output}`);
               } else {
-                output.info(content);
+                output.raw(content);
               }
               return;
             }
@@ -114,7 +135,7 @@ export function createCouplingCommand(): Command {
                 writeFileSync(opts.output, content);
                 output.success(`Written to ${opts.output}`);
               } else {
-                output.info(content);
+                output.raw(content);
               }
               return;
             }
@@ -125,7 +146,7 @@ export function createCouplingCommand(): Command {
                 writeFileSync(opts.output, content);
                 output.success(`Written to ${opts.output}`);
               } else {
-                output.info(content);
+                output.raw(content);
               }
               return;
             }
@@ -358,11 +379,7 @@ function findModuleForImport(
   modules: ModuleInfoWithFiles[],
 ): ModuleInfoWithFiles | null {
   // Skip external packages
-  if (
-    !importSource.startsWith('.') &&
-    !importSource.startsWith('@/') &&
-    !importSource.startsWith('@/')
-  ) {
+  if (!importSource.startsWith('.') && !importSource.startsWith('@/')) {
     return null;
   }
 
@@ -371,7 +388,14 @@ function findModuleForImport(
     // Check if any file in module matches
     for (const file of module.files || []) {
       const fileImportPath = getImportPath(file.relativePath);
-      if (importSource === fileImportPath || importSource.endsWith(fileImportPath)) {
+      const aliasImportPath = importSource.startsWith('@/')
+        ? `src/${importSource.slice(2)}`
+        : importSource;
+      if (
+        aliasImportPath === fileImportPath ||
+        aliasImportPath.endsWith(`/${fileImportPath}`) ||
+        importSource.endsWith(`/${fileImportPath}`)
+      ) {
         return module;
       }
     }

@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 /**
  * Real-Time Collaborative Agent Context — Intent Broadcast + Conflict Prediction.
  *
@@ -86,7 +87,8 @@ function parseTargetFiles(raw: string | null | undefined): string[] | undefined 
     if (Array.isArray(parsed) && parsed.every((x) => typeof x === 'string')) {
       return parsed;
     }
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional fallback src/core/collaboration/broadcast.ts:89');
     // malformed JSON — treated the same as wrong-shaped JSON
   }
   return undefined;
@@ -106,7 +108,8 @@ function parseExpectedChanges(
     if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return parsed as IntentBroadcast['expectedChanges'];
     }
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional fallback src/core/collaboration/broadcast.ts:109');
     // malformed JSON — keep the intent without structured changes
   }
   return undefined;
@@ -182,7 +185,11 @@ export class IntentBroadcastService {
       for (const cb of callbacks) {
         try {
           cb(b);
-        } catch {
+        } catch (error) {
+          reportSuppressedError(
+            error,
+            'Intentional fallback src/core/collaboration/broadcast.ts:185',
+          );
           // ignore subscriber errors
         }
       }
@@ -249,11 +256,19 @@ export class IntentBroadcastService {
 
           try {
             callback(existing);
-          } catch {
+          } catch (error) {
+            reportSuppressedError(
+              error,
+              'Intentional fallback src/core/collaboration/broadcast.ts:252',
+            );
             // ignore subscriber errors
           }
         }
-      } catch {
+      } catch (error) {
+        reportSuppressedError(
+          error,
+          'Intentional fallback src/core/collaboration/broadcast.ts:256',
+        );
         // ignore DB errors — subscription stays live for future broadcasts
       }
     }
@@ -274,7 +289,11 @@ export class IntentBroadcastService {
     if (this.db) {
       try {
         this.db.prepare('DELETE FROM pending_intents WHERE expires_at < ?').run(now);
-      } catch {
+      } catch (error) {
+        reportSuppressedError(
+          error,
+          'Intentional fallback src/core/collaboration/broadcast.ts:277',
+        );
         // ignore DB errors
       }
     }
@@ -343,7 +362,11 @@ export class IntentBroadcastService {
             if (dbTargetFiles.includes(f)) record(row.agent_id, f);
           }
         }
-      } catch {
+      } catch (error) {
+        reportSuppressedError(
+          error,
+          'Intentional fallback src/core/collaboration/broadcast.ts:346',
+        );
         // ignore DB errors
       }
     }
@@ -445,7 +468,11 @@ export class IntentBroadcastService {
             scope: 'shared',
           });
         }
-      } catch {
+      } catch (error) {
+        reportSuppressedError(
+          error,
+          'Intentional fallback src/core/collaboration/broadcast.ts:448',
+        );
         // ignore DB errors — in-memory intents already collected
       }
     }
@@ -511,7 +538,8 @@ export class IntentBroadcastService {
           b.timestamp,
           expiresAt,
         );
-    } catch {
+    } catch (error) {
+      reportSuppressedError(error, 'Intentional fallback src/core/collaboration/broadcast.ts:514');
       // ignore DB errors to keep broadcast resilient
     }
   }
@@ -542,7 +570,8 @@ export class IntentBroadcastService {
           db.exec(`ALTER TABLE pending_intents ADD COLUMN ${col} ${def};`);
         }
       }
-    } catch {
+    } catch (error) {
+      reportSuppressedError(error, 'Intentional fallback src/core/collaboration/broadcast.ts:545');
       // Table may not exist at all — inserts will no-op via their try/catch.
     }
   }

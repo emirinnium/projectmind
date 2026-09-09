@@ -85,5 +85,89 @@ describe('predict_merge_risk (predictMergeRiskForTool)', () => {
     expect(result.level).toBe('low');
     expect(result.score).toBe(0);
     expect(result.reasons).toHaveLength(0);
+    expect(result.contentAnalysis.status).toBe('not-provided');
+  });
+
+  it('reports a concrete conflict when proposed edits overlap different base lines', () => {
+    const baseContent = 'const first = 1;\nconst second = 2;\nconst third = 3;\n';
+    const result = predictMergeRiskForTool(deps, {
+      myFiles: ['shared.ts'],
+      otherHeldFiles: ['shared.ts'],
+      myContentChanges: [
+        {
+          filePath: 'shared.ts',
+          baseContent,
+          proposedContent: 'const first = 1;\nconst second = 20;\nconst third = 3;\n',
+        },
+      ],
+      otherContentChanges: [
+        {
+          filePath: 'shared.ts',
+          baseContent,
+          proposedContent: 'const first = 1;\nconst second = 200;\nconst third = 3;\n',
+        },
+      ],
+    });
+
+    expect(result.contentAnalysis.status).toBe('conflict');
+    expect(result.contentAnalysis.filesCompared).toBe(1);
+    expect(result.contentAnalysis.conflicts).toHaveLength(1);
+    expect(result.contentAnalysis.conflicts[0]).toMatchObject({
+      filePath: 'shared.ts',
+      type: 'overlapping-edits',
+      myRange: { startLine: 2, endLine: 2 },
+      otherRange: { startLine: 2, endLine: 2 },
+    });
+    expect(result.reasons.some((reason) => reason.startsWith('Content conflict:'))).toBe(true);
+    expect(result.level).toBe('high');
+  });
+
+  it('recognizes identical or disjoint proposals as compatible', () => {
+    const baseContent = 'a\nb\nc\nd\n';
+    const result = predictMergeRiskForTool(deps, {
+      myFiles: ['shared.ts'],
+      otherHeldFiles: [],
+      myContentChanges: [
+        {
+          filePath: 'shared.ts',
+          baseContent,
+          proposedContent: 'a\nB\nc\nd\n',
+        },
+      ],
+      otherContentChanges: [
+        {
+          filePath: 'shared.ts',
+          baseContent,
+          proposedContent: 'a\nb\nc\nD\n',
+        },
+      ],
+    });
+
+    expect(result.contentAnalysis.status).toBe('clean');
+    expect(result.contentAnalysis.compatibleFiles).toEqual(['shared.ts']);
+    expect(result.contentAnalysis.conflicts).toHaveLength(0);
+    expect(result.level).toBe('low');
+  });
+
+  it('does not guess when proposals use different bases', () => {
+    const result = predictMergeRiskForTool(deps, {
+      myFiles: ['shared.ts'],
+      otherHeldFiles: [],
+      myContentChanges: [
+        { filePath: 'shared.ts', baseContent: 'a\n', proposedContent: 'A\n' },
+      ],
+      otherContentChanges: [
+        { filePath: 'shared.ts', baseContent: 'b\n', proposedContent: 'B\n' },
+      ],
+    });
+
+    expect(result.contentAnalysis.status).toBe('unknown');
+    expect(result.contentAnalysis.conflicts[0]).toMatchObject({
+      type: 'inconsistent-base',
+      filePath: 'shared.ts',
+    });
+    expect(result.reasons.some((reason) => reason.startsWith('Content comparison unavailable:'))).toBe(
+      true,
+    );
   });
 });

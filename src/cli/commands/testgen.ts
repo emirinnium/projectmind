@@ -3,6 +3,7 @@ import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { loadConfig } from '@/cli/utils/shared.js';
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, dirname } from '@/cli/utils/shared.js';
+import { confineToProject } from '@/mcp/tools/_shared.js';
 
 export function createTestgenCommand(): Command {
   const testgenCmd = new Command('testgen')
@@ -19,6 +20,11 @@ export function createTestgenCommand(): Command {
             const config = loadConfig();
 
             output.section('Test Generation');
+
+            if (!['vitest', 'jest'].includes(opts.framework)) {
+              throw new Error(`--framework must be vitest or jest: ${opts.framework}`);
+            }
+            const testRoot = confineToProject(opts.target, config.projectRoot);
 
             const report = scale.getScaleReport();
             const allFiles = report.modules.flatMap((m) => m.files || []);
@@ -55,13 +61,13 @@ export function createTestgenCommand(): Command {
               if (opts.dryRun) {
                 output.info(testCode);
               } else {
-                const testDir = join(config.projectRoot, opts.target);
+                const testDir = testRoot;
                 if (!existsSync(testDir)) {
                   mkdirSync(testDir, { recursive: true });
                 }
 
                 const testFileName = targetFile.relativePath.replace(/\.(ts|js)$/, `.test.$1`);
-                const testPath = join(testDir, testFileName);
+                const testPath = confineToProject(join(testDir, testFileName), config.projectRoot);
                 const testDirPath = dirname(testPath);
                 if (!existsSync(testDirPath)) {
                   mkdirSync(testDirPath, { recursive: true });
@@ -83,7 +89,11 @@ export function createTestgenCommand(): Command {
     .option('-f, --framework <fw>', 'Test framework: vitest|jest', 'vitest')
     .action(
       asyncHandler(async (file: string, opts: { framework: string }) => {
-        const content = readFileSync(file, 'utf-8');
+        if (!['vitest', 'jest'].includes(opts.framework)) {
+          throw new Error(`--framework must be vitest or jest: ${opts.framework}`);
+        }
+        const absolutePath = confineToProject(file, loadConfig().projectRoot);
+        const content = readFileSync(absolutePath, 'utf-8');
         const exports = extractExports(content);
 
         if (exports.length === 0) {

@@ -9,6 +9,12 @@ import {
   writeClaudeSkill,
   inferProjectName,
 } from '../../src/cli/generators/agent-configs.js';
+import {
+  mergeCodexConfig,
+  mergeProjectMindInstructions,
+  writeMcpConfig,
+} from '../../src/cli/commands/init-mcp-config.js';
+import { resolveAgentConfigPath } from '../../src/cli/commands/init-mcp.js';
 
 const FIXTURE_DIR = join(tmpdir(), 'pm-agent-configs-test-' + Date.now());
 
@@ -39,7 +45,16 @@ describe('buildProjectMindSkillMd', () => {
   });
 
   it('introduces ProjectMind core tools in the body', () => {
-    for (const tool of ['get_context', 'analyze_impact', 'check_coherence', 'debt_report', 'find_circular_deps', 'genome_score', 'store_memory', 'run_cli']) {
+    for (const tool of [
+      'get_context',
+      'analyze_impact',
+      'check_coherence',
+      'debt_report',
+      'find_circular_deps',
+      'genome_score',
+      'store_memory',
+      'run_cli',
+    ]) {
       expect(md).toContain(tool);
     }
   });
@@ -68,7 +83,9 @@ describe('writeClaudeSkill', () => {
     const result = writeClaudeSkill(FIXTURE_DIR, false);
     expect(result.written).toBe(false);
     expect(result.existed).toBe(true);
-    expect(readFileSync(join(FIXTURE_DIR, CLAUDE_SKILL_RELATIVE_PATH), 'utf-8')).toBe('# custom content\n');
+    expect(readFileSync(join(FIXTURE_DIR, CLAUDE_SKILL_RELATIVE_PATH), 'utf-8')).toBe(
+      '# custom content\n',
+    );
     expect(before.length).toBeGreaterThan(0);
   });
 });
@@ -89,5 +106,98 @@ describe('inferProjectName', () => {
     mkdirSync(empty, { recursive: true });
     expect(inferProjectName(empty)).toBeUndefined();
     rmSync(empty, { recursive: true, force: true });
+  });
+});
+
+describe('MCP initialization config merging', () => {
+  it('reuses existing OpenCode/Kilo JSONC or JSON config variants', () => {
+    const opencodeJsonc = join(FIXTURE_DIR, 'opencode.jsonc');
+    writeFileSync(opencodeJsonc, '{}', 'utf8');
+    expect(resolveAgentConfigPath(FIXTURE_DIR, 'opencode', 'opencode.json')).toBe(opencodeJsonc);
+
+    const kiloJson = join(FIXTURE_DIR, '.kilo', 'kilo.json');
+    mkdirSync(join(FIXTURE_DIR, '.kilo'), { recursive: true });
+    writeFileSync(kiloJson, '{}', 'utf8');
+    expect(resolveAgentConfigPath(FIXTURE_DIR, 'kilo-code', '.kilo/kilo.jsonc')).toBe(kiloJson);
+  });
+
+  it('preserves existing agent instructions and never appends a duplicate block', () => {
+    const first = mergeProjectMindInstructions('# Team instructions\n', 'opencode', false);
+    expect(first.changed).toBe(true);
+    expect(first.content).toContain('# Team instructions');
+    expect(first.content.match(/projectmind:mcp-instructions:start/g)).toHaveLength(1);
+
+    const second = mergeProjectMindInstructions(first.content, 'opencode', false);
+    expect(second.changed).toBe(false);
+    expect(second.content).toBe(first.content);
+
+    const forced = mergeProjectMindInstructions(first.content, 'kilo-code', true);
+    expect(forced.changed).toBe(true);
+    expect(forced.content).toContain('# ProjectMind instructions (kilo-code)');
+    expect(forced.content.match(/projectmind:mcp-instructions:start/g)).toHaveLength(1);
+    expect(forced.content).toContain('# Team instructions');
+  });
+
+  it('updates a marked Codex block without duplicating or deleting other TOML tables', () => {
+    const current = [
+      '[other]',
+      'value = 1',
+      '',
+      '[mcp_servers.projectmind]',
+      'command = "old"',
+      'args = []',
+      '',
+      '[extra]',
+      'value = 2',
+      '',
+    ].join('\n');
+    const result = mergeCodexConfig(current, FIXTURE_DIR, true);
+    expect(result.changed).toBe(true);
+    expect(result.content.match(/\[mcp_servers\.projectmind\]/g)).toHaveLength(1);
+    expect(result.content).toContain('[other]');
+    expect(result.content).toContain('[extra]');
+    expect(result.content).toContain('PROJECTMIND_ROOT');
+  });
+
+  it('reads JSONC comments/trailing commas without corrupting string values', () => {
+    const path = join(FIXTURE_DIR, 'kilo.jsonc');
+    writeFileSync(
+      path,
+      '{\n  // keep this unrelated server\n  "mcp": { "other": { "label": "value,}" }, },\n}\n',
+      'utf8',
+    );
+    expect(writeMcpConfig(path, FIXTURE_DIR, 'kilo', false)).toBe(true);
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
+      mcp: { other: { label: string }; projectmind: { environment: { PROJECTMIND_ROOT: string } } };
+    };
+    expect(parsed.mcp.other.label).toBe('value,}');
+    expect(parsed.mcp.projectmind.environment.PROJECTMIND_ROOT).toBe(FIXTURE_DIR);
+  });
+
+  it('merges OpenCode v2 config and is idempotent on repeat runs', () => {
+    const path = join(FIXTURE_DIR, 'opencode.json');
+    writeFileSync(path, JSON.stringify({ mcp: { servers: { other: { type: 'local' } } } }), 'utf8');
+
+    expect(writeMcpConfig(path, FIXTURE_DIR, 'opencode', false)).toBe(true);
+    expect(writeMcpConfig(path, FIXTURE_DIR, 'opencode', false)).toBe(false);
+
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
+      mcp: {
+        servers: {
+          other: { type: string };
+          projectmind: {
+            type: string;
+            cwd: string;
+            disabled: boolean;
+            environment: { PROJECTMIND_ROOT: string };
+          };
+        };
+      };
+    };
+    expect(parsed.mcp.servers.other.type).toBe('local');
+    expect(parsed.mcp.servers.projectmind.type).toBe('local');
+    expect(parsed.mcp.servers.projectmind.cwd).toBe(FIXTURE_DIR);
+    expect(parsed.mcp.servers.projectmind.disabled).toBe(false);
+    expect(parsed.mcp.servers.projectmind.environment.PROJECTMIND_ROOT).toBe(FIXTURE_DIR);
   });
 });

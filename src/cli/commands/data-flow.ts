@@ -16,6 +16,10 @@ export function createDataFlowCommand(): Command {
     'Data-flow and taint analysis: track resources, flows, and dependencies',
   );
 
+  dataFlowCmd.action(() => {
+    dataFlowCmd.outputHelp();
+  });
+
   dataFlowCmd
     .command('record')
     .description('Record a data-flow edge between resources')

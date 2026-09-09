@@ -18,12 +18,17 @@ export class CoherenceCache extends AdvancedCache<string, CoherenceResult> {
   /** In-flight computations keyed by cache key (single-flight dedup). */
   private readonly inFlight = new Map<string, Promise<CoherenceResult>>();
 
-  constructor(maxSize: number = 10_000, ttlMs: number = 300_000) {
+  constructor(
+    maxSize: number = 10_000,
+    ttlMs: number = 300_000,
+    persistPath = '.projectmind/coherence-cache.json',
+    persistent = false,
+  ) {
     super({
       maxSize,
       ttlMs,
-      persistent: true,
-      persistPath: '.projectmind/coherence-cache.json',
+      persistent,
+      persistPath,
     });
   }
 

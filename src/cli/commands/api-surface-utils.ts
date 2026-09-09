@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { logger } from '@/cli/utils/shared.js';
 import { join } from 'node:path';
 
@@ -213,7 +214,11 @@ export async function getApiAtRef(ref: string, projectRoot: string): Promise<Exp
       symbols.push(
         ...extractExportsFromFile(show, join(projectRoot, rel), rel.replace(/\\/g, '/')),
       );
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional fallback src/cli/commands/api-surface-utils.ts:216',
+      );
       // Skip files whose content trips the extractor.
     }
   }

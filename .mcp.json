@@ -2,8 +2,8 @@
   "mcpServers": {
     "projectmind": {
       "type": "stdio",
-      "command": "projectmind",
-      "args": ["mcp"],
+      "command": "npx",
+      "args": ["--yes", "@emirhanturker/projectmind@1.0.2", "mcp"],
       "env": {
         "PROJECTMIND_ROOT": "."
       },

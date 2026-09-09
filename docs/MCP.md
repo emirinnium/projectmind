@@ -42,6 +42,8 @@ claude mcp add --scope user projectmind -- npx -y @emirhanturker/projectmind@lat
       "projectmind": {
       "type": "local",
       "command": ["npx", "-y", "@emirhanturker/projectmind", "mcp"],
+      "cwd": "<absolute-project-root>",
+      "environment": { "PROJECTMIND_ROOT": "<absolute-project-root>" },
       "disabled": false
       }
     }
@@ -52,8 +54,12 @@ claude mcp add --scope user projectmind -- npx -y @emirhanturker/projectmind@lat
 ### Codex, Devin, Antigravity, and Kilo Code
 
 Run `pm mcp-init codex`, `pm mcp-init devin`, `pm mcp-init antigravity`, or
-`pm mcp-init kilo-code`. The command writes the client-specific project-local
-manifest and an instruction file while preserving unrelated configuration.
+`pm mcp-init kilo-code`. The command merges the client-specific project-local
+manifest and an instruction block while preserving unrelated configuration.
+It understands JSONC comments/trailing commas for OpenCode and Kilo files,
+does not duplicate an existing ProjectMind block, and uses `--force` only to
+refresh a previously generated ProjectMind block. Existing custom `AGENTS.md`,
+`CLAUDE.md`, and other instructions are never replaced wholesale.
 
 ### Windsurf / any stdio-MCP client
 Same shape as Cursor: `command=npx`, `args=["-y","@emirhanturker/projectmind","mcp"]`.
@@ -79,9 +85,9 @@ Point at the local build instead of npm:
 | Variable | Purpose |
 |---|---|
 | `PROJECTMIND_ROOT` | Project root the server scans/stores under (**set this**) |
-| `PROJECTMIND_TOOLS` | Tool surface profile: `core` (default, dedicated typed tools) or `all` (dedicated tools plus the full `pm_*` CLI-parity surface). `run_cli` stays available in both. |
+| `PROJECTMIND_TOOLS` | Tool surface profile: `core` (default, 66 dedicated typed tools) or `all` (dedicated tools plus the full `pm_*` CLI-parity surface). `run_cli` stays available in both. |
 | `PROJECTMIND_HTTP_PORT` | When set, the server starts a **stateless Streamable HTTP** endpoint instead of stdio: `POST http://127.0.0.1:<port>/mcp` (JSON responses; GET returns 405). For remote/team-shared deployments behind plain load balancers. |
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` | Enables deep-tier LLM analysis for the matching provider |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY` | Enables deep-tier LLM analysis for the matching provider; `OPENAI_API_KEY` also enables the configured OpenAI embedding provider |
 | `CLAUDE_API_KEY` | Alias accepted for Anthropic |
 
 Without an LLM key the server runs fully functional **fast-tier** analysis.
@@ -132,11 +138,18 @@ does not define file ignores.
 | Imports & structure | `trace_imports`, `find_circular_deps`, `resolve_import`, `resolve_path`, `find_file_by_import`, `get_dependents`, `get_dependency_graph`, `structural_search` |
 | Memory & sessions | `store_memory`, `get_memory`, `start/end/get_agent_sessions`, `store_team_memory`, `get_team_memories` |
 | Reports | `debt_report`, `scale_report`, `genome_score` |
+| Evidence & reproducibility | `prove_claim`, `verify_freshness`, `kg_query` (`feature-map`) |
 | Projects | `list_projects`, `create_project`, `switch_project` |
 | Data-flow & taint | `record_data_flow`, `get_data_flows`, `clear_data_flows`, `analyze_taint` |
 | Tracing | `ingest_trace` (+ get/clear dynamic calls) |
 | Embeddings | `init_embedding_provider`, `generate_embedding`, `get_embedding_provider` |
 | Bridge | **`run_cli`** (below) |
+
+`search_intent` returns the evidence level beside each hybrid result:
+`measured` means the persisted/query vectors were compared, `rank-derived`
+means only the graph result order was available, and `structural-heuristic`
+means the file was added through an import/dependent relationship. The labels
+keep navigation useful without overstating what was actually measured.
 
 > **Naming across clients.** This document uses the server-declared tool names
 > (no prefix). opencode prefixes every MCP tool with the server name, so the
@@ -168,7 +181,8 @@ CLI-only capabilities reachable through the bridge (no dedicated tool):
 `docgen readme/api`, `migrate check-deps/jest-to-vitest/typescript`,
 `skill-recommend`, `context-budget`, `contract-test generate/run`,
 `trace convert/show/events/static-missed/clear`, `refactor`, `refactor-roi`,
-`deps-fresh`, `flags`, `secrets-life`, `onboard`, `embed init/stats`.
+`graph circular/feature-map/snapshot`, `proof verify`, `deps-fresh`, `flags`,
+`secrets-life`, `onboard`, `embed init/stats`.
 
 ---
 
@@ -179,3 +193,22 @@ CLI-only capabilities reachable through the bridge (no dedicated tool):
 3. After editing: `check_coherence` (fast) or `run_cli ["doctor","scan-health"]`
 4. Periodically: `debt_report` + `genome_score`; `find_circular_deps`
 5. Long tasks: `start_session` … `sync_context` … `end_session`
+
+If `.projectmindrc.json` selects `openai`, `transformers`, `unixcoder`, or
+`codebert` embeddings, `scan_project` applies that provider to the persisted
+file and symbol index. Rescan after changing provider/model/dimension settings;
+the response exposes fallback limitations when an optional provider is not
+available. Each successful scan also stores a project-scoped provider/model/
+dimension manifest. `semantic_search` compares that manifest with the active
+query runtime and downgrades its evidence when the manifest is missing,
+malformed, or incompatible; it never treats matching vector dimensions alone
+as proof that two semantic spaces are comparable.
+
+### Evidence and drift guard
+
+Use `prove_claim` only with exact source paths. It returns `source-backed` when
+the cited files' content hashes match the graph, while explicitly leaving AST,
+typecheck, and runtime verification false. Use `verify_freshness` before relying
+on a cached analysis after edits. For a portable baseline, create a CLI graph
+snapshot and verify it later; a matching snapshot proves graph identity, not
+application behavior.

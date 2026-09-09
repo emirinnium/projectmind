@@ -1,6 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { output } from '@/cli/utils/shared.js';
+import { currentModuleDir, resolvePackageVersion } from '../../utils/version.js';
+
+const PROJECTMIND_VERSION = resolvePackageVersion(currentModuleDir(import.meta.url));
 
 export interface SbomPackage {
   name: string;
@@ -23,7 +26,6 @@ export function generateSpdx(
   projectVersion: string,
   namespace: string,
   packages: SbomPackage[],
-  tagValue: boolean,
 ): string {
   const lines = [
     'SPDXVersion: SPDX-2.3',
@@ -31,11 +33,12 @@ export function generateSpdx(
     `SPDXID: SPDXRef-DOCUMENT`,
     `DocumentName: ${projectName}`,
     `DocumentNamespace: ${namespace}`,
-    'Creator: Tool: ProjectMind-1.0.0',
+    `Creator: Tool: ProjectMind-${PROJECTMIND_VERSION}`,
     `Created: ${new Date().toISOString()}`,
     '',
     '## Package Information',
     `PackageName: ${projectName}`,
+    `PackageVersion: ${projectVersion}`,
     `SPDXID: SPDXRef-Package`,
     `PackageDownloadLocation: NOASSERTION`,
     `FilesAnalyzed: false`,
@@ -56,16 +59,12 @@ export function generateSpdx(
     lines.push(`PackageCopyrightText: NOASSERTION`);
   }
 
-  if (tagValue) {
-    return lines.join('\n');
-  }
   return lines.join('\n');
 }
 
 export function generateCycloneDx(
   projectName: string,
   projectVersion: string,
-  namespace: string,
   packages: SbomPackage[],
 ): string {
   const packagesXml = packages
@@ -86,7 +85,7 @@ export function generateCycloneDx(
     <tools>
       <tool>
         <name>ProjectMind</name>
-        <version>1.0.0</version>
+        <version>${escapeXml(PROJECTMIND_VERSION)}</version>
       </tool>
     </tools>
     <component type="application">

@@ -5,6 +5,11 @@ import { trackAgentAccess } from './types.js';
 import { assembleUserContext } from '../../core/context/smart-assembler.js';
 import { getSharedBroadcastService } from './intelligence.js';
 import type { ExpectedChanges } from '../../core/collaboration/types.js';
+import {
+  attachEvidence,
+  buildEvidencePacket,
+  verifyProjectFreshness,
+} from '../../core/proof/evidence.js';
 
 /** One live intent from another agent overlapping the requested context. */
 interface ConflictWarning {
@@ -170,81 +175,105 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
         }
         const conflictWarnings = collectConflictWarnings(deps, watchPaths);
 
+        // Context is only trustworthy while every graph-backed file in the
+        // returned neighborhood still matches the source tree. Keep this
+        // evidence alongside the existing payload instead of replacing any
+        // backwards-compatible fields.
+        const evidencePaths = [...new Set(watchPaths)].slice(0, Math.max(itemCap * 3, 1));
+        const freshness = await verifyProjectFreshness(deps.kg, deps.projectRoot, evidencePaths);
+        const evidence = buildEvidencePacket(freshness, {
+          evidence: freshness.details.map((detail) => ({
+            filePath: detail.filePath,
+            kind: 'indexed-graph' as const,
+            sourceHash: detail.sourceHash,
+            indexedHash: detail.indexedHash,
+            lineStart: detail.lineCount === undefined ? undefined : 1,
+            lineEnd: detail.lineCount,
+            note: `context graph evidence; freshness=${detail.status}`,
+          })),
+          limitations: [
+            'Structure and dependency edges come from the indexed graph; this response does not run a fresh typecheck or runtime trace.',
+          ],
+        });
+
         return {
           content: [
             {
               type: 'text',
               text: JSON.stringify(
-                {
-                  success: true,
-                  file: {
-                    path: file.relativePath,
-                    language: file.language,
-                    sizeBytes: file.sizeBytes,
-                    cognitiveLoad: file.cognitiveLoad,
-                    agentTouched: file.agentTouched,
-                    agentTouchedBy: file.agentTouchedBy,
-                    agentTouchedAt: file.agentTouchedAt,
-                    lastScanned: file.lastScanned,
-                    hash: file.hash,
-                  },
-                  imports: {
-                    total: imports.length,
-                    resolved: resolvedImports.length,
-                    unresolved: unresolvedImports.length,
-                    details: imports.map((i) => ({
-                      source: i.source,
-                      kind: i.kind,
-                      resolved: !!i.resolvedFile,
-                      resolvedPath: i.resolvedFile?.relativePath,
+                attachEvidence(
+                  {
+                    success: true,
+                    file: {
+                      path: file.relativePath,
+                      language: file.language,
+                      sizeBytes: file.sizeBytes,
+                      cognitiveLoad: file.cognitiveLoad,
+                      agentTouched: file.agentTouched,
+                      agentTouchedBy: file.agentTouchedBy,
+                      agentTouchedAt: file.agentTouchedAt,
+                      lastScanned: file.lastScanned,
+                      hash: file.hash,
+                    },
+                    imports: {
+                      total: imports.length,
+                      resolved: resolvedImports.length,
+                      unresolved: unresolvedImports.length,
+                      details: imports.map((i) => ({
+                        source: i.source,
+                        kind: i.kind,
+                        resolved: !!i.resolvedFile,
+                        resolvedPath: i.resolvedFile?.relativePath,
+                      })),
+                    },
+                    dependents: dependents.map((d) => ({
+                      path: d.relativePath,
+                      cognitiveLoad: d.cognitiveLoad,
+                      agentTouched: d.agentTouched,
+                      agentTouchedBy: d.agentTouchedBy,
                     })),
-                  },
-                  dependents: dependents.map((d) => ({
-                    path: d.relativePath,
-                    cognitiveLoad: d.cognitiveLoad,
-                    agentTouched: d.agentTouched,
-                    agentTouchedBy: d.agentTouchedBy,
-                  })),
-                  similarFiles: similarFiles.map((f) => ({
-                    path: f.relativePath,
-                    language: f.language,
-                    cognitiveLoad: f.cognitiveLoad,
-                    agentTouched: f.agentTouched,
-                  })),
-                  structure: {
-                    functions: functions.map((fn) => ({
-                      name: fn.name,
-                      signature: fn.signature,
-                      complexity: fn.complexity,
-                      startLine: fn.startLine,
-                      endLine: fn.endLine,
+                    similarFiles: similarFiles.map((f) => ({
+                      path: f.relativePath,
+                      language: f.language,
+                      cognitiveLoad: f.cognitiveLoad,
+                      agentTouched: f.agentTouched,
                     })),
-                    classes: classes.map((cls) => ({
-                      name: cls.name,
-                      methodsCount: cls.methodsCount,
-                      propertiesCount: cls.propertiesCount,
-                    })),
+                    structure: {
+                      functions: functions.map((fn) => ({
+                        name: fn.name,
+                        signature: fn.signature,
+                        complexity: fn.complexity,
+                        startLine: fn.startLine,
+                        endLine: fn.endLine,
+                      })),
+                      classes: classes.map((cls) => ({
+                        name: cls.name,
+                        methodsCount: cls.methodsCount,
+                        propertiesCount: cls.propertiesCount,
+                      })),
+                    },
+                    circularDependencies: fileCycles,
+                    patterns: file.patterns || [],
+                    // F38b: other agents' live intents overlapping this context.
+                    // Only present when at least one potential conflict exists.
+                    ...(conflictWarnings.length > 0 ? { conflictWarnings } : {}),
+                    // Task-aware ranked "what to look at next" section. Only
+                    // present when the caller passed a task string.
+                    ...(args.task
+                      ? {
+                          smartContext: assembleUserContext(deps.kg, {
+                            fileId: file.id,
+                            relativePath: file.relativePath,
+                            cognitiveLoad: file.cognitiveLoad,
+                            task: args.task,
+                            maxTokens: args.maxTokens,
+                            limit: Math.max(itemCap, 8),
+                          }),
+                        }
+                      : {}),
                   },
-                  circularDependencies: fileCycles,
-                  patterns: file.patterns || [],
-                  // F38b: other agents' live intents overlapping this context.
-                  // Only present when at least one potential conflict exists.
-                  ...(conflictWarnings.length > 0 ? { conflictWarnings } : {}),
-                  // Task-aware ranked "what to look at next" section. Only
-                  // present when the caller passed a task string.
-                  ...(args.task
-                    ? {
-                        smartContext: assembleUserContext(deps.kg, {
-                          fileId: file.id,
-                          relativePath: file.relativePath,
-                          cognitiveLoad: file.cognitiveLoad,
-                          task: args.task,
-                          maxTokens: args.maxTokens,
-                          limit: Math.max(itemCap, 8),
-                        }),
-                      }
-                    : {}),
-                },
+                  evidence,
+                ),
                 null,
                 2,
               ),

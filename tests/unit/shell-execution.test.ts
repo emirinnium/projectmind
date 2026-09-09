@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 const { spawnSyncMock } = vi.hoisted(() => ({ spawnSyncMock: vi.fn() }));
 
-vi.mock('node:child_process', () => ({ spawnSync: spawnSyncMock }));
+vi.mock('node:child_process', () => ({
+  execFileSync: vi.fn(),
+  spawnSync: spawnSyncMock,
+}));
 
 import { buildAutopilotHookScript, quotePosixShellArg } from '../../src/cli/commands/autopilot.js';
 import {

@@ -38,4 +38,20 @@ export interface IntegrityReport {
   repaired: number;
   orphans: string[];
   timestamp: string;
+  /** Evidence limits that affect which integrity checks were run. */
+  analysis?: IntegrityEvidenceStatus;
+}
+
+/**
+ * Evidence available to the integrity checker.
+ *
+ * A static scan does not establish that a function is dead. Orphan-function
+ * findings therefore require at least one recorded call-graph edge (normally
+ * from runtime trace ingestion) before that heuristic is enabled.
+ */
+export interface IntegrityEvidenceStatus {
+  callGraphAvailable: boolean;
+  callGraphEdgeCount: number;
+  orphanFunctionAnalysis: 'enabled' | 'skipped';
+  limitations: string[];
 }

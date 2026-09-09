@@ -4,9 +4,10 @@ import { AdvancedCache } from '../../cache/advanced-cache.js';
 import { EmbeddingCache, globalCacheRegistry } from '../../cache/index.js';
 import type { CacheStats } from '../../cache/types.js';
 import { DatabaseSync } from 'node:sqlite';
+import type { SQLOutputValue } from 'node:sqlite';
 import { getDatabase } from '../../../storage/database.js';
-import { getVecIndex, type VecIndex } from '../../embeddings/vector-index.js';
-import { logger } from '../../../utils/logger.js';
+import { getVecIndex } from '../../embeddings/vector-index.js';
+import { decodeEmbedding } from '../../embeddings/embedding-codec.js';
 import { isTestPath } from '../../../utils/test-detection.js';
 
 // Canonical debt type declarations live in persistence.ts — re-exported here
@@ -20,7 +21,6 @@ export type { DebtType, Severity, DebtItem, DebtReport } from './persistence.js'
 export class RedundancyDetector {
   private embeddingCache: AdvancedCache<string, number[]>;
   private db: DatabaseSync;
-  private vecIndex: VecIndex;
 
   constructor(db?: DatabaseSync) {
     this.embeddingCache = globalCacheRegistry.getOrCreate(
@@ -28,63 +28,46 @@ export class RedundancyDetector {
       () => new EmbeddingCache(),
     ) as AdvancedCache<string, number[]>;
     this.db = db || getDatabase();
-    this.vecIndex = getVecIndex(this.db);
   }
   getCacheStats(): CacheStats | { error: string } {
     return this.embeddingCache?.getStats?.() ?? { error: 'Cache not initialized' };
   }
 
+  private isUsableEmbedding(embedding: number[], expectedDimension?: number): boolean {
+    return (
+      embedding.length > 0 &&
+      (expectedDimension === undefined || embedding.length === expectedDimension) &&
+      embedding.every(Number.isFinite) &&
+      embedding.some((value) => value !== 0)
+    );
+  }
+
   /**
    * Batch-fetch embeddings for all file IDs in a single query.
-   * Replaces N+1 individual SELECT statements.
-   * Uses cache to avoid recomputing embeddings.
+   *
+   * The database is the source of truth here. A previous implementation used
+   * a persistent `file:<id>` cache, which had no content hash and could feed a
+   * stale vector back into debt detection after a separate scan process
+   * updated the database. Reading the current row also makes this method safe
+   * across CLI/MCP process boundaries.
    */
   getFileEmbeddings(fileIds: number[]): Map<number, number[]> {
     const result = new Map<number, number[]>();
     if (fileIds.length === 0) return result;
 
-    // Defensive null-check for embeddingCache
-    if (!this.embeddingCache) {
-      logger.warn('embeddingCache is not initialized, returning empty results');
-      return result;
-    }
+    const placeholders = fileIds.map(() => '?').join(',');
+    const rows = this.db
+      .prepare(`SELECT id, embedding FROM files WHERE id IN (${placeholders})`)
+      .all(...fileIds) as Array<{ id: number; embedding: SQLOutputValue | null }>;
 
-    // Check cache first
-    const cachedEmbeddings = new Map<number, number[]>();
-    const uncachedIds: number[] = [];
-
-    for (const id of fileIds) {
-      const cacheKey = `file:${id}`;
-      const cached = this.embeddingCache.get(cacheKey);
-      if (cached) {
-        cachedEmbeddings.set(id, cached);
-      } else {
-        uncachedIds.push(id);
+    for (const row of rows) {
+      const embedding = decodeEmbedding(row.embedding);
+      // Zero/invalid vectors have no direction and must never participate in
+      // similarity detection. They were the main source of false duplicate
+      // findings for files containing only classes, types, or exports.
+      if (this.isUsableEmbedding(embedding)) {
+        result.set(row.id, embedding);
       }
-    }
-
-    // Fetch uncached embeddings from DB as Float32 BLOB
-    if (uncachedIds.length > 0) {
-      const placeholders = uncachedIds.map(() => '?').join(',');
-      const stmt = this.db.prepare(`SELECT id, embedding FROM files WHERE id IN (${placeholders})`);
-      const rows = stmt.all(...uncachedIds) as { id: number; embedding: Buffer | null }[];
-
-      for (const row of rows) {
-        if (!row.embedding) continue;
-        try {
-          // Convert BLOB to Float32Array
-          const embedding = new Float32Array(row.embedding.buffer);
-          result.set(row.id, Array.from(embedding));
-          this.embeddingCache.set(`file:${row.id}`, Array.from(embedding));
-        } catch {
-          // skip invalid embeddings
-        }
-      }
-    }
-
-    // Merge cached and fetched
-    for (const [id, emb] of cachedEmbeddings) {
-      result.set(id, emb);
     }
 
     return result;
@@ -107,6 +90,7 @@ export class RedundancyDetector {
     const MIN_FILE_BYTES = 256;
     if (isTestPath(target.relativePath)) return [];
     if (target.sizeBytes < MIN_FILE_BYTES) return [];
+    if (!this.isUsableEmbedding(targetEmbedding)) return [];
 
     // Debt redundancy is a production-code signal. Test fixtures frequently
     // repeat setup/assertion scaffolding by design, so comparing them with
@@ -114,20 +98,32 @@ export class RedundancyDetector {
     // target itself because ANN indexes can return an exact self-match.
     const candidateFiles = allFiles.filter(
       (file) =>
-        file.id !== target.id && file.sizeBytes >= MIN_FILE_BYTES && !isTestPath(file.relativePath),
+        file.id !== target.id &&
+        file.sizeBytes >= MIN_FILE_BYTES &&
+        !isTestPath(file.relativePath) &&
+        this.isUsableEmbedding(embeddings.get(file.id) ?? [], targetEmbedding.length),
     );
     const candidateIds = new Set(candidateFiles.map((file) => file.id));
+    const vecIndex = getVecIndex(this.db, targetEmbedding.length);
 
     // Fast path: sqlite-vec ANN via the shared VecIndex.
-    if (this.vecIndex.isAvailable()) {
+    if (vecIndex.isAvailable() && targetEmbedding.length === vecIndex.dimension()) {
       // Ensure the index is populated for these embeddings.
       for (const [id, emb] of embeddings) {
-        this.vecIndex.upsert(id, emb);
+        if (this.isUsableEmbedding(emb, vecIndex.dimension())) {
+          vecIndex.upsert(id, emb);
+        }
       }
 
-      const rawMatches = this.vecIndex.findSimilar(targetEmbedding, 20);
+      const rawMatches = vecIndex.findSimilar(targetEmbedding, 20);
+      // sqlite-vec is an accelerator only. Re-score candidates with the
+      // canonical cosine implementation so a stale/partially rebuilt index or
+      // a metric change can never create a debt item on its own.
       const matchIds = rawMatches
-        .filter((m) => candidateIds.has(m.id) && 1 - m.distance >= THRESHOLD)
+        .filter((m) => candidateIds.has(m.id))
+        .map((m) => ({ id: m.id, score: cosineSimilarity(targetEmbedding, embeddings.get(m.id)!) }))
+        .filter((m) => m.score >= THRESHOLD)
+        .sort((a, b) => b.score - a.score)
         .map((m) => m.id);
 
       if (matchIds.length > 0) {

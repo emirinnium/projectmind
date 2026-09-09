@@ -39,13 +39,17 @@ export class PatternDriftDetector {
       fastOnly: true,
     });
 
-    if (result.verdict === 'fail' || result.verdict === 'warn') {
+    // Fast-tier warnings are advisory signals (file size, import count and
+    // other heuristics). They remain visible through `check`, but are not
+    // durable medium debt: one weak heuristic is not enough evidence for a
+    // medium-severity finding. Only a failed coherence check becomes debt.
+    if (result.verdict === 'fail') {
       // Persist immediately so findings reach debt_items and every report.
       items.push(
         this.persistence.createDebtItem({
           type: 'pattern_drift',
           description: `Pattern inconsistency in ${file.relativePath}`,
-          severity: result.verdict === 'fail' ? 'high' : 'medium',
+          severity: 'high',
           suggestion: result.suggestions.join('; '),
           reasoningTrace: result.reasoningTrace,
           filePath: file.path,

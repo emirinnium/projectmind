@@ -10,7 +10,7 @@ vi.mock('../../../src/mcp/tools/kg-stats.js', () => {
         title: 'Knowledge Graph Stats',
         description: 'test',
         inputSchema: {},
-      }, () => {});
+      }, () => undefined);
     }),
   };
 });

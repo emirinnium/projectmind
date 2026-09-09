@@ -1,7 +1,9 @@
 import { Command } from 'commander';
 import { asyncHandler, output } from '@/cli/utils/shared.js';
 import { execFileSync } from 'node:child_process';
+import { relative } from 'node:path';
 import { loadConfig } from '@/cli/utils/shared.js';
+import { confineToProject } from '@/mcp/tools/_shared.js';
 
 /**
  * Temporal context for a single file, straight from git:
@@ -22,7 +24,15 @@ export function createGitInsightsCommand(): Command {
     .action(
       asyncHandler(async (filePath: string, opts: { commits: string; format: string }) => {
         const root = loadConfig().projectRoot;
-        const relForGit = filePath.replace(/\\/g, '/');
+        const absolutePath = confineToProject(filePath, root);
+        const relForGit = relative(root, absolutePath).replace(/\\/g, '/');
+        const commitCount = Number.parseInt(opts.commits, 10);
+        if (!Number.isSafeInteger(commitCount) || commitCount < 1 || commitCount > 1000) {
+          throw new Error(`--commits must be an integer between 1 and 1000: ${opts.commits}`);
+        }
+        if (!['text', 'json'].includes(opts.format)) {
+          throw new Error(`--format must be text or json: ${opts.format}`);
+        }
 
         const git = (args: string[], maxBuffer = 32 * 1024 * 1024): string | null => {
           try {
@@ -62,7 +72,7 @@ export function createGitInsightsCommand(): Command {
         }
 
         // Recent commit subjects.
-        const n = Math.max(1, parseInt(opts.commits, 10));
+        const n = commitCount;
         const logRaw =
           git(['log', `-n`, String(n), '--format=%h%x09%an%x09%aI%x09%s', '--', relForGit]) ?? '';
         const commits = logRaw

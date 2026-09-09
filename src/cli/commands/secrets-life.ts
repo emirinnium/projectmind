@@ -1,6 +1,7 @@
 import { Command } from 'commander';
-import { withService, asyncHandler, output, logger } from '@/cli/utils/shared.js';
+import { withService, asyncHandler, output, logger, loadConfig } from '@/cli/utils/shared.js';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { confineToProject } from '@/mcp/tools/_shared.js';
 import {
   type SecretFinding,
   scanForSecrets,
@@ -12,10 +13,10 @@ import {
 
 export function createSecretsLifeCommand(): Command {
   const secretsCmd = new Command('secrets-life')
-    .description('Secrets lifecycle management: detection, rotation, vault integration')
+    .description('Secret detection, rotation planning, and optional Vault configuration checks')
     .option('--scan', 'Scan for secrets in codebase')
-    .option('--rotate', 'Show rotation schedule')
-    .option('--vault', 'Check vault integration status')
+    .option('--rotate', 'Show a rotation plan; this does not mutate secrets')
+    .option('--vault', 'Check Vault configuration; no Vault API calls are made')
     .option('--policy <file>', 'Custom rotation policy JSON file')
     .option('--entropy-threshold <n>', 'Minimum entropy for detection', '3.5')
     .option('--format <fmt>', 'Output: text|json|sarif', 'text')
@@ -35,21 +36,47 @@ export function createSecretsLifeCommand(): Command {
           maxFiles: string;
           maxFindings: string;
         }) => {
-          await withService(['scale', 'coherence'], async (_ctx, services) => {
+          await withService(['scale'], async (_ctx, services) => {
             const scale = services.scale!;
-            services.coherence!;
-            const { loadConfig } = await import('../../utils/config.js');
             const config = loadConfig();
+
+            if (!['text', 'json', 'sarif'].includes(opts.format)) {
+              throw new Error(`--format must be text, json, or sarif: ${opts.format}`);
+            }
+            const entropyThreshold = Number.parseFloat(opts.entropyThreshold);
+            const maxFiles = Number.parseInt(opts.maxFiles, 10);
+            const maxFindings = Number.parseInt(opts.maxFindings, 10);
+            if (
+              !Number.isFinite(entropyThreshold) ||
+              entropyThreshold < 0 ||
+              entropyThreshold > 20
+            ) {
+              throw new Error(
+                `--entropy-threshold must be a number between 0 and 20: ${opts.entropyThreshold}`,
+              );
+            }
+            if (!Number.isSafeInteger(maxFiles) || maxFiles < 0 || maxFiles > 100_000) {
+              throw new Error(
+                `--max-files must be an integer between 0 and 100000: ${opts.maxFiles}`,
+              );
+            }
+            if (!Number.isSafeInteger(maxFindings) || maxFindings < 0 || maxFindings > 100_000) {
+              throw new Error(
+                `--max-findings must be an integer between 0 and 100000: ${opts.maxFindings}`,
+              );
+            }
+            const outputPath = opts.output
+              ? confineToProject(opts.output, config.projectRoot)
+              : undefined;
 
             output.section('Secrets Lifecycle Manager');
 
-            const policies = opts.policy
-              ? JSON.parse(readFileSync(opts.policy, 'utf-8'))
+            const policyPath = opts.policy
+              ? confineToProject(opts.policy, config.projectRoot)
+              : undefined;
+            const policies = policyPath
+              ? JSON.parse(readFileSync(policyPath, 'utf-8'))
               : DEFAULT_POLICIES;
-
-            const entropyThreshold = parseFloat(opts.entropyThreshold);
-            const maxFiles = parseInt(opts.maxFiles, 10);
-            const maxFindings = parseInt(opts.maxFindings, 10);
 
             if (opts.scan) {
               output.section('Secret Scanning');
@@ -69,12 +96,7 @@ export function createSecretsLifeCommand(): Command {
               for (const file of filesToScan) {
                 try {
                   const content = readFileSync(file.path, 'utf-8');
-                  const found = scanForSecrets(
-                    content,
-                    file.relativePath,
-                    file.path,
-                    entropyThreshold,
-                  );
+                  const found = scanForSecrets(content, file.relativePath, entropyThreshold);
                   findings.push(...found);
                 } catch (e) {
                   logger.warn(
@@ -114,9 +136,9 @@ export function createSecretsLifeCommand(): Command {
                     opts.format === 'sarif'
                       ? JSON.stringify(sarif, null, 2)
                       : JSON.stringify({ findings }, null, 2);
-                  if (opts.output) {
-                    writeFileSync(opts.output, content);
-                    output.success(`Written to ${opts.output}`);
+                  if (outputPath) {
+                    writeFileSync(outputPath, content);
+                    output.success(`Written to ${outputPath}`);
                   } else {
                     output.raw(content);
                   }
@@ -143,17 +165,18 @@ export function createSecretsLifeCommand(): Command {
                   }
                 }
 
-                if (opts.output) {
-                  writeFileSync(opts.output, JSON.stringify({ findings }, null, 2));
-                  output.success(`Written to ${opts.output}`);
+                if (outputPath) {
+                  writeFileSync(outputPath, JSON.stringify({ findings }, null, 2));
+                  output.success(`Written to ${outputPath}`);
                 }
               }
             }
 
             if (opts.rotate) {
-              output.section('Rotation Schedule');
+              output.section('Rotation Plan (no secret mutation)');
 
-              // Simulated rotation schedule based on findings
+              // This command intentionally plans rotation; it never writes or
+              // changes a secret value.
               const schedule = generateRotationSchedule(policies);
 
               output.section('Upcoming Rotations (next 30 days)');
@@ -166,14 +189,14 @@ export function createSecretsLifeCommand(): Command {
                 );
               }
 
-              if (opts.output) {
-                writeFileSync(opts.output, JSON.stringify({ schedule }, null, 2));
-                output.success(`Written to ${opts.output}`);
+              if (outputPath) {
+                writeFileSync(outputPath, JSON.stringify({ schedule }, null, 2));
+                output.success(`Written to ${outputPath}`);
               }
             }
 
             if (opts.vault) {
-              output.section('Vault Integration Status');
+              output.section('Vault Configuration Status');
 
               // Check for vault configuration
               const vaultConfig = checkVaultIntegration(config);
@@ -184,15 +207,15 @@ export function createSecretsLifeCommand(): Command {
               output.kv('Mount paths', vaultConfig.mountPaths?.join(', ') || 'Not configured');
 
               if (!vaultConfig.configured) {
-                output.warn('Vault not configured. Run with --vault to see setup instructions.');
+                output.warn('Vault is not configured; no Vault API operation was attempted.');
                 output.info(
                   'To enable: Set VAULT_ADDR, VAULT_TOKEN, and configure mount paths in .projectmindrc.json',
                 );
               }
 
-              if (opts.output) {
-                writeFileSync(opts.output, JSON.stringify(vaultConfig, null, 2));
-                output.success(`Written to ${opts.output}`);
+              if (outputPath) {
+                writeFileSync(outputPath, JSON.stringify(vaultConfig, null, 2));
+                output.success(`Written to ${outputPath}`);
               }
             }
 

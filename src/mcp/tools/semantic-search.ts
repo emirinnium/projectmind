@@ -1,136 +1,87 @@
 import { z } from 'zod';
-import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
+import {
+  loadEmbeddingIndex,
+  type IndexedSearchMetadata,
+  type SemanticSearchScope,
+  type SemanticSearchSource,
+} from './semantic-search-index.js';
+import type { EmbeddingIndexConfiguration } from '../../core/embeddings/index-configuration.js';
+import { verifyProjectFreshness } from '../../core/proof/evidence.js';
 import { searchSemantic } from '@/core/search/semantic.js';
-import { generateEmbedding, cosineSimilarity } from '@/parser/embeddings.js';
+import {
+  generateEmbedding,
+  cosineSimilarity,
+  getCurrentProvider,
+  type EmbeddingProvider,
+} from '@/parser/embeddings.js';
 
 /**
- * semantic_search — pure natural-language semantic file search over the
- * project's stored file embeddings.
+ * semantic_search performs natural-language cosine search against the stored
+ * file embeddings, or function/class embeddings when scope=symbol.
  *
- * Given a natural-language `query`, embeds it with the active embedding
- * provider and ranks every indexed file by cosine similarity to its stored
- * embedding, returning only files whose score meets `threshold` (default 0.7),
- * capped at `limit` (default 5).
- *
- * This is a thin, read-only wrapper around the core `searchSemantic` engine
- * (src/core/search/semantic.ts). It wires the engine to the live project DB:
- * file embeddings are read from the `files` table (Float32 BLOB or legacy JSON
- * TEXT) for the project whose root matches `deps.projectRoot`.
+ * Ranking is deliberately delegated to the pure core search function. This
+ * wrapper adds project scoping, source locations, provider metadata, index
+ * health, and explicit limitations so a consumer can judge the result.
  */
 
-/** Input accepted by the semantic_search tool. */
 export interface SemanticSearchArgs {
   query: string;
   limit?: number;
   threshold?: number;
+  scope?: SemanticSearchScope;
 }
 
-/** A single ranked hit. */
 export interface SemanticSearchHit {
   filePath: string;
   score: number;
+  kind?: 'file' | 'function' | 'class';
+  symbolName?: string;
+  startLine?: number | null;
+  endLine?: number | null;
+  indexEvidence?: IndexedSearchMetadata & { embeddingDimension: number };
 }
 
-/** Result of a semantic search run. */
 export interface SemanticSearchResult {
   results: SemanticSearchHit[];
+  query: {
+    provider: EmbeddingProvider;
+    dimension: number;
+  };
+  index: {
+    projectId: number | null;
+    scope: SemanticSearchScope;
+    candidateFiles: number;
+    indexedFiles: number;
+    candidateItems: number;
+    indexedItems: number;
+    invalidEmbeddings: number;
+    dimensions: number[];
+    compatibleFiles: number;
+    incompatibleFiles: number;
+    compatibleItems: number;
+    incompatibleItems: number;
+    freshness: {
+      status: 'verified' | 'partial' | 'stale' | 'unverified' | 'conflict';
+      checkedAt: string;
+      checkedFiles: number;
+      freshFiles: number;
+      staleFiles: number;
+      unindexedFiles: number;
+      missingFiles: number;
+      unknownFiles: number;
+    };
+    configuration: EmbeddingIndexConfiguration | null;
+  };
+  evidence: {
+    status: 'source-backed' | 'partial' | 'insufficient';
+    method: 'cosine-similarity';
+    source: SemanticSearchSource;
+  };
+  limitations: string[];
 }
 
-/**
- * Decode an embedding stored in either the compact Float32 BLOB format or the
- * legacy JSON TEXT format (parity with storage/repositories/file-repository.ts
- * and storage/kg/helpers/files.ts). Returns an empty array when unreadable.
- */
-function decodeEmbedding(raw: SQLOutputValue | null): number[] {
-  if (raw instanceof Uint8Array) {
-    const floats = new Float32Array(raw.buffer, raw.byteOffset, Math.floor(raw.byteLength / 4));
-    return Array.from(floats);
-  }
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw) as number[];
-      return Array.isArray(parsed) ? parsed.map(Number) : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
-/**
- * Resolve the active project id for `projectRoot`. Prefers a project whose
- * `root_path` matches the root, then the persisted `current_project_id`
- * setting, then the default project (id 1). Returns `null` when no project
- * can be determined.
- */
-function resolveProjectId(db: DatabaseSync, projectRoot: string): number | null {
-  const byRoot = db
-    .prepare('SELECT id FROM projects WHERE root_path = ? ORDER BY id LIMIT 1')
-    .get(projectRoot) as { id: number } | undefined;
-  if (byRoot) return byRoot.id;
-
-  try {
-    const setting = db
-      .prepare("SELECT value FROM settings WHERE key = 'current_project_id'")
-      .get() as { value: string } | undefined;
-    if (setting) {
-      const parsed = parseInt(setting.value, 10);
-      if (!Number.isNaN(parsed) && parsed > 0) {
-        const exists = db.prepare('SELECT id FROM projects WHERE id = ?').get(parsed) as
-          { id: number } | undefined;
-        if (exists) return parsed;
-      }
-    }
-  } catch {
-    // settings table may not exist yet in older databases — fall through.
-  }
-
-  const defaultProject = db.prepare('SELECT id FROM projects WHERE id = 1').get() as
-    { id: number } | undefined;
-  return defaultProject ? defaultProject.id : null;
-}
-
-/**
- * Load every indexed file embedding for the active project as a
- * `Map<filePath, number[]>` keyed by the file's relative path (falling back to
- * its absolute path when no relative path is stored).
- */
-function loadFileEmbeddings(db: DatabaseSync, projectRoot: string): Map<string, number[]> {
-  const projectId = resolveProjectId(db, projectRoot);
-  if (projectId === null) return new Map();
-
-  const rows = db
-    .prepare(
-      'SELECT path, relative_path, embedding FROM files WHERE project_id = ? AND embedding IS NOT NULL',
-    )
-    .all(projectId) as Array<{
-    path: string;
-    relative_path: string | null;
-    embedding: SQLOutputValue | null;
-  }>;
-
-  const map = new Map<string, number[]>();
-  for (const row of rows) {
-    const decoded = decodeEmbedding(row.embedding);
-    if (decoded.length === 0) continue;
-    const key = (row.relative_path || row.path).replace(/\\/g, '/');
-    map.set(key, decoded);
-  }
-  return map;
-}
-
-/**
- * Run a semantic search over the project's stored file embeddings.
- *
- * Pure and dependency-light (only `deps.db` + `deps.projectRoot` are read), so
- * it is directly unit-testable — mirroring the `evaluateContracts` /
- * `predictMergeRiskForTool` pattern of exporting the core logic for tests.
- *
- * `embeddingGenerator` is injectable so tests can supply a deterministic
- * vector without touching the real (possibly network-backed) provider.
- */
 export async function semanticSearchForTool(
   deps: McpDependencies,
   args: SemanticSearchArgs,
@@ -139,42 +90,196 @@ export async function semanticSearchForTool(
   if (!deps.db) {
     throw new Error('semantic_search requires the project database, which is not initialized.');
   }
-  const fileEmbeddings = loadFileEmbeddings(deps.db, deps.projectRoot);
+
+  const scope = args.scope ?? 'file';
+  const index = loadEmbeddingIndex(deps.db, deps.projectRoot, scope);
+  const queryEmbedding = await embeddingGenerator(args.query);
+  const queryProvider = getCurrentProvider();
   const results = await searchSemantic(
     args.query,
-    embeddingGenerator,
+    async () => queryEmbedding,
     cosineSimilarity,
-    fileEmbeddings,
+    index.embeddings,
     { limit: args.limit, threshold: args.threshold },
   );
-  return { results };
+
+  const compatibleItems = [...index.embeddings.values()].filter(
+    (embedding) => embedding.length === queryEmbedding.length,
+  ).length;
+  const incompatibleItems = index.indexedItems - compatibleItems;
+  const compatibleFiles = new Set(
+    [...index.metadata.entries()]
+      .filter(([key]) => index.embeddings.get(key)?.length === queryEmbedding.length)
+      .map(([, metadata]) => metadata.filePath),
+  ).size;
+  const incompatibleFiles = index.indexedFiles - compatibleFiles;
+  const indexedPaths = [
+    ...new Set([...index.metadata.values()].map((metadata) => metadata.filePath)),
+  ];
+  const freshness = await verifyProjectFreshness(deps.kg, deps.projectRoot, indexedPaths);
+
+  const limitations: string[] = [
+    'Semantic ranking is based on the indexed vectors; source freshness is verified separately and does not prove typecheck or runtime behavior.',
+  ];
+  if (index.projectId === null) {
+    limitations.push(
+      'No matching project record was found, so no stored embeddings were searched.',
+    );
+  }
+  if (index.invalidEmbeddings > 0) {
+    limitations.push(
+      `${index.invalidEmbeddings} stored embedding(s) were unreadable or non-finite and were excluded.`,
+    );
+  }
+  if (incompatibleItems > 0) {
+    limitations.push(
+      `${incompatibleItems} indexed ${scope === 'symbol' ? 'symbol' : 'file'} item(s) use a different vector dimension than the query and cannot be compared.`,
+    );
+  }
+  if (index.dimensions.length > 1) {
+    limitations.push(
+      `The index contains ${index.dimensions.length} vector dimensions (${index.dimensions.join(', ')}); keep one provider/dimension per index for comparable results.`,
+    );
+  }
+  if (index.configuration === null) {
+    limitations.push(
+      'The stored index has no valid provider manifest; vector compatibility is unknown. Re-scan the project before treating semantic ranking as source-backed.',
+    );
+  } else {
+    if (index.configuration.activeProvider !== queryProvider) {
+      limitations.push(
+        `The index was generated with provider "${index.configuration.activeProvider}", but the current query uses "${queryProvider}"; comparable semantic space is not established.`,
+      );
+    }
+    if (index.configuration.effectiveDimensions.length === 0) {
+      limitations.push(
+        `The index manifest requests dimension ${index.configuration.dimension} but has no observed vector dimension; provider compatibility is not established.`,
+      );
+    } else if (!index.configuration.effectiveDimensions.includes(queryEmbedding.length)) {
+      limitations.push(
+        `The index manifest records effective dimension(s) ${index.configuration.effectiveDimensions.join(', ')}, but the query returned dimension ${queryEmbedding.length}; provider compatibility is not established.`,
+      );
+    }
+    if (index.configuration.requestedProvider !== index.configuration.activeProvider) {
+      limitations.push(
+        `The index requested provider "${index.configuration.requestedProvider}" but used fallback provider "${index.configuration.activeProvider}"; stronger provider quality must not be inferred.`,
+      );
+    }
+  }
+
+  if (freshness.status !== 'verified') {
+    limitations.push(
+      `Indexed source freshness is ${freshness.status}: ${freshness.freshFiles} fresh, ${freshness.staleFiles} stale, ${freshness.unindexedFiles} unindexed, ${freshness.missingFiles} missing, ${freshness.unknownFiles} unknown.`,
+    );
+  }
+
+  const configurationUnverified =
+    index.configuration === null ||
+    index.configuration.activeProvider !== queryProvider ||
+    index.configuration.effectiveDimensions.length === 0 ||
+    (index.configuration.effectiveDimensions.length > 0 &&
+      !index.configuration.effectiveDimensions.includes(queryEmbedding.length)) ||
+    (index.configuration !== null &&
+      index.configuration.requestedProvider !== index.configuration.activeProvider);
+
+  const status =
+    index.indexedItems === 0
+      ? 'insufficient'
+      : index.invalidEmbeddings > 0 ||
+          incompatibleItems > 0 ||
+          configurationUnverified ||
+          freshness.status !== 'verified'
+        ? 'partial'
+        : 'source-backed';
+
+  return {
+    results: results.map((result) => {
+      const metadata = index.metadata.get(result.filePath);
+      if (!metadata) return result;
+      return {
+        ...result,
+        filePath: metadata.filePath,
+        ...(metadata.kind !== 'file'
+          ? {
+              kind: metadata.kind,
+              symbolName: metadata.symbolName,
+              startLine: metadata.startLine,
+              endLine: metadata.endLine,
+            }
+          : {}),
+        indexEvidence: {
+          ...metadata,
+          embeddingDimension: index.embeddings.get(result.filePath)?.length ?? 0,
+        },
+      };
+    }),
+    query: {
+      provider: queryProvider,
+      dimension: queryEmbedding.length,
+    },
+    index: {
+      projectId: index.projectId,
+      scope,
+      candidateFiles: index.candidateFiles,
+      indexedFiles: index.indexedFiles,
+      candidateItems: index.candidateItems,
+      indexedItems: index.indexedItems,
+      invalidEmbeddings: index.invalidEmbeddings,
+      dimensions: index.dimensions,
+      compatibleFiles,
+      incompatibleFiles,
+      compatibleItems,
+      incompatibleItems,
+      freshness: {
+        status: freshness.status,
+        checkedAt: freshness.checkedAt,
+        checkedFiles: freshness.checkedFiles,
+        freshFiles: freshness.freshFiles,
+        staleFiles: freshness.staleFiles,
+        unindexedFiles: freshness.unindexedFiles,
+        missingFiles: freshness.missingFiles,
+        unknownFiles: freshness.unknownFiles,
+      },
+      configuration: index.configuration,
+    },
+    evidence: {
+      status,
+      method: 'cosine-similarity',
+      source: index.source,
+    },
+    limitations,
+  };
 }
 
 export function registerSemanticSearchTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
     'semantic_search',
     {
-      title: 'Semantic File Search',
+      title: 'Semantic File and Symbol Search',
       description:
-        "Pure natural-language semantic file search over the project's stored embeddings.\n" +
-        'WHEN to call: when you want files ranked purely by embedding similarity to a free-text query ' +
-        '("rate limiting", "oauth token refresh") rather than a task intent or literal string.\n' +
-        'Returns files whose cosine similarity to the query meets `threshold`, capped at `limit`.',
+        "Natural-language semantic search over the project's stored embeddings.\n" +
+        'Use scope=file for whole-file retrieval or scope=symbol to rank indexed functions/classes with source locations. ' +
+        'The response includes provider, index dimensions, source hashes, verified source freshness, and explicit limitations; freshness does not prove typecheck or runtime behavior.',
       inputSchema: {
-        query: z.string().describe('Natural-language query to match against file embeddings'),
+        query: z.string().describe('Natural-language query to match against stored embeddings'),
+        scope: z
+          .enum(['file', 'symbol'])
+          .default('file')
+          .describe('Search whole files or indexed functions/classes'),
         limit: z.number().int().min(1).max(50).default(5).describe('Maximum number of results'),
         threshold: z
           .number()
           .min(0)
           .max(1)
           .default(0.7)
-          .describe('Minimum cosine similarity (0..1) for a file to be returned'),
+          .describe('Minimum cosine similarity (0..1) for a result'),
       },
     },
     async (args) => {
       try {
         const result = await semanticSearchForTool(deps, {
           query: args.query,
+          scope: args.scope,
           limit: args.limit,
           threshold: args.threshold,
         });
@@ -184,7 +289,19 @@ export function registerSemanticSearchTool(server: McpServer, deps: McpDependenc
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ error: message }) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: false,
+                error: message,
+                results: [],
+                limitations: [
+                  'Semantic search did not complete; no ranking should be inferred from this response.',
+                ],
+              }),
+            },
+          ],
         };
       }
     },

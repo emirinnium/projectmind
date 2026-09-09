@@ -17,6 +17,8 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
         maxMarkers: z
           .number()
           .int()
+          .min(1)
+          .max(10000)
           .default(500)
           .describe('Maximum number of TODO/FIXME markers to report'),
       },

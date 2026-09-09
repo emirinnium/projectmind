@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { tryCatch, tryCatchAsync, assert, require } from '../../src/utils/errors.js';
+import { describe, it, expect, vi } from 'vitest';
+import { logger } from '../../src/utils/logger.js';
+import {
+  tryCatch,
+  tryCatchAsync,
+  reportSuppressedError,
+  assert,
+  require,
+} from '../../src/utils/errors.js';
 
 describe('Errors - tryCatch', () => {
   it('returns success result for non-throwing functions', () => {
@@ -42,6 +49,19 @@ describe('Errors - tryCatchAsync', () => {
     if (!result.success) {
       expect(result.error.message).toBe('async error');
     }
+  });
+});
+
+describe('Errors - reportSuppressedError', () => {
+  it('logs normalized errors without throwing', () => {
+    const debug = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+
+    expect(() => reportSuppressedError(new Error('optional failure'), 'version lookup')).not.toThrow();
+    expect(() => reportSuppressedError('string failure', 'rollback')).not.toThrow();
+    expect(debug).toHaveBeenNthCalledWith(1, 'version lookup: optional failure');
+    expect(debug).toHaveBeenNthCalledWith(2, 'rollback: string failure');
+
+    debug.mockRestore();
   });
 });
 

@@ -70,133 +70,150 @@ export function createDoctorFixImportsCommand(): Command {
     .description('Analyze unresolved imports and suggest alias/path fixes')
     .option('--limit <n>', 'Max files to show', '25')
     .option('--suggest-aliases', 'Generate alias suggestions for unresolved imports', false)
+    .option('--repair-graph', 'Repair stale knowledge-graph nodes after reporting', false)
     .action(
-      asyncHandler(async (opts: { limit?: string; suggestAliases?: boolean }) => {
-        await withService(['scale'], async (ctx, _services) => {
-          output.section('Unresolved Imports Analysis');
+      asyncHandler(
+        async (opts: { limit?: string; suggestAliases?: boolean; repairGraph?: boolean }) => {
+          const limit = Number.parseInt(opts.limit ?? '25', 10);
+          if (!Number.isInteger(limit) || limit <= 0) {
+            throw new Error(`--limit must be a positive integer: ${opts.limit}`);
+          }
+          await withService(['scale'], async (ctx, _services) => {
+            output.section('Unresolved Imports Analysis');
 
-          // Real data: every import recorded as unresolved during scan.
-          const rows = getStatement(
-            `SELECT f.relative_path AS file, i.source AS src, i.kind AS kind
+            // Real data: every import recorded as unresolved during scan.
+            const rows = getStatement(
+              `SELECT f.relative_path AS file, i.source AS src, i.kind AS kind
            FROM imports i JOIN files f ON f.id = i.file_id
            WHERE f.project_id = ? AND i.resolved = 0
            ORDER BY f.relative_path`,
-          ).all(ctx.kg.getCurrentProjectId()) as Array<{ file: string; src: string; kind: string }>;
+            ).all(ctx.kg.getCurrentProjectId()) as Array<{
+              file: string;
+              src: string;
+              kind: string;
+            }>;
 
-          if (rows.length === 0) {
-            output.success('All imports are resolved. Nothing to fix.');
-            return;
-          }
-
-          // Use the AliasResolver for comprehensive alias resolution
-          const aliasResolver = getDefaultAliasResolver();
-          const aliases = aliasResolver.getAliases();
-
-          // Group by file and produce suggestions.
-          const byFile = new Map<
-            string,
-            Array<{ source: string; hint: string; suggestion?: string }>
-          >();
-          let aliasFixable = 0;
-          let dynamicImportCount = 0;
-          let jsonModuleCount = 0;
-
-          for (const r of rows) {
-            const list = byFile.get(r.file) ?? [];
-            let hint = '';
-            let suggestion: string | undefined;
-
-            // Track import kinds
-            if (r.kind === 'dynamic-import') {
-              dynamicImportCount++;
-            } else if (r.kind === 'json') {
-              jsonModuleCount++;
+            if (rows.length === 0) {
+              output.success('All imports are resolved. Nothing to fix.');
+              return;
             }
 
-            // Try alias resolution for bare imports
-            if (!r.src.startsWith('./') && !r.src.startsWith('../') && !r.src.startsWith('node:')) {
-              const aliasResult = aliasResolver.resolveAlias(r.src);
-              if (aliasResult.matched) {
-                aliasFixable++;
-                hint = `alias match: ${aliasResult.resolvedCandidates.join(', ')}`;
-                if (opts.suggestAliases && aliasResult.resolvedCandidates.length > 0) {
-                  suggestion = `Consider adding to tsconfig paths: "${r.src}" -> "${aliasResult.resolvedCandidates[0]}"`;
+            // Use the AliasResolver for comprehensive alias resolution
+            const aliasResolver = getDefaultAliasResolver();
+            const aliases = aliasResolver.getAliases();
+
+            // Group by file and produce suggestions.
+            const byFile = new Map<
+              string,
+              Array<{ source: string; hint: string; suggestion?: string }>
+            >();
+            let aliasFixable = 0;
+            let dynamicImportCount = 0;
+            let jsonModuleCount = 0;
+
+            for (const r of rows) {
+              const list = byFile.get(r.file) ?? [];
+              let hint = '';
+              let suggestion: string | undefined;
+
+              // Track import kinds
+              if (r.kind === 'dynamic-import') {
+                dynamicImportCount++;
+              } else if (r.kind === 'json') {
+                jsonModuleCount++;
+              }
+
+              // Try alias resolution for bare imports
+              if (
+                !r.src.startsWith('./') &&
+                !r.src.startsWith('../') &&
+                !r.src.startsWith('node:')
+              ) {
+                const aliasResult = aliasResolver.resolveAlias(r.src);
+                if (aliasResult.matched) {
+                  aliasFixable++;
+                  hint = `alias match: ${aliasResult.resolvedCandidates.join(', ')}`;
+                  if (opts.suggestAliases && aliasResult.resolvedCandidates.length > 0) {
+                    suggestion = `Consider adding to tsconfig paths: "${r.src}" -> "${aliasResult.resolvedCandidates[0]}"`;
+                  }
                 }
               }
+
+              if (!hint) {
+                if (r.src.startsWith('node:')) {
+                  hint = 'node built-in (resolved)';
+                } else if (r.kind === 'dynamic-import') {
+                  hint = 'dynamic import - verify at runtime';
+                } else if (r.kind === 'json') {
+                  hint = 'JSON module - verify file exists';
+                } else if (/^[./]/.test(r.src)) {
+                  hint = 'relative — check file exists / extension';
+                } else {
+                  hint = 'external package';
+                }
+              }
+
+              list.push({ source: r.src, hint, suggestion });
+              byFile.set(r.file, list);
             }
 
-            if (!hint) {
-              if (r.src.startsWith('node:')) {
-                hint = 'node built-in (resolved)';
-              } else if (r.kind === 'dynamic-import') {
-                hint = 'dynamic import - verify at runtime';
-              } else if (r.kind === 'json') {
-                hint = 'JSON module - verify file exists';
-              } else if (/^[./]/.test(r.src)) {
-                hint = 'relative — check file exists / extension';
+            output.kv('Files affected', byFile.size);
+            output.kv('Unresolved imports', rows.length);
+            output.kv('Alias-fixable', aliasFixable);
+            if (dynamicImportCount > 0) output.kv('Dynamic imports', dynamicImportCount);
+            if (jsonModuleCount > 0) output.kv('JSON modules', jsonModuleCount);
+
+            // Show current aliases if any
+            if (aliases.length > 0) {
+              output.section('Configured Aliases');
+              for (const a of aliases.slice(0, 10)) {
+                output.kv(a.prefix, a.targets.join(', '));
+              }
+              if (aliases.length > 10) output.info(`... and ${aliases.length - 10} more aliases`);
+            }
+
+            output.section('Details');
+            for (const [file, list] of [...byFile.entries()].slice(0, limit)) {
+              output.kv(file, `${list.length} unresolved`);
+              for (const l of list.slice(0, 5)) {
+                output.warn(`   - ${l.source} (${l.hint})`);
+                if (l.suggestion) output.info(`     → ${l.suggestion}`);
+              }
+            }
+            if (byFile.size > limit) output.info(`…and ${byFile.size - limit} more files`);
+
+            // Generate alias suggestions if requested
+            if (opts.suggestAliases) {
+              output.section('Alias Suggestions');
+              const suggestedAliases = generateAliasSuggestions(rows, aliasResolver);
+              if (suggestedAliases.length > 0) {
+                output.info('Suggested tsconfig.json path entries:');
+                for (const sug of suggestedAliases.slice(0, 10)) {
+                  output.warn(`  "${sug.prefix}": ["${sug.target}"]`);
+                  output.info(`    (for import: ${sug.exampleImport})`);
+                }
               } else {
-                hint = 'external package';
+                output.info('No alias suggestions generated.');
               }
             }
 
-            list.push({ source: r.src, hint, suggestion });
-            byFile.set(r.file, list);
-          }
-
-          const limit = Math.max(1, parseInt(opts.limit ?? '25', 10));
-          output.kv('Files affected', byFile.size);
-          output.kv('Unresolved imports', rows.length);
-          output.kv('Alias-fixable', aliasFixable);
-          if (dynamicImportCount > 0) output.kv('Dynamic imports', dynamicImportCount);
-          if (jsonModuleCount > 0) output.kv('JSON modules', jsonModuleCount);
-
-          // Show current aliases if any
-          if (aliases.length > 0) {
-            output.section('Configured Aliases');
-            for (const a of aliases.slice(0, 10)) {
-              output.kv(a.prefix, a.targets.join(', '));
-            }
-            if (aliases.length > 10) output.info(`... and ${aliases.length - 10} more aliases`);
-          }
-
-          output.section('Details');
-          for (const [file, list] of [...byFile.entries()].slice(0, limit)) {
-            output.kv(file, `${list.length} unresolved`);
-            for (const l of list.slice(0, 5)) {
-              output.warn(`   - ${l.source} (${l.hint})`);
-              if (l.suggestion) output.info(`     → ${l.suggestion}`);
-            }
-          }
-          if (byFile.size > limit) output.info(`…and ${byFile.size - limit} more files`);
-
-          // Generate alias suggestions if requested
-          if (opts.suggestAliases) {
-            output.section('Alias Suggestions');
-            const suggestedAliases = generateAliasSuggestions(rows, aliasResolver);
-            if (suggestedAliases.length > 0) {
-              output.info('Suggested tsconfig.json path entries:');
-              for (const sug of suggestedAliases.slice(0, 10)) {
-                output.warn(`  "${sug.prefix}": ["${sug.target}"]`);
-                output.info(`    (for import: ${sug.exampleImport})`);
+            if (opts.repairGraph) {
+              // This changes only the local knowledge graph, never source files.
+              const guard = new IntegrityGuard(
+                ctx.config.projectRoot,
+                ctx.kg.getCurrentProjectId(),
+              );
+              const repaired = guard.repairStaleNodes();
+              if (repaired > 0) {
+                output.success(`Repaired ${repaired} stale graph node(s) via IntegrityGuard.`);
+              } else {
+                output.info('No stale graph nodes repaired.');
               }
             } else {
-              output.info('No alias suggestions generated.');
+              output.info('Analysis mode — source imports and graph records were not modified.');
             }
-          }
-
-          // Analysis mode: we report precisely; automatic code rewriting is
-          // intentionally out of scope (risk of breaking source files).
-          output.info('Analysis mode — auto-editing source imports is not performed.');
-
-          // Real repair: use IntegrityGuard to resolve stale imports
-          const guard = new IntegrityGuard();
-          const repaired = guard.repairStaleNodes();
-          if (repaired > 0) {
-            output.success(`Repaired ${repaired} stale import(s) via IntegrityGuard.`);
-          } else {
-            output.info('No stale imports repaired.');
-          }
-        });
-      }),
+          });
+        },
+      ),
     );
 }

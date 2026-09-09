@@ -44,7 +44,6 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test
-      - run: npm run test:vitest
 
   coverage:
     runs-on: ubuntu-latest

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { reportSuppressedError } from './utils/errors.js';
 import { Command } from 'commander';
 import { logger } from './utils/logger.js';
 import { readFileSync } from 'fs';
@@ -6,14 +7,30 @@ import { join } from 'path';
 import { currentModuleDir, resolvePackageVersion } from './cli/utils/version.js';
 import { buildProgram } from './cli/program.js';
 import { confineOutputPathFlags } from './mcp/tools/_shared.js';
+import { loadConfig } from './utils/config.js';
 
 const pkgVersion = resolvePackageVersion(currentModuleDir(import.meta.url));
 const cliArgs = process.argv.slice(2);
+const formatIndex = cliArgs.indexOf('--format');
+const requestedFormat =
+  cliArgs.find((arg) => arg.startsWith('--format='))?.slice('--format='.length) ??
+  (formatIndex >= 0 ? cliArgs[formatIndex + 1] : undefined);
+const machineFormats = new Set([
+  'json',
+  'html',
+  'markdown',
+  'mermaid',
+  'd3',
+  'spdx',
+  'spdx-tag',
+  'cyclonedx',
+  'sarif',
+  'csv',
+]);
 const machineOutput =
   cliArgs[0] === 'mcp' ||
   cliArgs.includes('--json') ||
-  cliArgs.includes('--format=json') ||
-  (cliArgs.includes('--format') && cliArgs[cliArgs.indexOf('--format') + 1] === 'json');
+  (requestedFormat !== undefined && machineFormats.has(requestedFormat));
 logger.setMachineMode(machineOutput);
 
 // Display ASCII banner on startup
@@ -24,14 +41,15 @@ try {
     console.log(logo);
     console.log('');
   }
-} catch {
+} catch (error) {
+  reportSuppressedError(error, 'Intentional fallback src/cli.ts:43');
   // Logo file not found, skip banner
 }
 
 const program = new Command();
 
 try {
-  confineOutputPathFlags(process.argv.slice(2), process.env.PROJECTMIND_ROOT || process.cwd());
+  confineOutputPathFlags(process.argv.slice(2), loadConfig().projectRoot);
 } catch (error: unknown) {
   logger.error(error instanceof Error ? error.message : String(error));
   process.exit(1);

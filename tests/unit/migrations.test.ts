@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { getCurrentSchemaVersion, migrations, rollbackMigrations, rollbackLast, setSchemaVersion, removeSchemaVersion, runMigrations } from '../../src/storage/migrations.js';
+import {
+  getCurrentSchemaVersion,
+  migrations,
+  rollbackMigrations,
+  rollbackLast,
+  setSchemaVersion,
+  removeSchemaVersion,
+  runMigrations,
+} from '../../src/storage/migrations.js';
 import { SCHEMA_SQL } from '../../src/storage/schema.js';
 
 function createTestDbWithoutMigrations(): DatabaseSync {
@@ -51,7 +59,9 @@ describe('Migration Rollback', () => {
       setSchemaVersion(db, 1, 'first');
       setSchemaVersion(db, 1, 'replaced');
 
-      const row = db.prepare('SELECT name FROM schema_version WHERE version = ?').get(1) as { name: string };
+      const row = db.prepare('SELECT name FROM schema_version WHERE version = ?').get(1) as {
+        name: string;
+      };
       expect(row.name).toBe('replaced');
     });
   });
@@ -106,7 +116,9 @@ describe('Migration Rollback', () => {
       expect(version).toBe(1);
 
       // Verify calls table was dropped
-      const table = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='calls'").get();
+      const table = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='calls'")
+        .get();
       expect(table).toBeUndefined();
     });
   });
@@ -179,13 +191,25 @@ describe('Legacy DB upgrades', () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE TABLE imports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        kind TEXT,
+        resolved BOOLEAN DEFAULT 0,
+        resolved_path TEXT
+      );
     `);
 
     // Existing rows that the ALTER must not break
-    db.prepare('INSERT INTO files (path, language, last_scanned) VALUES (?, ?, ?)')
-      .run('src/legacy.ts', 'typescript', '2026-01-01T00:00:00.000Z');
-    db.prepare('INSERT INTO debt_items (file_id, type, description, severity) VALUES (?, ?, ?, ?)')
-      .run(1, 'pattern_drift', 'legacy debt', 'high');
+    db.prepare('INSERT INTO files (path, language, last_scanned) VALUES (?, ?, ?)').run(
+      'src/legacy.ts',
+      'typescript',
+      '2026-01-01T00:00:00.000Z',
+    );
+    db.prepare(
+      'INSERT INTO debt_items (file_id, type, description, severity) VALUES (?, ?, ?, ?)',
+    ).run(1, 'pattern_drift', 'legacy debt', 'high');
 
     db.exec(`
       CREATE TABLE IF NOT EXISTS schema_version (
@@ -203,25 +227,66 @@ describe('Legacy DB upgrades', () => {
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
 
     // last_synced added as a NULLABLE column (no non-constant default —
     // SQLite forbids DEFAULT CURRENT_TIMESTAMP in ADD COLUMN)
-    const filesColumns = db.prepare('PRAGMA table_info(files)').all() as Array<{ name: string; dflt_value: string | null }>;
+    const filesColumns = db.prepare('PRAGMA table_info(files)').all() as Array<{
+      name: string;
+      dflt_value: string | null;
+    }>;
     const lastSynced = filesColumns.find((c) => c.name === 'last_synced');
     expect(lastSynced).toBeDefined();
     expect(lastSynced?.dflt_value).toBeNull();
 
     // Existing rows survive with NULL last_synced (readers fall back to last_scanned)
-    const row = db.prepare('SELECT last_synced, last_scanned FROM files WHERE id = 1').get() as { last_synced: string | null; last_scanned: string };
+    const row = db.prepare('SELECT last_synced, last_scanned FROM files WHERE id = 1').get() as {
+      last_synced: string | null;
+      last_scanned: string;
+    };
     expect(row.last_synced).toBeNull();
     expect(row.last_scanned).toBe('2026-01-01T00:00:00.000Z');
 
     // debt_items rebuilt with the expanded 8-type CHECK (v94 adds 'change_frequency')
-    db.prepare(`INSERT INTO debt_items (file_id, type, description, severity) VALUES (?, ?, ?, ?)`)
-      .run(1, 'change_frequency', 'new type allowed', 'medium');
+    db.prepare(
+      `INSERT INTO debt_items (file_id, type, description, severity) VALUES (?, ?, ?, ?)`,
+    ).run(1, 'change_frequency', 'new type allowed', 'medium');
     const count = db.prepare('SELECT COUNT(*) as c FROM debt_items').get() as { c: number };
     expect(count.c).toBe(2);
+
+    const importColumns = db.prepare('PRAGMA table_info(imports)').all() as Array<{ name: string }>;
+    expect(importColumns.some((column) => column.name === 'named')).toBe(true);
+  });
+
+  it('migration 100 adds named import bindings to an existing v99 database', () => {
+    const db = new DatabaseSync(':memory:');
+    db.exec(`
+      CREATE TABLE imports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_id INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        kind TEXT,
+        resolved BOOLEAN DEFAULT 0,
+        resolved_path TEXT
+      );
+    `);
+    db.prepare('INSERT INTO imports (file_id, source, kind) VALUES (?, ?, ?)').run(
+      1,
+      './utils',
+      'import',
+    );
+    setSchemaVersion(db, 99, 'project-scoped-debt-items');
+
+    runMigrations(db);
+
+    expect(getCurrentSchemaVersion(db)).toBe(100);
+    const column = (
+      db.prepare('PRAGMA table_info(imports)').all() as Array<{ name: string; dflt_value: string }>
+    ).find((entry) => entry.name === 'named');
+    expect(column).toBeDefined();
+    expect(column?.dflt_value).toBe("'[]'");
+    expect((db.prepare('SELECT named FROM imports').get() as { named: string }).named).toBe('[]');
+    db.close();
   });
 
   it('migration 10 wipes legacy PLAINTEXT oauth tokens (K6)', () => {
@@ -249,10 +314,12 @@ describe('Legacy DB upgrades', () => {
       );
     `);
     setSchemaVersion(db, 9, 'add_oauth_persistence');
-    db.prepare('INSERT INTO oauth_clients (client_id, secret_hash, metadata, created_at) VALUES (?, ?, ?, ?)')
-      .run('c1', 'x', '{}', 1);
-    db.prepare('INSERT INTO oauth_tokens (token, client_id, scope, issued_at, expires_at) VALUES (?, ?, ?, ?, ?)')
-      .run('pm_legacy_plaintext_abc', 'c1', null, 1, 9999999999999);
+    db.prepare(
+      'INSERT INTO oauth_clients (client_id, secret_hash, metadata, created_at) VALUES (?, ?, ?, ?)',
+    ).run('c1', 'x', '{}', 1);
+    db.prepare(
+      'INSERT INTO oauth_tokens (token, client_id, scope, issued_at, expires_at) VALUES (?, ?, ?, ?, ?)',
+    ).run('pm_legacy_plaintext_abc', 'c1', null, 1, 9999999999999);
 
     runMigrations(db);
 
@@ -261,7 +328,7 @@ describe('Legacy DB upgrades', () => {
     // New-style rows (already hashed) are untouched — idempotent re-runs safe.
     setSchemaVersion(db, 10, 'hash_oauth_tokens');
     runMigrations(db);
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
     expect(db.prepare('SELECT COUNT(*) AS n FROM oauth_tokens').get()).toEqual({ n: 0 });
     db.close();
   });
@@ -284,17 +351,32 @@ describe('Legacy DB upgrades', () => {
       );
     `);
     setSchemaVersion(db, 10, 'hash_oauth_tokens');
-    db.prepare('INSERT INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)').run('a -> b -> a', 3);
-    db.prepare('INSERT INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)').run('a -> b -> a', 3); // dup
-    db.prepare('INSERT INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)').run('x -> y -> x', 3);
+    db.prepare('INSERT INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)').run(
+      'a -> b -> a',
+      3,
+    );
+    db.prepare('INSERT INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)').run(
+      'a -> b -> a',
+      3,
+    ); // dup
+    db.prepare('INSERT INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)').run(
+      'x -> y -> x',
+      3,
+    );
 
     runMigrations(db);
 
-    const left = db.prepare('SELECT COUNT(*) AS n FROM circular_dependencies').get() as { n: number };
+    const left = db.prepare('SELECT COUNT(*) AS n FROM circular_dependencies').get() as {
+      n: number;
+    };
     expect(left.n).toBe(2);
     // Uniqueness is now enforced at the DB level — INSERT OR IGNORE is real.
-    db.prepare('INSERT OR IGNORE INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)').run('a -> b -> a', 3);
-    expect((db.prepare('SELECT COUNT(*) AS n FROM circular_dependencies').get() as { n: number }).n).toBe(2);
+    db.prepare(
+      'INSERT OR IGNORE INTO circular_dependencies (cycle_path, file_count) VALUES (?, ?)',
+    ).run('a -> b -> a', 3);
+    expect(
+      (db.prepare('SELECT COUNT(*) AS n FROM circular_dependencies').get() as { n: number }).n,
+    ).toBe(2);
     db.close();
   });
 });
@@ -313,7 +395,10 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
   ];
 
   function tableInfo(db: DatabaseSync): Array<{ name: string; type: string }> {
-    return db.prepare('PRAGMA table_info(pending_intents)').all() as Array<{ name: string; type: string }>;
+    return db.prepare('PRAGMA table_info(pending_intents)').all() as Array<{
+      name: string;
+      type: string;
+    }>;
   }
 
   /**
@@ -355,16 +440,24 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
       CREATE INDEX idx_pending_intents_timestamp ON pending_intents(timestamp);
     `);
     db.prepare(
-      'INSERT INTO pending_intents (id, agent_id, intent_type, target_files, expected_changes, timestamp, ttl_seconds) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run('legacy-uuid-1', 'agent-a', 'write', '["src/a.ts"]', '{"notes":["change sig"]}', 1000, 300);
+      'INSERT INTO pending_intents (id, agent_id, intent_type, target_files, expected_changes, timestamp, ttl_seconds) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      'legacy-uuid-1',
+      'agent-a',
+      'write',
+      '["src/a.ts"]',
+      '{"notes":["change sig"]}',
+      1000,
+      300,
+    );
     db.prepare(
-      'INSERT INTO pending_intents (id, agent_id, intent_type, target_files, expected_changes, timestamp, ttl_seconds) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO pending_intents (id, agent_id, intent_type, target_files, expected_changes, timestamp, ttl_seconds) VALUES (?, ?, ?, ?, ?, ?, ?)',
     ).run('legacy-uuid-2', 'agent-b', 'refactor', null, null, null, null);
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
 
     // Canonical column set + INTEGER timestamp types.
     const cols = tableInfo(db);
@@ -393,7 +486,9 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     // Canonical indexes exist (agent + type); stale timestamp index is gone.
     const indexes = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pending_intents'")
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pending_intents'",
+      )
       .all() as Array<{ name: string }>;
     const names = indexes.map((i) => i.name);
     expect(names).toContain('idx_pending_intents_agent');
@@ -405,24 +500,26 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
   it('is a no-op on a fresh canonical database', () => {
     const db = new DatabaseSync(':memory:');
     db.exec(SCHEMA_SQL);
-    const before = db
-      .prepare('SELECT * FROM pending_intents')
-      .all();
+    const before = db.prepare('SELECT * FROM pending_intents').all();
     // Canonical shape already — insert one runtime-style row.
     db.prepare(
-      `INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)`,
     ).run('agent-c', 'read', '["src/c.ts"]', 5000, 305000);
 
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
     const row = db
       .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
       .get('agent-c') as Record<string, unknown>;
     expect(row.expires_at).toBe(305000); // untouched integer unix-ms
     expect(row.broadcast_at).toBe(5000);
-    expect(tableInfo(db).map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
+    expect(
+      tableInfo(db)
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual([...CANONICAL_COLUMNS].sort());
     expect(before.length).toBe(0);
     db.close();
   });
@@ -447,40 +544,54 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     `);
     const expectedMs = Date.parse('2026-01-01T00:00:00Z'); // 1767225600000
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)',
     ).run('agent-d', 'write', '["src/d.ts"]', '2025-12-31 23:55:00', '2026-01-01 00:00:00');
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)'
-    ).run('agent-e', 'refactor', '["src/e.ts"]', '2025-12-31T23:55:00.000Z', '2026-01-01T00:00:00Z');
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)',
+    ).run(
+      'agent-e',
+      'refactor',
+      '["src/e.ts"]',
+      '2025-12-31T23:55:00.000Z',
+      '2026-01-01T00:00:00Z',
+    );
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)',
     ).run('agent-f', 'delete', '["src/f.ts"]', 'not-a-timestamp', 'garbage-value');
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
     const cols = tableInfo(db);
     expect(cols.find((c) => c.name === 'expires_at')?.type.toUpperCase()).toBe('INTEGER');
     expect(cols.find((c) => c.name === 'broadcast_at')?.type.toUpperCase()).toBe('INTEGER');
 
     // 'YYYY-MM-DD HH:MM:SS' row → strftime seconds * 1000.
-    const rowD = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-d') as Record<string, unknown>;
+    const rowD = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-d') as Record<string, unknown>;
     expect(rowD.expires_at).toBe(expectedMs);
     expect(rowD.broadcast_at).toBe(Date.parse('2025-12-31T23:55:00Z'));
 
     // ISO 'T'/'Z' row → parsed by strftime as well.
-    const rowE = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-e') as Record<string, unknown>;
+    const rowE = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-e') as Record<string, unknown>;
     expect(rowE.expires_at).toBe(expectedMs);
 
     // Unparseable strings → 0 (treated as expired, never crash).
-    const rowF = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-f') as Record<string, unknown>;
+    const rowF = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-f') as Record<string, unknown>;
     expect(rowF.expires_at).toBe(0);
     expect(rowF.broadcast_at).toBe(0);
 
     // Indexes preserved through the rebuild.
     const indexes = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pending_intents'")
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pending_intents'",
+      )
       .all() as Array<{ name: string }>;
     const names = indexes.map((i) => i.name);
     expect(names).toContain('idx_pending_intents_agent');
@@ -506,14 +617,16 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     // INTEGER affinity keeps unconvertible strings as TEXT — legacy rows.
     db.exec(
       `INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at)
-       VALUES ('agent-g', 'write', '["src/g.ts"]', '2025-12-31 23:55:00', '2026-01-01 00:00:00')`
+       VALUES ('agent-g', 'write', '["src/g.ts"]', '2025-12-31 23:55:00', '2026-01-01 00:00:00')`,
     );
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
-    const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-g') as Record<string, unknown>;
+    expect(getCurrentSchemaVersion(db)).toBe(100);
+    const row = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-g') as Record<string, unknown>;
     expect(row.expires_at).toBe(Date.parse('2026-01-01T00:00:00Z'));
     expect(row.broadcast_at).toBe(Date.parse('2025-12-31T23:55:00Z'));
     db.close();
@@ -536,21 +649,25 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     `);
     // 10-digit numeric TEXT → unix SECONDS, must be scaled to ms.
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)',
     ).run('agent-sec', 'write', '["src/s.ts"]', '1767225600', '1767225900');
     // 13-digit numeric TEXT → already ms, must pass through unchanged.
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)',
     ).run('agent-ms', 'refactor', '["src/m.ts"]', '1767225600000', '1767225900000');
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
-    const rowSec = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-sec') as Record<string, unknown>;
+    expect(getCurrentSchemaVersion(db)).toBe(100);
+    const rowSec = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-sec') as Record<string, unknown>;
     expect(rowSec.broadcast_at).toBe(1767225600 * 1000);
     expect(rowSec.expires_at).toBe(1767225900 * 1000);
-    const rowMs = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-ms') as Record<string, unknown>;
+    const rowMs = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-ms') as Record<string, unknown>;
     expect(rowMs.broadcast_at).toBe(1767225600000);
     expect(rowMs.expires_at).toBe(1767225900000);
     db.close();
@@ -563,23 +680,41 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     const db = new DatabaseSync(':memory:');
     db.exec(GENUINE_OLD_SHAPE_DDL);
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, session_id, description, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run('agent-old-1', 'write', '["src/old1.ts"]', 'sess-1', 'legacy row one', '2025-12-31 23:55:00', '2026-01-01 00:00:00');
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, session_id, description, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      'agent-old-1',
+      'write',
+      '["src/old1.ts"]',
+      'sess-1',
+      'legacy row one',
+      '2025-12-31 23:55:00',
+      '2026-01-01 00:00:00',
+    );
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, session_id, description, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run('agent-old-2', 'read', '["src/old2.ts"]', null, null, '2025-12-31 23:56:00', '2026-01-01 00:01:00');
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, session_id, description, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      'agent-old-2',
+      'read',
+      '["src/old2.ts"]',
+      null,
+      null,
+      '2025-12-31 23:56:00',
+      '2026-01-01 00:01:00',
+    );
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
     const cols = tableInfo(db);
     expect(cols.map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
     expect(cols.find((c) => c.name === 'expires_at')?.type.toUpperCase()).toBe('INTEGER');
     expect(cols.find((c) => c.name === 'broadcast_at')?.type.toUpperCase()).toBe('INTEGER');
 
     // Both rows preserved with datetime strings converted to unix ms.
-    const row1 = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-old-1') as Record<string, unknown>;
+    const row1 = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-old-1') as Record<string, unknown>;
     expect(row1.target_files).toBe('["src/old1.ts"]');
     expect(row1.session_id).toBe('sess-1');
     expect(row1.description).toBe('legacy row one');
@@ -587,10 +722,14 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     expect(row1.broadcast_at).toBe(Date.parse('2025-12-31T23:55:00Z'));
     expect(row1.expires_at).toBe(Date.parse('2026-01-01T00:00:00Z'));
 
-    const row2 = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-old-2') as Record<string, unknown>;
+    const row2 = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-old-2') as Record<string, unknown>;
     expect(row2.expected_changes).toBeNull();
     expect(row2.expires_at).toBe(Date.parse('2026-01-01T00:01:00Z'));
-    expect((db.prepare('SELECT COUNT(*) AS n FROM pending_intents').get() as { n: number }).n).toBe(2);
+    expect((db.prepare('SELECT COUNT(*) AS n FROM pending_intents').get() as { n: number }).n).toBe(
+      2,
+    );
     db.close();
   });
 
@@ -604,15 +743,29 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     const db = new DatabaseSync(':memory:');
     db.exec(GENUINE_OLD_SHAPE_DDL);
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, session_id, description, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run('agent-combo', 'write', '["src/combo.ts"]', null, null, '2025-12-31 23:55:00', '2026-01-01 00:00:00');
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, session_id, description, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      'agent-combo',
+      'write',
+      '["src/combo.ts"]',
+      null,
+      null,
+      '2025-12-31 23:55:00',
+      '2026-01-01 00:00:00',
+    );
     setSchemaVersion(db, 11, 'circular_dependencies_unique');
 
     expect(() => runMigrations(db)).not.toThrow();
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
-    expect(tableInfo(db).map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
-    const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-combo') as Record<string, unknown>;
+    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(
+      tableInfo(db)
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual([...CANONICAL_COLUMNS].sort());
+    const row = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-combo') as Record<string, unknown>;
     expect(row.target_files).toBe('["src/combo.ts"]');
     expect(row.expected_changes).toBeNull();
     expect(row.broadcast_at).toBe(Date.parse('2025-12-31T23:55:00Z'));
@@ -631,14 +784,28 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     v92!.up(db);
     setSchemaVersion(db, 92, v92!.name);
     db.prepare(
-      'INSERT INTO pending_intents (id, agent_id, intent_type, target_files, expected_changes, timestamp, ttl_seconds) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run('genuine-v92-1', 'agent-v92', 'write', '["src/v92.ts"]', '{"add":["param"]}', 1767225600, 300);
+      'INSERT INTO pending_intents (id, agent_id, intent_type, target_files, expected_changes, timestamp, ttl_seconds) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      'genuine-v92-1',
+      'agent-v92',
+      'write',
+      '["src/v92.ts"]',
+      '{"add":["param"]}',
+      1767225600,
+      300,
+    );
 
     runMigrations(db); // only v93 + v94 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
-    expect(tableInfo(db).map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
-    const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-v92') as Record<string, unknown>;
+    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(
+      tableInfo(db)
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual([...CANONICAL_COLUMNS].sort());
+    const row = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-v92') as Record<string, unknown>;
     expect(row.broadcast_at).toBe(1767225600 * 1000);
     expect(row.expires_at).toBe((1767225600 + 300) * 1000);
     expect(row.expected_changes).toBe('{"add":["param"]}');
@@ -653,9 +820,15 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
-    expect(tableInfo(db).map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
-    expect((db.prepare('SELECT COUNT(*) AS n FROM pending_intents').get() as { n: number }).n).toBe(0);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(
+      tableInfo(db)
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual([...CANONICAL_COLUMNS].sort());
+    expect((db.prepare('SELECT COUNT(*) AS n FROM pending_intents').get() as { n: number }).n).toBe(
+      0,
+    );
     db.close();
   });
 
@@ -675,16 +848,20 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
         ttl_seconds INTEGER
       );
     `);
-    db.prepare('INSERT INTO pending_intents (id, agent_id, intent_type, target_files, timestamp, ttl_seconds) VALUES (?, ?, ?, ?, ?, ?)')
-      .run('dup-id', 'agent-dup-1', 'write', '["src/dup1.ts"]', 2000, 300);
-    db.prepare('INSERT INTO pending_intents (id, agent_id, intent_type, target_files, timestamp, ttl_seconds) VALUES (?, ?, ?, ?, ?, ?)')
-      .run('dup-id', 'agent-dup-2', 'refactor', '["src/dup2.ts"]', 3000, 60);
+    db.prepare(
+      'INSERT INTO pending_intents (id, agent_id, intent_type, target_files, timestamp, ttl_seconds) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run('dup-id', 'agent-dup-1', 'write', '["src/dup1.ts"]', 2000, 300);
+    db.prepare(
+      'INSERT INTO pending_intents (id, agent_id, intent_type, target_files, timestamp, ttl_seconds) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run('dup-id', 'agent-dup-2', 'refactor', '["src/dup2.ts"]', 3000, 60);
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
-    const rows = db.prepare('SELECT id, agent_id, expected_changes FROM pending_intents ORDER BY agent_id').all() as Array<Record<string, unknown>>;
+    expect(getCurrentSchemaVersion(db)).toBe(100);
+    const rows = db
+      .prepare('SELECT id, agent_id, expected_changes FROM pending_intents ORDER BY agent_id')
+      .all() as Array<Record<string, unknown>>;
     expect(rows.length).toBe(2);
     expect(rows[0].agent_id).toBe('agent-dup-1');
     expect(rows[1].agent_id).toBe('agent-dup-2');
@@ -699,14 +876,16 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     const db = new DatabaseSync(':memory:');
     db.exec(GENUINE_OLD_SHAPE_DDL);
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)',
     ).run('agent-garbage', 'delete', '["src/garbage.ts"]', 'not-a-timestamp', 'garbage-value');
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
-    const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-garbage') as Record<string, unknown>;
+    expect(getCurrentSchemaVersion(db)).toBe(100);
+    const row = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-garbage') as Record<string, unknown>;
     expect(row.expires_at).toBe(0);
     expect(row.broadcast_at).toBe(0);
     expect(row.expected_changes).toBeNull();
@@ -732,17 +911,19 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
       );
     `);
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)',
     ).run(null, 'write', '["src/junk.ts"]', '2025-12-31 23:55:00', '2026-01-01 00:00:00');
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at) VALUES (?, ?, ?, ?, ?)',
     ).run('agent-valid', 'write', '["src/valid.ts"]', '2025-12-31 23:55:00', '2026-01-01 00:00:00');
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
 
     expect(() => runMigrations(db)).not.toThrow();
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
-    const rows = db.prepare('SELECT agent_id FROM pending_intents').all() as Array<{ agent_id: string | null }>;
+    expect(getCurrentSchemaVersion(db)).toBe(100);
+    const rows = db.prepare('SELECT agent_id FROM pending_intents').all() as Array<{
+      agent_id: string | null;
+    }>;
     expect(rows).toHaveLength(1); // junk row dropped…
     expect(rows[0].agent_id).toBe('agent-valid'); // …valid row kept
     db.close();
@@ -758,11 +939,17 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     expect(() => runMigrations(db)).not.toThrow();
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
     // Final table matches schema.ts columns EXACTLY (no timestamp).
-    expect(tableInfo(db).map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
+    expect(
+      tableInfo(db)
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual([...CANONICAL_COLUMNS].sort());
     const indexes = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pending_intents'")
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pending_intents'",
+      )
       .all() as Array<{ name: string }>;
     expect(indexes.map((i) => i.name)).not.toContain('idx_pending_intents_timestamp');
     db.close();
@@ -776,19 +963,27 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     db.exec('ALTER TABLE pending_intents ADD COLUMN timestamp INTEGER DEFAULT 0;');
     db.exec('CREATE INDEX idx_pending_intents_timestamp ON pending_intents(timestamp);');
     db.prepare(
-      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at, timestamp) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at, timestamp) VALUES (?, ?, ?, ?, ?, ?)',
     ).run('agent-stray', 'write', '["src/stray.ts"]', 5000, 305000, 5);
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
-    expect(tableInfo(db).map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
-    const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-stray') as Record<string, unknown>;
+    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(
+      tableInfo(db)
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual([...CANONICAL_COLUMNS].sort());
+    const row = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-stray') as Record<string, unknown>;
     expect(row.expires_at).toBe(305000); // row data untouched
     expect(row.broadcast_at).toBe(5000);
     const indexes = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pending_intents'")
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'pending_intents'",
+      )
       .all() as Array<{ name: string }>;
     expect(indexes.map((i) => i.name)).not.toContain('idx_pending_intents_timestamp');
     db.close();
@@ -813,16 +1008,18 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     `);
     db.exec(
       `INSERT INTO pending_intents (agent_id, intent_type, target_files, expires_at)
-       VALUES ('agent-nb', 'write', '["src/nb.ts"]', '2026-01-01 00:00:00')`
+       VALUES ('agent-nb', 'write', '["src/nb.ts"]', '2026-01-01 00:00:00')`,
     );
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
     const cols = tableInfo(db);
     expect(cols.map((c) => c.name)).toContain('broadcast_at');
-    const row = db.prepare('SELECT * FROM pending_intents WHERE agent_id = ?').get('agent-nb') as Record<string, unknown>;
+    const row = db
+      .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
+      .get('agent-nb') as Record<string, unknown>;
     expect(row.expires_at).toBe(Date.parse('2026-01-01T00:00:00Z')); // TEXT value converted
     expect(row.broadcast_at).toBe(0); // unknown → 0, same as rebuild fallback
     db.close();
@@ -833,8 +1030,11 @@ describe('Migration 94 — debt_items change_frequency + project_id backfill', (
   it('inserts and reads back a change_frequency debt item after upgrading a v93 DB', () => {
     const db = new DatabaseSync(':memory:');
     db.exec(SCHEMA_SQL);
-    db.prepare('INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)')
-      .run('src/hot.ts', 'src/hot.ts', 'typescript');
+    db.prepare('INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)').run(
+      'src/hot.ts',
+      'src/hot.ts',
+      'typescript',
+    );
     // Simulate a pre-existing DB stamped at v93 whose debt_items still carries
     // the OLD 7-type CHECK (migration 7's rebuild shape) — v94 must widen it.
     db.exec(`
@@ -859,20 +1059,29 @@ describe('Migration 94 — debt_items change_frequency + project_id backfill', (
 
     runMigrations(db); // only v94 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
 
     // The new type is accepted and round-trips through the rebuilt table.
-    db.prepare('INSERT INTO debt_items (file_id, type, description, severity, suggestion) VALUES (?, ?, ?, ?, ?)')
-      .run(1, 'change_frequency', 'file changes very often', 'medium', 'stabilize module');
-    const row = db.prepare('SELECT type, description, severity, suggestion FROM debt_items WHERE type = ?')
-      .get('change_frequency') as { type: string; description: string; severity: string; suggestion: string };
+    db.prepare(
+      'INSERT INTO debt_items (file_id, type, description, severity, suggestion) VALUES (?, ?, ?, ?, ?)',
+    ).run(1, 'change_frequency', 'file changes very often', 'medium', 'stabilize module');
+    const row = db
+      .prepare('SELECT type, description, severity, suggestion FROM debt_items WHERE type = ?')
+      .get('change_frequency') as {
+      type: string;
+      description: string;
+      severity: string;
+      suggestion: string;
+    };
     expect(row.type).toBe('change_frequency');
     expect(row.description).toBe('file changes very often');
     expect(row.severity).toBe('medium');
     expect(row.suggestion).toBe('stabilize module');
 
     // The legacy row survived the rebuild.
-    const legacy = db.prepare('SELECT description FROM debt_items WHERE type = ?').get('complexity') as { description: string };
+    const legacy = db
+      .prepare('SELECT description FROM debt_items WHERE type = ?')
+      .get('complexity') as { description: string };
     expect(legacy.description).toBe('legacy debt');
     db.close();
   });
@@ -886,10 +1095,12 @@ describe('Migration 94 — debt_items change_frequency + project_id backfill', (
 
     runMigrations(db); // only v94 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
     const filesCols = db.prepare('PRAGMA table_info(files)').all() as Array<{ name: string }>;
     expect(filesCols.some((c) => c.name === 'project_id')).toBe(true);
-    const dataFlowsCols = db.prepare('PRAGMA table_info(data_flows)').all() as Array<{ name: string }>;
+    const dataFlowsCols = db.prepare('PRAGMA table_info(data_flows)').all() as Array<{
+      name: string;
+    }>;
     expect(dataFlowsCols.some((c) => c.name === 'project_id')).toBe(true);
     db.close();
   });
@@ -964,13 +1175,33 @@ describe('Migration 95 — FK cascades + imports resolved_path index', () => {
   }
 
   function seedParentAndChildren(db: DatabaseSync): { fileId: number; patternId: number } {
-    db.prepare('INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)').run('src/gone.ts', 'src/gone.ts', 'typescript');
-    db.prepare('INSERT INTO patterns (name, category, code_hash) VALUES (?, ?, ?)').run('p1', 'style', 'hash-1');
-    const fileId = Number((db.prepare('SELECT id FROM files WHERE path = ?').get('src/gone.ts') as { id: number }).id);
-    const patternId = Number((db.prepare('SELECT id FROM patterns WHERE name = ?').get('p1') as { id: number }).id);
-    db.prepare('INSERT INTO pattern_violations (pattern_id, file_id, line_number, severity) VALUES (?, ?, ?, ?)').run(patternId, fileId, 10, 'high');
-    db.prepare('INSERT INTO coherence_decisions (file_id, code_hash, verdict) VALUES (?, ?, ?)').run(fileId, 'hash-1', 'warn');
-    db.prepare('INSERT INTO debt_items (file_id, type, severity) VALUES (?, ?, ?)').run(fileId, 'complexity', 'medium');
+    db.prepare('INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)').run(
+      'src/gone.ts',
+      'src/gone.ts',
+      'typescript',
+    );
+    db.prepare('INSERT INTO patterns (name, category, code_hash) VALUES (?, ?, ?)').run(
+      'p1',
+      'style',
+      'hash-1',
+    );
+    const fileId = Number(
+      (db.prepare('SELECT id FROM files WHERE path = ?').get('src/gone.ts') as { id: number }).id,
+    );
+    const patternId = Number(
+      (db.prepare('SELECT id FROM patterns WHERE name = ?').get('p1') as { id: number }).id,
+    );
+    db.prepare(
+      'INSERT INTO pattern_violations (pattern_id, file_id, line_number, severity) VALUES (?, ?, ?, ?)',
+    ).run(patternId, fileId, 10, 'high');
+    db.prepare(
+      'INSERT INTO coherence_decisions (file_id, code_hash, verdict) VALUES (?, ?, ?)',
+    ).run(fileId, 'hash-1', 'warn');
+    db.prepare('INSERT INTO debt_items (file_id, type, severity) VALUES (?, ?, ?)').run(
+      fileId,
+      'complexity',
+      'medium',
+    );
     return { fileId, patternId };
   }
 
@@ -980,24 +1211,60 @@ describe('Migration 95 — FK cascades + imports resolved_path index', () => {
 
     runMigrations(db); // only v95 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
 
     // Rows survive the rebuild itself.
-    expect((db.prepare('SELECT COUNT(*) AS n FROM pattern_violations').get() as { n: number }).n).toBe(1);
-    expect((db.prepare('SELECT COUNT(*) AS n FROM coherence_decisions').get() as { n: number }).n).toBe(1);
+    expect(
+      (db.prepare('SELECT COUNT(*) AS n FROM pattern_violations').get() as { n: number }).n,
+    ).toBe(1);
+    expect(
+      (db.prepare('SELECT COUNT(*) AS n FROM coherence_decisions').get() as { n: number }).n,
+    ).toBe(1);
     expect((db.prepare('SELECT COUNT(*) AS n FROM debt_items').get() as { n: number }).n).toBe(1);
 
     db.prepare('DELETE FROM files WHERE id = ?').run(fileId);
-    expect((db.prepare('SELECT COUNT(*) AS n FROM pattern_violations WHERE file_id = ?').get(fileId) as { n: number }).n).toBe(0);
-    expect((db.prepare('SELECT COUNT(*) AS n FROM coherence_decisions WHERE file_id = ?').get(fileId) as { n: number }).n).toBe(0);
-    expect((db.prepare('SELECT COUNT(*) AS n FROM debt_items WHERE file_id = ?').get(fileId) as { n: number }).n).toBe(0);
+    expect(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS n FROM pattern_violations WHERE file_id = ?')
+          .get(fileId) as { n: number }
+      ).n,
+    ).toBe(0);
+    expect(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS n FROM coherence_decisions WHERE file_id = ?')
+          .get(fileId) as { n: number }
+      ).n,
+    ).toBe(0);
+    expect(
+      (
+        db.prepare('SELECT COUNT(*) AS n FROM debt_items WHERE file_id = ?').get(fileId) as {
+          n: number;
+        }
+      ).n,
+    ).toBe(0);
 
     // Deleting a pattern cascades its violations too.
-    db.prepare('INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)').run('src/kept.ts', 'src/kept.ts', 'typescript');
-    const keptFileId = Number((db.prepare('SELECT id FROM files WHERE path = ?').get('src/kept.ts') as { id: number }).id);
-    db.prepare('INSERT INTO pattern_violations (pattern_id, file_id, line_number, severity) VALUES (?, ?, ?, ?)').run(patternId, keptFileId, 3, 'low');
+    db.prepare('INSERT INTO files (path, relative_path, language) VALUES (?, ?, ?)').run(
+      'src/kept.ts',
+      'src/kept.ts',
+      'typescript',
+    );
+    const keptFileId = Number(
+      (db.prepare('SELECT id FROM files WHERE path = ?').get('src/kept.ts') as { id: number }).id,
+    );
+    db.prepare(
+      'INSERT INTO pattern_violations (pattern_id, file_id, line_number, severity) VALUES (?, ?, ?, ?)',
+    ).run(patternId, keptFileId, 3, 'low');
     db.prepare('DELETE FROM patterns WHERE id = ?').run(patternId);
-    expect((db.prepare('SELECT COUNT(*) AS n FROM pattern_violations WHERE pattern_id = ?').get(patternId) as { n: number }).n).toBe(0);
+    expect(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS n FROM pattern_violations WHERE pattern_id = ?')
+          .get(patternId) as { n: number }
+      ).n,
+    ).toBe(0);
     db.close();
   });
 
@@ -1008,13 +1275,31 @@ describe('Migration 95 — FK cascades + imports resolved_path index', () => {
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(98);
+    expect(getCurrentSchemaVersion(db)).toBe(100);
     const { fileId } = seedParentAndChildren(db);
 
     db.prepare('DELETE FROM files WHERE id = ?').run(fileId);
-    expect((db.prepare('SELECT COUNT(*) AS n FROM pattern_violations WHERE file_id = ?').get(fileId) as { n: number }).n).toBe(0);
-    expect((db.prepare('SELECT COUNT(*) AS n FROM coherence_decisions WHERE file_id = ?').get(fileId) as { n: number }).n).toBe(0);
-    expect((db.prepare('SELECT COUNT(*) AS n FROM debt_items WHERE file_id = ?').get(fileId) as { n: number }).n).toBe(0);
+    expect(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS n FROM pattern_violations WHERE file_id = ?')
+          .get(fileId) as { n: number }
+      ).n,
+    ).toBe(0);
+    expect(
+      (
+        db
+          .prepare('SELECT COUNT(*) AS n FROM coherence_decisions WHERE file_id = ?')
+          .get(fileId) as { n: number }
+      ).n,
+    ).toBe(0);
+    expect(
+      (
+        db.prepare('SELECT COUNT(*) AS n FROM debt_items WHERE file_id = ?').get(fileId) as {
+          n: number;
+        }
+      ).n,
+    ).toBe(0);
     db.close();
   });
 
@@ -1024,7 +1309,9 @@ describe('Migration 95 — FK cascades + imports resolved_path index', () => {
     runMigrations(db);
 
     const idx = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_imports_resolved_path'")
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_imports_resolved_path'",
+      )
       .get();
     expect(idx).toBeDefined();
     db.close();

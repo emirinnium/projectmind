@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import { Command } from 'commander';
 import { inflateSync } from 'node:zlib';
-import { renderModuleSvg, renderModulePng, encodePng } from '../../src/cli/commands/graph-render.js';
+import {
+  renderModuleSvg,
+  renderModulePng,
+  encodePng,
+} from '../../src/cli/commands/graph-render.js';
+import { inheritGraphOptions } from '../../src/cli/commands/graph.js';
 import type { ScaleReport } from '../../src/core/scale/reporting/types.js';
 import type { FileInfo } from '../../src/storage/kg/types.js';
 
@@ -99,7 +105,9 @@ describe('encodePng', () => {
     const raw = inflateSync(png.subarray(idatStart + 4, idatStart + 4 + idatLen));
     expect(raw.length).toBe((width * 3 + 1) * height);
     // IEND type string sits after IDAT data + IDAT CRC(4) + IEND length(4).
-    expect(png.toString('ascii', idatStart + 4 + idatLen + 8, idatStart + 4 + idatLen + 12)).toBe('IEND');
+    expect(png.toString('ascii', idatStart + 4 + idatLen + 8, idatStart + 4 + idatLen + 12)).toBe(
+      'IEND',
+    );
   });
 });
 
@@ -128,5 +136,14 @@ describe('renderModulePng', () => {
     report.modules = [];
     const png = renderModulePng(report, 200);
     expect(png.toString('ascii', 1, 3)).toBe('PN');
+  });
+});
+
+describe('inheritGraphOptions', () => {
+  it('preserves child options when the root command has no matching option', () => {
+    const root = new Command('root');
+    const graph = root.command('graph');
+
+    expect(inheritGraphOptions({ format: 'json' }, graph)).toEqual({ format: 'json' });
   });
 });

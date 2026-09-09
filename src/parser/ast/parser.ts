@@ -52,6 +52,39 @@ function calculateCyclomaticComplexity(node: ts.Node): number {
   return complexity;
 }
 
+type FunctionNode =
+  ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression;
+
+function toFunctionInfo(node: FunctionNode, sourceFile: ts.SourceFile): FunctionInfo {
+  const name = node.name?.getText() ?? 'anonymous';
+  const cyclomaticComplexity = calculateCyclomaticComplexity(node);
+  const params = node.parameters.map((p) => ({
+    name: p.name?.getText() ?? '',
+    type: p.type ? p.type.getText() : 'unknown',
+  }));
+  const kind: FunctionInfo['kind'] = ts.isMethodDeclaration(node)
+    ? 'method'
+    : ts.isArrowFunction(node)
+      ? 'arrow'
+      : ts.isFunctionExpression(node)
+        ? 'function-expression'
+        : 'function';
+
+  return {
+    name,
+    signature: `${name}(${params.map((p) => `${p.name}: ${p.type}`).join(', ')})`,
+    returnType: node.type ? node.type.getText() : 'void',
+    startLine: sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1,
+    endLine: sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+    complexity: cyclomaticComplexity,
+    kind,
+    parameters: params,
+    isExported: isExported(node),
+    isAsync: isAsync(node),
+    cyclomaticComplexity,
+  };
+}
+
 export function parseTypeScriptFile(
   filePath: string,
   content?: string,
@@ -70,31 +103,6 @@ export function parseTypeScriptFile(
   const hash = createHash('sha256').update(sourceText).digest('hex');
 
   for (const node of sourceFile.statements) {
-    if (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) {
-      const name = node.name?.getText() ?? 'anonymous';
-      const fnIsAsync = isAsync(node);
-      const fnIsExported = isExported(node) || ts.isExportAssignment(node);
-      const params = node.parameters.map((p) => ({
-        name: p.name?.getText() ?? '',
-        type: p.type ? p.type.getText() : 'unknown',
-      }));
-      const sig = `${name}(${params.map((p) => `${p.name}: ${p.type}`).join(', ')})`;
-      const retType = node.type ? node.type.getText() : 'void';
-      functions.push({
-        name,
-        signature: sig,
-        returnType: retType,
-        startLine: sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1,
-        endLine: sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
-        complexity: 0,
-        kind: ts.isMethodDeclaration(node) ? 'method' : 'function',
-        parameters: params,
-        isExported: fnIsExported,
-        isAsync: fnIsAsync,
-        cyclomaticComplexity: calculateCyclomaticComplexity(node),
-      });
-    }
-
     if (ts.isClassDeclaration(node)) {
       const name = node.name?.getText() ?? 'AnonymousClass';
       const extended = node.heritageClauses?.some((h) => h.token === ts.SyntaxKind.ExtendsKeyword)
@@ -169,29 +177,29 @@ export function parseTypeScriptFile(
       });
     }
 
-    // Detect dynamic imports: import('...') expressions
-    // These appear as CallExpression nodes with an ImportKeyword
-    if (ts.isVariableStatement(node)) {
-      for (const decl of node.declarationList.declarations) {
-        if (decl.initializer) {
-          const dynamicImport = extractDynamicImport(decl.initializer);
-          if (dynamicImport) {
-            imports.push({
-              source: dynamicImport,
-              named: [],
-              kind: 'dynamic-import',
-            });
-          }
-        }
-      }
-    }
-
     if (ts.isExportDeclaration(node)) {
       if (node.exportClause && ts.isNamedExports(node.exportClause)) {
         node.exportClause.elements.forEach((e) => exports.push(e.name.getText()));
       }
     }
   }
+
+  // Function declarations and expressions can be nested inside blocks,
+  // classes, callbacks, and variable initializers. Walking the full AST keeps
+  // complexity and symbol counts useful for real JavaScript/TypeScript files,
+  // instead of silently reporting only top-level declarations.
+  function collectFunctions(node: ts.Node): void {
+    if (
+      ts.isFunctionDeclaration(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isArrowFunction(node) ||
+      ts.isFunctionExpression(node)
+    ) {
+      functions.push(toFunctionInfo(node, sourceFile));
+    }
+    ts.forEachChild(node, collectFunctions);
+  }
+  collectFunctions(sourceFile);
 
   // Recursively scan for dynamic imports throughout the AST
   scanForDynamicImports(sourceFile, imports);
@@ -200,6 +208,7 @@ export function parseTypeScriptFile(
     filePath,
     language: language ?? 'typescript',
     sizeBytes: sourceText.length,
+    sourceText,
     functions,
     classes,
     imports,
@@ -207,22 +216,6 @@ export function parseTypeScriptFile(
     hash,
     lines: sourceText.split(/\r?\n/).length,
   };
-}
-
-/**
- * Extract a dynamic import source from an expression if it's a call to
- * `import('...')`. Returns the string literal source or null.
- */
-function extractDynamicImport(node: ts.Expression): string | null {
-  if (!ts.isCallExpression(node)) return null;
-  // Dynamic import: import('...') - expression is an ImportKeyword token
-  if (node.expression.kind !== ts.SyntaxKind.ImportKeyword) return null;
-  if (node.arguments.length === 0) return null;
-  const arg = node.arguments[0]!;
-  if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
-    return arg.text;
-  }
-  return null;
 }
 
 /**

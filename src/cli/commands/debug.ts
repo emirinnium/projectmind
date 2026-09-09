@@ -4,6 +4,10 @@ import { withContext, asyncHandler, output } from '@/cli/utils/shared.js';
 export function createDebugCommand(): Command {
   const debugCmd = new Command('debug').description('Debug and diagnostic commands');
 
+  debugCmd.action(() => {
+    debugCmd.outputHelp();
+  });
+
   debugCmd
     .command('cache')
     .description('Show cache statistics')
@@ -69,7 +73,8 @@ export function createDebugCommand(): Command {
           output.section('Import Resolution');
           output.kv('Total imports', total.cnt);
           output.kv('Resolved', resolved.cnt);
-          output.kv('Resolution rate', `${((resolved.cnt / total.cnt) * 100).toFixed(1)}%`);
+          const resolutionRate = total.cnt > 0 ? (resolved.cnt / total.cnt) * 100 : 0;
+          output.kv('Resolution rate', `${resolutionRate.toFixed(1)}%`);
 
           const byKind = db
             .prepare('SELECT kind, COUNT(*) as cnt FROM imports GROUP BY kind')
@@ -103,12 +108,20 @@ export function createDebugCommand(): Command {
 
           const tables = db
             .prepare(
-              "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+              "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
             )
-            .all() as { name: string }[];
+            .all() as { name: string; sql: string | null }[];
 
           output.section('Database Tables');
           for (const t of tables) {
+            // A virtual sqlite-vec table can remain in the database even when
+            // the extension is unavailable in the current process. Reading
+            // it would raise "no such module: vec0" and make a diagnostic
+            // command fail even though the core database is healthy.
+            if (/USING\s+vec0\b/i.test(t.sql ?? '')) {
+              output.kv(`  ${t.name}`, 'virtual table (sqlite-vec unavailable)');
+              continue;
+            }
             const count = db.prepare(`SELECT COUNT(*) as cnt FROM ${t.name}`).get() as {
               cnt: number;
             };

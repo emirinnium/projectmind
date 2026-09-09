@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../src/utils/errors.js';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,7 +37,11 @@ describe('Integration Tests', () => {
         if (existsSync(TEST_DB + '-shm')) rmSync(TEST_DB + '-shm');
         if (existsSync(TEST_DB + '-wal')) rmSync(TEST_DB + '-wal');
         break;
-      } catch {
+      } catch (error) {
+        reportSuppressedError(
+          error,
+          'Intentional test fallback tests/integration-vitest.test.ts:39',
+        );
         // Retry on Windows file locking
       }
     }
@@ -45,7 +50,9 @@ describe('Integration Tests', () => {
   describe('Database Initialization', () => {
     it('initializes database with schema', () => {
       expect(db).toBeDefined();
-      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[];
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+        name: string;
+      }[];
       expect(tables.some((t) => t.name === 'files')).toBe(true);
       expect(tables.some((t) => t.name === 'functions')).toBe(true);
       expect(tables.some((t) => t.name === 'classes')).toBe(true);
@@ -150,9 +157,7 @@ describe('Integration Tests', () => {
 
       const genome = await Promise.race([
         debt.computeGenome(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 30_000)
-        ),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 30_000)),
       ]);
       expect(genome.coherenceScore).toBeGreaterThanOrEqual(0);
       expect(genome.coherenceScore).toBeLessThanOrEqual(1);

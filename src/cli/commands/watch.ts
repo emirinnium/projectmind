@@ -2,6 +2,11 @@ import { Command } from 'commander';
 import { withService, output } from '@/cli/utils/shared.js';
 import { ProjectWatcher } from '@/core/watcher.js';
 
+/** Keep the daemon alive until the signal handler exits the process. */
+function waitForShutdownSignal(): Promise<never> {
+  return new Promise<never>(() => undefined);
+}
+
 /**
  * pm watch — keep the knowledge graph warm in real time.
  *
@@ -25,17 +30,17 @@ export function createWatchCommand(): Command {
           root: opts.root,
           debounceMs,
           coherence: services.coherence ?? null,
-          onBatchProcessed: ({ updated, failed }) => {
-            if (updated.length > 0) {
+          onBatchProcessed: ({ updated, removed, failed }) => {
+            if (updated.length > 0 || removed.length > 0) {
               output.success(
-                `⚡ ${updated.length} file(s) refreshed${failed.length > 0 ? `, ${failed.length} failed` : ''}`,
+                `⚡ ${updated.length} refreshed, ${removed.length} removed${failed.length > 0 ? `, ${failed.length} failed` : ''}`,
               );
               for (const f of updated.slice(0, 5)) output.kv('  ↻', f);
               if (updated.length > 5) output.info(`  … +${updated.length - 5} more`);
+              for (const f of removed.slice(0, 5)) output.kv('  −', f);
+              if (removed.length > 5) output.info(`  … +${removed.length - 5} removed`);
             } else if (failed.length > 0) {
-              output.warn(
-                `${failed.length} file(s) could not be parsed (deleted or unsupported content) — full scan will reconcile`,
-              );
+              output.warn(`${failed.length} file(s) could not be parsed or reconciled`);
             }
           },
         });
@@ -56,6 +61,7 @@ export function createWatchCommand(): Command {
           output.kv('Events seen', String(s.eventsSeen));
           output.kv('Batches processed', String(s.batchesProcessed));
           output.kv('Files updated', String(s.filesUpdated));
+          output.kv('Files removed', String(s.filesRemoved));
           if (s.filesFailed > 0) output.kv('Files failed', String(s.filesFailed));
           process.exit(0);
         };
@@ -63,7 +69,7 @@ export function createWatchCommand(): Command {
         process.on('SIGTERM', shutdown);
 
         // Keep the process alive; all work happens via events.
-        await new Promise<never>(() => {});
+        await waitForShutdownSignal();
       });
     });
 }

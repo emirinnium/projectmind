@@ -26,6 +26,15 @@ describe('validateCliCommand (run_cli sandbox — default-deny whitelist)', () =
     expect(validateCliCommand(['license'])).toBe(true);
   });
 
+  it('exposes safe graph views and proof verification through the bridge', () => {
+    expect(validateCliCommand(['graph', 'circular'])).toBe(true);
+    expect(validateCliCommand(['graph', 'feature-map', '--format', 'json'])).toBe(true);
+    expect(validateCliCommand(['graph', 'snapshot', '--format', 'json'])).toBe(true);
+    expect(validateCliCommand(['proof', 'verify', '--max-files', '20'])).toBe(true);
+    expect(validateCliCommand(['graph', 'verify', 'snapshot.json'])).toBe(false);
+    expect(validateCliCommand(['proof', 'claim', 'anything'])).toBe(false);
+  });
+
   it('rejects mutating/non-whitelisted doctor subcommands', () => {
     expect(validateCliCommand(['doctor', 'fix-imports'])).toBe(false);
     expect(validateCliCommand(['doctor', 'clean-debt'])).toBe(false);

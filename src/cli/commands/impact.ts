@@ -4,6 +4,8 @@ import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
 import { DEFAULT_PREDICTOR_CONFIG } from '../../core/predictive/config.js';
 import type { CodeChange } from '../../core/predictive/types.js';
+import { loadConfig } from '@/cli/utils/shared.js';
+import { confineToProject } from '@/mcp/tools/_shared.js';
 
 export function createImpactCommand(): Command {
   return new Command('impact')
@@ -13,6 +15,8 @@ export function createImpactCommand(): Command {
     .option('-t, --tests', 'List tests/specs inside the reverse-dependency closure (test impact)')
     .action(
       asyncHandler(async (filePath: string, opts: { tests?: boolean }) => {
+        const root = loadConfig().projectRoot;
+        const absolutePath = confineToProject(filePath, root);
         await withService(['scale'], async (ctx, services) => {
           const scale = services.scale!;
 
@@ -21,7 +25,7 @@ export function createImpactCommand(): Command {
           const report = scale.getScaleReport();
           const allFiles = report.modules.flatMap((m) => m.files || []);
           const targetFile = allFiles.find(
-            (f) => f.path.includes(filePath) || filePath.includes(f.path),
+            (f) => f.path === absolutePath || f.path === filePath || f.relativePath === filePath,
           );
 
           if (!targetFile) {

@@ -1,7 +1,7 @@
 {
   "name": "@emirhanturker/projectmind",
   "version": "1.0.2",
-  "description": "Living Codebase Intelligence Layer for AI Agents — persistent memory, real-time coherence, and Opus-level reasoning",
+  "description": "Evidence-first codebase intelligence for JavaScript and TypeScript agents — persistent memory, graph-aware context, and real-time coherence",
   "bin": {
     "projectmind": "./cli.mjs",
     "pm": "./cli.mjs"
@@ -21,7 +21,8 @@
     "assets/cli-logo.txt"
   ],
   "scripts": {
-    "build": "tsc && tsc-alias",
+    "clean": "node scripts/clean-dist.mjs",
+    "build": "npm run clean && tsc && tsc-alias",
     "dev": "tsc && node --no-deprecation dist/cli.js",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
@@ -32,7 +33,7 @@
     "test:vitest": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch",
-    "start:mcp": "tsc && node --no-deprecation dist/mcp/server-start.js",
+    "start:mcp": "npm run build && node --no-deprecation dist/mcp-server.js",
     "pm:scan": "node --no-deprecation dist/cli.js scan",
     "pm:genome": "node --no-deprecation dist/cli.js genome",
     "pm:debt": "node --no-deprecation dist/cli.js debt",

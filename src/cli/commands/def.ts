@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { asyncHandler, output, loadConfig } from '@/cli/utils/shared.js';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { confineToProject } from '@/mcp/tools/_shared.js';
 import ts from 'typescript';
 import { createProjectLanguageService } from '@/cli/utils/language-service.js';
 
@@ -18,13 +18,14 @@ export function createDefCommand(): Command {
     .action(
       asyncHandler(async (filePath: string, symbol: string) => {
         const root = loadConfig().projectRoot;
+        const targetPath = confineToProject(filePath, root);
 
-        if (!existsSync(resolve(root, filePath))) {
-          output.warn(`File not found: ${resolve(root, filePath)}`);
+        if (!existsSync(targetPath)) {
+          output.warn(`File not found: ${targetPath}`);
           return;
         }
 
-        const ls = createProjectLanguageService(root, [resolve(root, filePath)]);
+        const ls = createProjectLanguageService(root, [targetPath]);
         if (!ls) {
           output.warn('No usable tsconfig.json at project root — language service unavailable.');
           return;
@@ -34,7 +35,7 @@ export function createDefCommand(): Command {
         output.kv('Usage in', filePath);
 
         try {
-          const target = ls.norm(resolve(root, filePath));
+          const target = ls.norm(targetPath);
           const sourceText = ts.sys.readFile(target) ?? '';
           const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const match = new RegExp(`\\b${escaped}\\b`).exec(sourceText);

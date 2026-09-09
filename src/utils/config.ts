@@ -1,6 +1,7 @@
+import { reportSuppressedError } from './errors.js';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve, basename, sep, isAbsolute } from 'node:path';
+import { dirname, join, resolve, basename, sep, isAbsolute } from 'node:path';
 import { logger } from './logger.js';
 import { normalizePath } from './paths.js';
 import 'dotenv/config';
@@ -93,7 +94,15 @@ function getGlobalConfigPath(): string {
  * Get the project config file path
  */
 function getProjectConfigPath(): string {
-  return join(process.cwd(), '.projectmindrc.json');
+  let directory = resolve(process.cwd());
+  while (true) {
+    const candidate = join(directory, '.projectmindrc.json');
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  return join(resolve(process.cwd()), '.projectmindrc.json');
 }
 
 /**
@@ -136,7 +145,8 @@ function loadGlobalConfigRaw(): { parsed: unknown; path: string } | null {
         if (mode !== 0o600) {
           logger.warn(`Global config file permissions are ${mode.toString(8)}, expected 600`);
         }
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/utils/config.ts:147');
         // stat may fail, non-blocking
       }
     }
@@ -258,6 +268,31 @@ function loadEffectiveConfig(cliOverrides?: Partial<ProjectMindRc>): ProjectMind
     (projectRaw?.parsed as AnyRecord | undefined) ?? null,
   );
 
+  // A project config discovered in a parent directory owns relative paths.
+  // Resolve its projectRoot against that config location so invoking `pm`
+  // from a nested package does not silently analyze the nested cwd instead.
+  const projectRootValue = isPlainObject(projectRaw?.parsed)
+    ? projectRaw.parsed.projectRoot
+    : undefined;
+  const globalRootValue = isPlainObject(globalRaw?.parsed)
+    ? globalRaw.parsed.projectRoot
+    : undefined;
+  if (
+    projectRaw?.path &&
+    typeof projectRootValue === 'string' &&
+    projectRootValue.trim() !== '' &&
+    projectRootValue !== '.' &&
+    !isAbsolute(projectRootValue)
+  ) {
+    mergedRaw.projectRoot = resolve(dirname(projectRaw.path), projectRootValue);
+  } else if (
+    projectRaw?.path &&
+    (projectRootValue === undefined || projectRootValue === '.') &&
+    (globalRootValue === undefined || globalRootValue === '.')
+  ) {
+    mergedRaw.projectRoot = dirname(projectRaw.path);
+  }
+
   // 4. Validate merged result once — Zod defaults applied only here
   const validated = tryValidateConfig(mergedRaw);
   const mergedRc = (validated ?? getDefaults()) as ProjectMindRc;
@@ -365,10 +400,11 @@ export function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
   };
 
   // Fix B1 projectRoot '.' vs cwd: Zod default '.' would otherwise override DEFAULT_CONFIG cwd
-  const effectiveProjectRoot =
+  const effectiveProjectRoot = resolve(
     validated.projectRoot && validated.projectRoot !== '.'
       ? validated.projectRoot
-      : DEFAULT_CONFIG.projectRoot;
+      : DEFAULT_CONFIG.projectRoot,
+  );
   return {
     projectRoot: effectiveProjectRoot,
     databasePath: normalizeStatePath(
@@ -413,7 +449,7 @@ function resolveApiKey(configApiKey?: string, provider?: string): string | undef
 }
 
 export function getConfigPath(): string {
-  return join(process.cwd(), '.projectmind');
+  return join(loadConfig().projectRoot, '.projectmind');
 }
 
 export {

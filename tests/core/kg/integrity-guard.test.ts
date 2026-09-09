@@ -33,10 +33,17 @@ describe('IntegrityGuard', () => {
     return Number(res.lastInsertRowid);
   }
 
-  function seedImport(fileId: number, source: string, resolved = 0): number {
+  function seedImport(
+    fileId: number,
+    source: string,
+    resolved = 0,
+    resolvedPath: string | null = null,
+  ): number {
     const res = getDatabase()
-      .prepare('INSERT INTO imports (file_id, source, kind, resolved) VALUES (?, ?, ?, ?)')
-      .run(fileId, source, 'static', resolved);
+      .prepare(
+        'INSERT INTO imports (file_id, source, kind, resolved, resolved_path) VALUES (?, ?, ?, ?, ?)',
+      )
+      .run(fileId, source, 'static', resolved, resolvedPath);
     return Number(res.lastInsertRowid);
   }
 
@@ -192,6 +199,40 @@ describe('IntegrityGuard', () => {
     expect(bySource.get('./utils2-c')!.resolved_path).toBe('src/feat/utils2-c/index.ts');
   });
 
+  it('does not classify builtin or external package imports as stale project imports', () => {
+    const fileId = seedFile(
+      'src/external-imports.ts',
+      [
+        "import path from 'node:path';",
+        "import { z } from 'zod';",
+        'export const value = z.string().parse(path.basename("file.ts"));',
+        '',
+      ].join('\n'),
+    );
+    seedImport(fileId, 'node:path');
+    seedImport(fileId, 'zod');
+
+    const violations = guard.checkConsistency();
+
+    expect(violations.filter((v) => v.type === 'stale_import')).toHaveLength(0);
+  });
+
+  it('uses resolved import paths before reporting an apparently unreferenced file', () => {
+    const targetId = seedFile('src/resolved-target.ts', 'export const target = 1;\n');
+    const importerId = seedFile(
+      'src/resolved-importer.ts',
+      "import { target } from './resolved-target.js';\nexport const value = target;\n",
+    );
+    seedImport(importerId, './resolved-target.js', 1, 'src/resolved-target.ts');
+
+    const violations = guard.checkConsistency();
+    const targetOrphan = violations.find(
+      (v) => v.type === 'orphan_node' && v.kgNodeId === targetId,
+    );
+
+    expect(targetOrphan).toBeUndefined();
+  });
+
   // (d) orphan detection: exported NOT flagged; non-exported uncalled flagged
   it('flags only non-exported, uncalled, unreferenced functions as orphans', () => {
     const fileId = seedFile(
@@ -224,6 +265,26 @@ describe('IntegrityGuard', () => {
     // Exported function with zero calls is NOT flagged.
     expect(orphanFns.some((x) => x.functionName === 'exportedFn')).toBe(false);
     expect(exportedId).not.toBe(lonelyId);
+  });
+
+  it('does not infer dead functions when no call-graph evidence exists', () => {
+    const fileId = seedFile(
+      'src/no-call-evidence.ts',
+      'function potentiallyUsedElsewhere() { return 1; }\n',
+    );
+    seedFunction(fileId, 'potentiallyUsedElsewhere');
+
+    const violations = guard.checkConsistency();
+    const orphanFns = violations.filter(
+      (v) => v.type === 'orphan_node' && v.functionName !== undefined,
+    );
+    const evidence = guard.getEvidenceStatus();
+
+    expect(orphanFns).toHaveLength(0);
+    expect(evidence.callGraphAvailable).toBe(false);
+    expect(evidence.callGraphEdgeCount).toBe(0);
+    expect(evidence.orphanFunctionAnalysis).toBe('skipped');
+    expect(evidence.limitations).toHaveLength(1);
   });
 
   // (e) stale_function AST check flags DB function absent from file content

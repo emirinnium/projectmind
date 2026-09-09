@@ -305,7 +305,7 @@ function registerCheckKgIntegrityTool(server: McpServer, deps: McpDependencies):
       description:
         'Check the knowledge graph for stale nodes (missing/moved files, stale imports/functions, orphans) with machine-readable repair suggestions.\n' +
         'WHEN to call: after renames/moves, when imports fail to resolve, or before trusting graph queries.\n' +
-        'Set fix=true to apply safe automatic repairs (returns the full report).',
+        'Set fix=true to apply safe automatic repairs (returns the full report). Orphan-function analysis requires recorded call-graph evidence; without it the result reports the limitation instead of guessing.',
       inputSchema: {
         fix: z
           .boolean()
@@ -322,7 +322,7 @@ function registerCheckKgIntegrityTool(server: McpServer, deps: McpDependencies):
     },
     async (args) => {
       try {
-        const guard = new IntegrityGuard(deps.projectRoot);
+        const guard = new IntegrityGuard(deps.projectRoot, deps.kg.getCurrentProjectId());
         if (args.fix) {
           const report = guard.generateReport();
           return json({
@@ -331,6 +331,7 @@ function registerCheckKgIntegrityTool(server: McpServer, deps: McpDependencies):
             orphans: report.orphans,
             violationCount: report.violations.length,
             violations: report.violations.slice(0, args.limit),
+            analysis: report.analysis,
           });
         }
         const violations = guard.checkConsistency();
@@ -338,6 +339,7 @@ function registerCheckKgIntegrityTool(server: McpServer, deps: McpDependencies):
           success: true,
           violationCount: violations.length,
           violations: violations.slice(0, args.limit),
+          analysis: guard.getEvidenceStatus(),
         });
       } catch (error) {
         return json({

@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../../src/utils/errors.js';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -23,7 +24,11 @@ describe('IntentBroadcastService', () => {
   afterAll(() => {
     try {
       db.close();
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional test fallback tests/core/collaboration/broadcast.test.ts:26',
+      );
       // already closed
     }
     rmSync(tmpDir, { recursive: true, force: true });
@@ -95,8 +100,18 @@ describe('IntentBroadcastService', () => {
   });
 
   it('returns high risk for multiple conflicting agents', () => {
-    service.broadcastIntent({ agentId: 'agent-a', intentType: 'write', targetFiles: ['x.ts'], timestamp: Date.now() });
-    service.broadcastIntent({ agentId: 'agent-c', intentType: 'refactor', targetFiles: ['x.ts'], timestamp: Date.now() });
+    service.broadcastIntent({
+      agentId: 'agent-a',
+      intentType: 'write',
+      targetFiles: ['x.ts'],
+      timestamp: Date.now(),
+    });
+    service.broadcastIntent({
+      agentId: 'agent-c',
+      intentType: 'refactor',
+      targetFiles: ['x.ts'],
+      timestamp: Date.now(),
+    });
 
     const result = service.checkConflict('agent-b', ['x.ts']);
     expect(result.hasConflict).toBe(true);
@@ -108,7 +123,12 @@ describe('IntentBroadcastService', () => {
     const unsub = service.subscribeToIntents('agent-x', (b) => received.push(b));
     unsub();
 
-    service.broadcastIntent({ agentId: 'agent-y', intentType: 'delete', targetFiles: ['y.ts'], timestamp: Date.now() });
+    service.broadcastIntent({
+      agentId: 'agent-y',
+      intentType: 'delete',
+      targetFiles: ['y.ts'],
+      timestamp: Date.now(),
+    });
     expect(received.length).toBe(0);
   });
 
@@ -141,7 +161,9 @@ describe('IntentBroadcastService', () => {
     service.expireIntents();
 
     // Expired DB row removed, unexpired row survives.
-    const rows = db.prepare('SELECT target_files FROM pending_intents').all() as Array<{ target_files: string }>;
+    const rows = db.prepare('SELECT target_files FROM pending_intents').all() as Array<{
+      target_files: string;
+    }>;
     const allFiles = rows.flatMap((r) => JSON.parse(r.target_files) as string[]);
     expect(allFiles).not.toContain('short-lived.ts');
     expect(allFiles).toContain('long-lived.ts');
@@ -179,7 +201,9 @@ describe('IntentBroadcastService', () => {
     });
 
     expect(stamped.scope).toBe('shared');
-    const rows = db.prepare('SELECT target_files FROM pending_intents').all() as Array<{ target_files: string }>;
+    const rows = db.prepare('SELECT target_files FROM pending_intents').all() as Array<{
+      target_files: string;
+    }>;
     expect(rows.flatMap((r) => JSON.parse(r.target_files) as string[])).toContain('public-work.ts');
   });
 
@@ -216,8 +240,12 @@ describe('IntentBroadcastService', () => {
   // (d) expectedChanges round-trips through DB as JSON (F17)
   it('round-trips expectedChanges through the database as JSON', () => {
     const expectedChanges = {
-      signatureChanges: [{ function: 'optimize', oldSig: 'optimize(items)', newSig: 'optimize(items, budget)' }],
-      typeChanges: [{ type: 'Plan', oldDef: '{ total: number }', newDef: '{ total: number; files: string[] }' }],
+      signatureChanges: [
+        { function: 'optimize', oldSig: 'optimize(items)', newSig: 'optimize(items, budget)' },
+      ],
+      typeChanges: [
+        { type: 'Plan', oldDef: '{ total: number }', newDef: '{ total: number; files: string[] }' },
+      ],
       notes: ['adds budget parameter'],
     };
 
@@ -240,8 +268,18 @@ describe('IntentBroadcastService', () => {
 
   // (e) subscribe loads OTHER agents' intents, dedupes on double subscribe (F21)
   it('subscribe loads other agents` intents only and dedupes on double subscribe', () => {
-    service.broadcastIntent({ agentId: 'agent-a', intentType: 'write', targetFiles: ['shared.ts'], timestamp: Date.now() });
-    service.broadcastIntent({ agentId: 'agent-b', intentType: 'write', targetFiles: ['own.ts'], timestamp: Date.now() });
+    service.broadcastIntent({
+      agentId: 'agent-a',
+      intentType: 'write',
+      targetFiles: ['shared.ts'],
+      timestamp: Date.now(),
+    });
+    service.broadcastIntent({
+      agentId: 'agent-b',
+      intentType: 'write',
+      targetFiles: ['own.ts'],
+      timestamp: Date.now(),
+    });
 
     const other = new IntentBroadcastService(db, { branchDetector: () => 'main' });
     const received: IntentBroadcast[] = [];
@@ -357,7 +395,7 @@ describe('IntentBroadcastService', () => {
       POISONS.forEach((payload, i) => {
         db.prepare(
           `INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at)
-           VALUES (?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?)`,
         ).run(`poison-${i}`, 'write', payload, now, now + 300_000);
       });
     }
@@ -366,7 +404,7 @@ describe('IntentBroadcastService', () => {
       const now = Date.now();
       db.prepare(
         `INSERT INTO pending_intents (agent_id, intent_type, target_files, broadcast_at, expires_at)
-         VALUES (?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?)`,
       ).run(agentId, 'write', JSON.stringify([file]), now, now + 300_000);
     }
 
@@ -394,7 +432,9 @@ describe('IntentBroadcastService', () => {
       expect(active.some((b) => b.agentId === 'agent-real')).toBe(true);
       expect(active.every((b) => !b.agentId.startsWith('poison-'))).toBe(true);
       expect(
-        active.every((b) => Array.isArray(b.targetFiles) && b.targetFiles.every((f) => typeof f === 'string'))
+        active.every(
+          (b) => Array.isArray(b.targetFiles) && b.targetFiles.every((f) => typeof f === 'string'),
+        ),
       ).toBe(true);
     });
 
@@ -447,7 +487,7 @@ describe('IntentBroadcastService', () => {
       const now = Date.now();
       db.prepare(
         `INSERT INTO pending_intents (agent_id, intent_type, target_files, expected_changes, broadcast_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?)`,
       ).run('agent-ec', 'write', '["src/ec.ts"]', '"just-a-string"', now, now + 300_000);
 
       const fresh = new IntentBroadcastService(db, { branchDetector: () => 'main' });

@@ -1,9 +1,11 @@
+import { reportSuppressedError } from '../../../utils/errors.js';
 import { DatabaseSync } from 'node:sqlite';
 import { getDatabase } from '../../../storage/database.js';
 import { KnowledgeGraph } from '../../../storage/knowledge-graph.js';
 import { PatternLibrary, Pattern } from '../../../parser/pattern-extractor.js';
 import { stableHash } from '../../../utils/hash.js';
 import { readFileSync } from 'node:fs';
+import { getDefaultAliasResolver } from '../../../parser/alias-resolver.js';
 
 export interface GenomeResult {
   genomeData: string;
@@ -77,10 +79,16 @@ export class GenomeComputer {
     let importResolutionRate = 0;
     let importBonus = 0;
     try {
-      const importStats = this.getStmt(
-        'SELECT COUNT(*) as total, SUM(CASE WHEN resolved = 1 THEN 1 ELSE 0 END) as resolved FROM imports',
-      ).get() as { total: number; resolved: number };
-      importResolutionRate = importStats.total > 0 ? importStats.resolved / importStats.total : 0;
+      const importRows = this.getStmt(
+        'SELECT i.source, i.resolved FROM imports i JOIN files f ON f.id = i.file_id WHERE f.project_id = ?',
+      ).all(this.kg.getCurrentProjectId()) as Array<{ source: string; resolved: number }>;
+      const aliasResolver = getDefaultAliasResolver();
+      const localImports = importRows.filter((row) =>
+        aliasResolver.isProjectLocalSource(row.source),
+      );
+      const resolvedLocalImports = localImports.filter((row) => row.resolved === 1).length;
+      importResolutionRate =
+        localImports.length > 0 ? resolvedLocalImports / localImports.length : 1;
       importBonus = importResolutionRate * 0.05;
     } catch {
       // Column doesn't exist, skip import bonus
@@ -88,17 +96,26 @@ export class GenomeComputer {
       importBonus = 0;
     }
 
-    // Circular dependency penalty
+    // Circular dependency penalty. The persisted table is historical output
+    // and can contain cycles that disappeared after a later scan. Prefer the
+    // live graph result so stale rows cannot lower the current score.
     let circularDepCount = 0;
     let circularDepPenalty = 0;
     try {
-      const circularDeps = this.getStmt(
-        'SELECT COUNT(*) as cnt FROM circular_dependencies',
-      ).get() as { cnt: number };
-      circularDepCount = circularDeps?.cnt ?? 0;
+      const graphWithCycles = this.kg as unknown as {
+        findCircularDependencies?: () => string[][];
+      };
+      if (typeof graphWithCycles.findCircularDependencies === 'function') {
+        circularDepCount = graphWithCycles.findCircularDependencies().length;
+      }
+      // There is intentionally no persisted-table fallback. That table is a
+      // historical record and can retain cycles that disappeared after a
+      // later scan; applying its count would fabricate a penalty. Older or
+      // minimal graph implementations without a live cycle method therefore
+      // contribute no penalty until they can provide fresh evidence.
       circularDepPenalty = Math.min(circularDepCount * 0.05, 0.2);
     } catch {
-      // Table doesn't exist, skip
+      // A cycle scan failure must not fabricate a penalty into the score.
       circularDepCount = 0;
       circularDepPenalty = 0;
     }
@@ -120,7 +137,11 @@ export class GenomeComputer {
               totalMarkers++;
             }
           }
-        } catch {
+        } catch (error) {
+          reportSuppressedError(
+            error,
+            'Intentional fallback src/core/debt/detection/genome.ts:139',
+          );
           // Skip files that can't be read
         }
       }

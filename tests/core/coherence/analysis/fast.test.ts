@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../../../src/utils/errors.js';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -25,7 +26,11 @@ describe('FastCoherenceAnalyzer', () => {
   afterAll(() => {
     try {
       db.close();
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional test fallback tests/core/coherence/analysis/fast.test.ts:28',
+      );
       // already closed
     }
     rmSync(tmpDir, { recursive: true, force: true });
@@ -62,9 +67,12 @@ describe('FastCoherenceAnalyzer', () => {
     return Array.from({ length: n }, (_, i) => `console.log("message ${i}");`).join('\n');
   }
 
-  // Helper to add enough types to pass the type usage check (≥5 capitalized words)
+  // Helper for valid, representative TypeScript snippets.
   function withTypes(code: string): string {
-    return code + '\ntype MyType = string;\ninterface MyInterface {\n  Alpha: number;\n  Beta: string;\n}\ntype AnotherType = number;\n';
+    return (
+      code +
+      '\ntype MyType = string;\ninterface MyInterface {\n  Alpha: number;\n  Beta: string;\n}\ntype AnotherType = number;\n'
+    );
   }
 
   // ============================================================
@@ -72,7 +80,7 @@ describe('FastCoherenceAnalyzer', () => {
   // ============================================================
   describe('clean files that pass all thresholds', () => {
     it('returns pass verdict for a small clean TypeScript file with sufficient types', () => {
-      // Need ≥5 capitalized words to pass the type usage check
+      // Use explicit TypeScript syntax in the representative fixture.
       const code = withTypes(`function hello(): string {
   return 'world';
 }
@@ -89,7 +97,7 @@ console.log(result);
     });
 
     it('returns pass verdict for a minimal JavaScript file (no type check)', () => {
-      // .js files are not checked for type usage
+      // JavaScript files do not contain TypeScript type annotations.
       const code = `function hello() {
   return 'world';
 }
@@ -206,7 +214,7 @@ const message: string = greet(user);
       const code = generateAnyUsages(6);
       const result = analyzer.analyze(makeOptions(code, 'src/over-5-any.ts'), 'over-5-any-key');
 
-      expect(result.reasoningTrace.some((r: string) => r.includes('6 uses'))).toBe(true);
+      expect(result.reasoningTrace.some((r: string) => r.includes('6 explicit'))).toBe(true);
     });
   });
 
@@ -224,49 +232,65 @@ const message: string = greet(user);
     });
 
     it('passes file with exactly 3 console statements', () => {
-      // Need to add types to avoid low type usage warning
+      // Keep this fixture representative of typed production code.
       const code = withTypes(generateConsoleStatements(3));
-      const result = analyzer.analyze(makeOptions(code, 'src/exact-3-console.ts'), 'exact-3-console-key');
+      const result = analyzer.analyze(
+        makeOptions(code, 'src/exact-3-console.ts'),
+        'exact-3-console-key',
+      );
 
       // Check for the specific console warning message, not just "console" substring
-      expect(result.reasoningTrace.some((r: string) => r.includes('console statements found'))).toBe(false);
+      expect(
+        result.reasoningTrace.some((r: string) => r.includes('console statements found')),
+      ).toBe(false);
     });
 
     it('flags file with 4 console statements (just over threshold)', () => {
       const code = generateConsoleStatements(4);
-      const result = analyzer.analyze(makeOptions(code, 'src/over-3-console.ts'), 'over-3-console-key');
+      const result = analyzer.analyze(
+        makeOptions(code, 'src/over-3-console.ts'),
+        'over-3-console-key',
+      );
 
-      expect(result.reasoningTrace.some((r: string) => r.includes('console statements found'))).toBe(true);
+      expect(
+        result.reasoningTrace.some((r: string) => r.includes('console statements found')),
+      ).toBe(true);
     });
 
     it('excludes console check for files in /cli/commands/ path', () => {
       const code = generateConsoleStatements(10);
       const result = analyzer.analyze(
         makeOptions(code, 'src/cli/commands/deploy.ts'),
-        'cli-console-key'
+        'cli-console-key',
       );
 
-      expect(result.reasoningTrace.some((r: string) => r.includes('console statements found'))).toBe(false);
+      expect(
+        result.reasoningTrace.some((r: string) => r.includes('console statements found')),
+      ).toBe(false);
     });
 
     it('excludes console check for files in /scripts/ path', () => {
       const code = generateConsoleStatements(10);
       const result = analyzer.analyze(
         makeOptions(code, 'src/scripts/migrate.ts'),
-        'scripts-console-key'
+        'scripts-console-key',
       );
 
-      expect(result.reasoningTrace.some((r: string) => r.includes('console statements found'))).toBe(false);
+      expect(
+        result.reasoningTrace.some((r: string) => r.includes('console statements found')),
+      ).toBe(false);
     });
 
     it('excludes console check for files in /tests/ path', () => {
       const code = generateConsoleStatements(10);
       const result = analyzer.analyze(
         makeOptions(code, 'src/tests/helper.ts'),
-        'tests-console-key'
+        'tests-console-key',
       );
 
-      expect(result.reasoningTrace.some((r: string) => r.includes('console statements found'))).toBe(false);
+      expect(
+        result.reasoningTrace.some((r: string) => r.includes('console statements found')),
+      ).toBe(false);
     });
   });
 
@@ -320,7 +344,7 @@ console.log(usedVar);
 
       it('does not flag variables when they appear in code', () => {
         // Variables are considered "used" if their name appears anywhere in the code
-        // Need to add types to avoid low type usage warning
+        // Keep this fixture representative of typed production code.
         // Note: file path must not contain "unused" substring
         const code = withTypes(`const usedVar = 42;
 const alsoUsed = 100;
@@ -353,7 +377,9 @@ console.log(usedVar, alsoUsed);
 `;
         const result = analyzer.analyze(makeOptions(code, 'src/complex.ts'), 'complex-key');
 
-        expect(result.reasoningTrace.some((r: string) => r.includes('cyclomatic complexity'))).toBe(true);
+        expect(result.reasoningTrace.some((r: string) => r.includes('cyclomatic complexity'))).toBe(
+          true,
+        );
         expect(result.suggestions.some((s: string) => s.includes('Refactor'))).toBe(true);
       });
 
@@ -367,13 +393,14 @@ console.log(usedVar, alsoUsed);
 `);
         const result = analyzer.analyze(makeOptions(code, 'src/simple.ts'), 'simple-key');
 
-        expect(result.reasoningTrace.some((r: string) => r.includes('cyclomatic complexity'))).toBe(false);
+        expect(result.reasoningTrace.some((r: string) => r.includes('cyclomatic complexity'))).toBe(
+          false,
+        );
       });
     });
 
-    describe('type usage in TypeScript files', () => {
-      it('flags TypeScript files with low type usage (<5 capitalized words)', () => {
-        // Need <5 capitalized words to trigger the warning
+    describe('AST-based type safety checks', () => {
+      it('does not infer type quality from capitalized identifiers', () => {
         const code = `function hello() {
   return 'world';
 }
@@ -382,38 +409,20 @@ const x = hello();
 `;
         const result = analyzer.analyze(makeOptions(code, 'src/low-types.ts'), 'low-types-key');
 
-        expect(result.reasoningTrace.some((r: string) => r.includes('Low type usage'))).toBe(true);
-        expect(result.suggestions.some((s: string) => s.includes('types'))).toBe(true);
+        expect(result.reasoningTrace.some((r: string) => r.includes('Low type usage'))).toBe(false);
       });
 
-      it('does not flag non-TypeScript files for low type usage', () => {
-        const code = `function hello() {
-  return 'world';
-}
-
-const x = hello();
+      it('ignores any in comments and strings while counting explicit any types', () => {
+        const code = `// any any any any any any
+const text = 'any any any any any any';
+const value: string = text;
 `;
-        const result = analyzer.analyze(makeOptions(code, 'src/low-types.js'), 'low-types-js-key');
+        const result = analyzer.analyze(
+          makeOptions(code, 'src/comments-only.ts'),
+          'comments-only-key',
+        );
 
-        expect(result.reasoningTrace.some((r: string) => r.includes('Low type usage'))).toBe(false);
-      });
-
-      it('passes TypeScript files with sufficient type usage (≥5 capitalized words)', () => {
-        // Need ≥5 capitalized words: User, string, number, User, User, string, number
-        const code = withTypes(`interface User {
-  name: string;
-  age: number;
-}
-
-function greet(user: User): string {
-  return user.name;
-}
-
-const result: string = greet({ name: 'Alice', age: 25 });
-`);
-        const result = analyzer.analyze(makeOptions(code, 'src/good-types.ts'), 'good-types-key');
-
-        expect(result.reasoningTrace.some((r: string) => r.includes('Low type usage'))).toBe(false);
+        expect(result.reasoningTrace.some((r: string) => r.includes('explicit "any"'))).toBe(false);
       });
     });
   });
@@ -423,7 +432,7 @@ const result: string = greet({ name: 'Alice', age: 25 });
   // ============================================================
   describe('verdict logic', () => {
     it('returns pass when no issues found', () => {
-      // Need ≥5 capitalized words to avoid type usage warning
+      // Use explicit TypeScript syntax in the representative fixture.
       const code = withTypes(`function hello(): string {
   return 'world';
 }
@@ -434,7 +443,7 @@ const result: string = greet({ name: 'Alice', age: 25 });
     });
 
     it('returns warn when 1-2 issues found', () => {
-      // 1 issue: non-camelCase function (but enough capitalized words to pass type check)
+      // 1 issue: non-camelCase function.
       const code = withTypes(`function BadName(): void {
   return;
 }
@@ -445,7 +454,7 @@ const result: string = greet({ name: 'Alice', age: 25 });
     });
 
     it('returns fail when more than 2 issues found', () => {
-      // Multiple issues: non-camelCase + unused variables + low type usage
+      // Multiple issues: non-camelCase + unused variables.
       const code = `function BadName(): void {
   const unused = 42; // unused unused
   return;
@@ -475,7 +484,10 @@ function AnotherBad(): void {
   console.log('test');
 }
 `);
-      const result = analyzer.analyze(makeOptions(code, 'src/contract-fail.ts'), 'contract-fail-key');
+      const result = analyzer.analyze(
+        makeOptions(code, 'src/contract-fail.ts'),
+        'contract-fail-key',
+      );
 
       expect(result.verdict).toBe('fail');
       expect(result.reasoningTrace.some((r: string) => r.includes('[Contract ERROR]'))).toBe(true);
@@ -491,7 +503,10 @@ function AnotherBad(): void {
   return 'world';
 }
 `);
-      const result = analyzer.analyze(makeOptions(code, 'src/confidence-clean.ts'), 'conf-clean-key');
+      const result = analyzer.analyze(
+        makeOptions(code, 'src/confidence-clean.ts'),
+        'conf-clean-key',
+      );
 
       expect(result.confidence).toBeGreaterThanOrEqual(0.7);
     });
@@ -511,15 +526,28 @@ function AnotherBad(): void {
   return;
 }
 `;
-      const cleanResult = analyzer.analyze(makeOptions(cleanCode, 'src/conf-clean.ts'), 'conf-clean-1');
-      const dirtyResult = analyzer.analyze(makeOptions(dirtyCode, 'src/conf-dirty.ts'), 'conf-dirty-1');
+      const cleanResult = analyzer.analyze(
+        makeOptions(cleanCode, 'src/conf-clean.ts'),
+        'conf-clean-1',
+      );
+      const dirtyResult = analyzer.analyze(
+        makeOptions(dirtyCode, 'src/conf-dirty.ts'),
+        'conf-dirty-1',
+      );
 
       expect(cleanResult.confidence).toBeGreaterThan(dirtyResult.confidence);
     });
 
     it('never goes below 0.3 confidence', () => {
       // Generate a file with many issues
-      const code = generateAnyUsages(10) + '\n' + generateConsoleStatements(10) + '\n' + generateImports(25) + '\n' + generateLines(500);
+      const code =
+        generateAnyUsages(10) +
+        '\n' +
+        generateConsoleStatements(10) +
+        '\n' +
+        generateImports(25) +
+        '\n' +
+        generateLines(500);
       const result = analyzer.analyze(makeOptions(code, 'src/very-dirty.ts'), 'very-dirty-key');
 
       expect(result.confidence).toBeGreaterThanOrEqual(0.3);
@@ -587,7 +615,9 @@ function AnotherBad(): void {
 `);
       analyzer.analyze(makeOptions(code, 'src/db-test.ts'), 'db-test-key');
 
-      const count = db.prepare('SELECT COUNT(*) as n FROM coherence_decisions').get() as { n: number };
+      const count = db.prepare('SELECT COUNT(*) as n FROM coherence_decisions').get() as {
+        n: number;
+      };
       expect(count.n).toBeGreaterThanOrEqual(1);
     });
 
@@ -602,7 +632,9 @@ function AnotherBad(): void {
 
       // Should have only one row for this code hash (updated, not inserted twice)
       // Note: The code uses stableHash(code) as the code_hash, so same code = same hash
-      const rows = db.prepare('SELECT code_hash, COUNT(*) as cnt FROM coherence_decisions GROUP BY code_hash').all() as Array<{ code_hash: string; cnt: number }>;
+      const rows = db
+        .prepare('SELECT code_hash, COUNT(*) as cnt FROM coherence_decisions GROUP BY code_hash')
+        .all() as Array<{ code_hash: string; cnt: number }>;
       const targetRow = rows.find((r) => r.cnt === 1);
       expect(targetRow).toBeDefined();
     });
@@ -654,7 +686,7 @@ function AnotherBad(): void {
 `);
       const result = analyzer.analyze(
         makeOptions(code, 'src/path with spaces/file.ts'),
-        'special-path-key'
+        'special-path-key',
       );
 
       expect(result.verdict).toBe('pass');
@@ -686,7 +718,10 @@ function AnotherBad(): void {
       const consoles = generateConsoleStatements(5);
       const code = [imports, anys, consoles].join('\n');
 
-      const result = analyzer.analyze(makeOptions(code, 'src/multi-suggestions.ts'), 'multi-sug-key');
+      const result = analyzer.analyze(
+        makeOptions(code, 'src/multi-suggestions.ts'),
+        'multi-sug-key',
+      );
 
       expect(result.suggestions.length).toBeGreaterThanOrEqual(3);
     });

@@ -9,23 +9,28 @@ export function registerStoreMemoryTool(server: McpServer, deps: McpDependencies
       title: 'Store Agent Memory',
       description: 'Store a piece of agent memory that persists across sessions.',
       inputSchema: {
-        scope: z.string().describe('Scope identifier (e.g., module name, file path)'),
-        key: z.string().describe('Memory key'),
-        value: z.string().describe('Memory value (JSON-serializable)'),
-        sessionId: z.number().optional().describe('Agent session ID'),
+        scope: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .describe('Scope identifier (e.g., module name, file path)'),
+        key: z.string().trim().min(1).max(500).describe('Memory key'),
+        value: z.string().max(1_000_000).describe('Memory value (JSON-serializable)'),
+        sessionId: z.number().int().positive().optional().describe('Agent session ID'),
       },
     },
     async (args) => {
       try {
         let sid: number | undefined = args.sessionId;
         if (!sid) {
-          // Only look for sessions from 'mcp-agent', not all agents
-          const sessions = deps.kg.getAgentSessions('mcp-agent');
+          const agentName = deps.agentName || 'mcp-client';
+          const sessions = deps.kg.getAgentSessions(agentName);
           const latest = sessions[0];
           if (latest) {
             sid = latest.id;
           } else {
-            sid = deps.kg.startAgentSession('mcp-agent');
+            sid = deps.kg.startAgentSession(agentName);
           }
         }
 
@@ -68,8 +73,14 @@ export function registerGetMemoryTool(server: McpServer, deps: McpDependencies):
       title: 'Get Agent Memory',
       description: 'Retrieve agent memory by scope and optionally by key.',
       inputSchema: {
-        scope: z.string().describe('Scope identifier'),
-        key: z.string().optional().describe('Specific key (omit for all keys in scope)'),
+        scope: z.string().trim().min(1).max(500).describe('Scope identifier'),
+        key: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .optional()
+          .describe('Specific key (omit for all keys in scope)'),
       },
     },
     async (args) => {

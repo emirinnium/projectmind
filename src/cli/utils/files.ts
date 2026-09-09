@@ -1,5 +1,5 @@
 import { existsSync, statSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { loadConfig } from '@/utils/config.js';
 import { getProjectIgnorePatterns, isIgnoredRelativePath } from '@/utils/ignore.js';
 
@@ -8,7 +8,7 @@ export async function getFilesToCheck(path: string): Promise<string[]> {
   const glob = fg.default ?? fg;
   const projectRoot = resolve(loadConfig().projectRoot);
   const ignorePatterns = getProjectIgnorePatterns(projectRoot);
-  const target = resolve(path);
+  const target = isAbsolute(path) ? resolve(path) : resolve(projectRoot, path);
   const relativeTarget = relative(projectRoot, target).replace(/\\/g, '/');
 
   if (relativeTarget.startsWith('..') || relativeTarget === '..') return [];

@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -29,7 +30,8 @@ export function collectInstalledLicenses(projectRoot: string): Map<string, strin
             ? (p.license?.type ?? '')
             : '';
       licenses.set(p.name, lic);
-    } catch {
+    } catch (error) {
+      reportSuppressedError(error, 'Intentional fallback src/cli/utils/license-scan.ts:32');
       // unreadable package.json: skip
     }
   };

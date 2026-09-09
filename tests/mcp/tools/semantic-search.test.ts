@@ -25,13 +25,45 @@ function encodeEmbedding(values: number[]): Buffer {
  *  - `src/distractor.ts` whose embedding is orthogonal (cosine 0.0)
  */
 function seed(db: DatabaseSync, projectRoot: string): void {
-  db.prepare('INSERT INTO projects (name, root_path) VALUES (?, ?)').run('test-project', projectRoot);
+  db.prepare('INSERT INTO projects (name, root_path) VALUES (?, ?)').run(
+    'test-project',
+    projectRoot,
+  );
 
   const insertFile = db.prepare(
-    'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)',
   );
-  insertFile.run(1, '/test/src/target.ts', 'src/target.ts', 'typescript', 10, 'h-target', encodeEmbedding(QUERY_VECTOR));
-  insertFile.run(1, '/test/src/distractor.ts', 'src/distractor.ts', 'typescript', 10, 'h-distractor', encodeEmbedding([0, 1, 0]));
+  insertFile.run(
+    1,
+    '/test/src/target.ts',
+    'src/target.ts',
+    'typescript',
+    10,
+    'h-target',
+    encodeEmbedding(QUERY_VECTOR),
+  );
+  insertFile.run(
+    1,
+    '/test/src/distractor.ts',
+    'src/distractor.ts',
+    'typescript',
+    10,
+    'h-distractor',
+    encodeEmbedding([0, 1, 0]),
+  );
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(
+    'embedding_index_config:1',
+    JSON.stringify({
+      requestedProvider: 'simple',
+      activeProvider: 'simple',
+      dimension: 3,
+      effectiveDimensions: [3],
+      openaiModel: 'text-embedding-3-small',
+      transformersModel: 'Xenova/all-MiniLM-L6-v2',
+      unixcoderModelPath: 'models/unixcoder-base.onnx',
+      codebertModelPath: 'models/codebert-base.onnx',
+    }),
+  );
 }
 
 describe('semantic_search (semanticSearchForTool)', () => {
@@ -44,7 +76,11 @@ describe('semantic_search (semanticSearchForTool)', () => {
     // schema migrations, so the raw-SQL seeding below works.
     db = initDatabase(':memory:');
     seed(db, projectRoot);
-    deps = { db, projectRoot } as McpDependencies;
+    deps = {
+      db,
+      projectRoot,
+      kg: { getFileByPath: () => null },
+    } as unknown as McpDependencies;
   });
 
   afterAll(() => {
@@ -52,12 +88,116 @@ describe('semantic_search (semanticSearchForTool)', () => {
   });
 
   it('returns the file whose embedding matches the query above the default threshold', async () => {
-    const result = await semanticSearchForTool(deps, { query: 'rate limiting' }, mockEmbeddingGenerator);
+    const result = await semanticSearchForTool(
+      deps,
+      { query: 'rate limiting' },
+      mockEmbeddingGenerator,
+    );
 
     expect(result.results).toHaveLength(1);
     expect(result.results[0]).toMatchObject({
       filePath: 'src/target.ts',
       score: 1,
+      indexEvidence: {
+        hash: 'h-target',
+        embeddingDimension: 3,
+      },
+    });
+    expect(result.query).toMatchObject({ provider: 'simple', dimension: 3 });
+    expect(result.index).toMatchObject({
+      scope: 'file',
+      candidateFiles: 2,
+      indexedFiles: 2,
+      candidateItems: 2,
+      indexedItems: 2,
+      invalidEmbeddings: 0,
+      dimensions: [3],
+      compatibleFiles: 2,
+      incompatibleFiles: 0,
+      compatibleItems: 2,
+      incompatibleItems: 0,
+      freshness: expect.objectContaining({
+        status: 'partial',
+        checkedFiles: 2,
+        missingFiles: 2,
+      }),
+      configuration: expect.objectContaining({
+        requestedProvider: 'simple',
+        activeProvider: 'simple',
+        dimension: 3,
+      }),
+    });
+    expect(result.evidence).toEqual({
+      status: 'partial',
+      method: 'cosine-similarity',
+      source: 'files.embedding',
+    });
+    expect(result.limitations[0]).toMatch(/freshness/i);
+  });
+
+  it('reports source-backed evidence only when every indexed source file is fresh', async () => {
+    const root = process.cwd();
+    const relativePath = 'package.json';
+    const { readFile } = await import('node:fs/promises');
+    const { stableHash } = await import('../../../src/utils/hash.js');
+    const content = await readFile(`${root}/package.json`, 'utf8');
+    const sourceHash = stableHash(content);
+    const project = db
+      .prepare('INSERT INTO projects (name, root_path) VALUES (?, ?)')
+      .run('fresh-project', root);
+    const projectId = Number(project.lastInsertRowid);
+    db.prepare(
+      'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      projectId,
+      `${root}/package.json`,
+      relativePath,
+      'json',
+      content.length,
+      sourceHash,
+      encodeEmbedding(QUERY_VECTOR),
+    );
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(
+      `embedding_index_config:${projectId}`,
+      JSON.stringify({
+        requestedProvider: 'simple',
+        activeProvider: 'simple',
+        dimension: 3,
+        effectiveDimensions: [3],
+        openaiModel: 'text-embedding-3-small',
+        transformersModel: 'Xenova/all-MiniLM-L6-v2',
+        unixcoderModelPath: 'models/unixcoder-base.onnx',
+        codebertModelPath: 'models/codebert-base.onnx',
+      }),
+    );
+
+    const result = await semanticSearchForTool(
+      {
+        db,
+        projectRoot: root,
+        kg: {
+          getFileByPath: (path: string) =>
+            path === relativePath
+              ? {
+                  id: 99,
+                  path: `${root}/package.json`,
+                  relativePath,
+                  hash: sourceHash,
+                  lastScanned: new Date().toISOString(),
+                }
+              : null,
+        },
+      } as unknown as McpDependencies,
+      { query: 'package metadata' },
+      mockEmbeddingGenerator,
+    );
+
+    expect(result.evidence.status).toBe('source-backed');
+    expect(result.index.freshness).toMatchObject({
+      status: 'verified',
+      checkedFiles: 1,
+      freshFiles: 1,
+      staleFiles: 0,
     });
   });
 
@@ -65,7 +205,7 @@ describe('semantic_search (semanticSearchForTool)', () => {
     const result = await semanticSearchForTool(
       deps,
       { query: 'rate limiting', threshold: 0.99 },
-      mockEmbeddingGenerator
+      mockEmbeddingGenerator,
     );
 
     // Cosine is exactly 1.0, so a threshold of 0.99 still includes it.
@@ -77,7 +217,7 @@ describe('semantic_search (semanticSearchForTool)', () => {
     const result = await semanticSearchForTool(
       deps,
       { query: 'rate limiting', threshold: 1.01 },
-      mockEmbeddingGenerator
+      mockEmbeddingGenerator,
     );
 
     expect(result.results).toHaveLength(0);
@@ -85,7 +225,119 @@ describe('semantic_search (semanticSearchForTool)', () => {
 
   it('throws when the project database is not initialized', async () => {
     await expect(
-      semanticSearchForTool({ projectRoot } as McpDependencies, { query: 'x' }, mockEmbeddingGenerator)
+      semanticSearchForTool(
+        { projectRoot } as McpDependencies,
+        { query: 'x' },
+        mockEmbeddingGenerator,
+      ),
     ).rejects.toThrow(/requires the project database/i);
+  });
+
+  it('reports malformed and incompatible stored embeddings instead of hiding them', async () => {
+    db.prepare(
+      'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      1,
+      '/test/src/wrong-dimension.ts',
+      'src/wrong-dimension.ts',
+      'typescript',
+      10,
+      'h-wrong',
+      encodeEmbedding([1, 0]),
+    );
+    db.prepare(
+      'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(1, '/test/src/broken.ts', 'src/broken.ts', 'typescript', 10, 'h-broken', '{not-json');
+
+    const result = await semanticSearchForTool(
+      deps,
+      { query: 'rate limiting' },
+      mockEmbeddingGenerator,
+    );
+
+    expect(result.index).toMatchObject({
+      scope: 'file',
+      candidateFiles: 4,
+      indexedFiles: 3,
+      candidateItems: 4,
+      indexedItems: 3,
+      invalidEmbeddings: 1,
+      dimensions: [2, 3],
+      compatibleFiles: 2,
+      incompatibleFiles: 1,
+      compatibleItems: 2,
+      incompatibleItems: 1,
+    });
+    expect(result.evidence.status).toBe('partial');
+    expect(result.limitations.some((item) => /unreadable|non-finite/i.test(item))).toBe(true);
+    expect(result.limitations.some((item) => /different vector dimension/i.test(item))).toBe(true);
+    expect(result.results.every((hit) => hit.filePath !== 'src/wrong-dimension.ts')).toBe(true);
+  });
+
+  it('supports function/class retrieval with source locations and mixed-index evidence', async () => {
+    db.prepare(
+      'INSERT INTO functions (file_id, name, signature, start_line, end_line, embedding) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(1, 'rateLimit', 'function rateLimit(): void', 4, 12, JSON.stringify(QUERY_VECTOR));
+    db.prepare(
+      'INSERT INTO classes (file_id, name, signature, start_line, end_line, embedding) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(1, 'Limiter', 'class Limiter', 20, 40, JSON.stringify(QUERY_VECTOR));
+
+    const result = await semanticSearchForTool(
+      deps,
+      { query: 'rate limiting', scope: 'symbol' },
+      mockEmbeddingGenerator,
+    );
+
+    expect(result.results).toHaveLength(2);
+    expect(result.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          filePath: 'src/target.ts',
+          kind: 'function',
+          symbolName: 'rateLimit',
+          startLine: 4,
+          endLine: 12,
+          indexEvidence: expect.objectContaining({ kind: 'function', embeddingDimension: 3 }),
+        }),
+        expect.objectContaining({
+          filePath: 'src/target.ts',
+          kind: 'class',
+          symbolName: 'Limiter',
+          startLine: 20,
+          endLine: 40,
+          indexEvidence: expect.objectContaining({ kind: 'class', embeddingDimension: 3 }),
+        }),
+      ]),
+    );
+    expect(result.index).toMatchObject({
+      scope: 'symbol',
+      candidateFiles: 1,
+      indexedFiles: 1,
+      candidateItems: 2,
+      indexedItems: 2,
+      compatibleFiles: 1,
+      incompatibleFiles: 0,
+      compatibleItems: 2,
+      incompatibleItems: 0,
+      dimensions: [3],
+    });
+    expect(result.evidence.source).toBe('mixed');
+  });
+
+  it('downgrades evidence when the stored provider manifest is malformed', async () => {
+    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(
+      '{not-a-provider-manifest',
+      'embedding_index_config:1',
+    );
+
+    const result = await semanticSearchForTool(
+      deps,
+      { query: 'rate limiting' },
+      mockEmbeddingGenerator,
+    );
+
+    expect(result.evidence.status).toBe('partial');
+    expect(result.index.configuration).toBeNull();
+    expect(result.limitations.some((item) => /provider manifest|re-scan/i.test(item))).toBe(true);
   });
 });

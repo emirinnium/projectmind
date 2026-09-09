@@ -63,9 +63,6 @@ export function generateRefactorCandidates(
       gitChurn.get(String(file.relativePath).replace(/\\/g, '/'))?.count ??
       (file.agentTouched ? 1 : 0);
 
-    // Calculate coupling (imports + imported by) - used in createCandidate
-    const _coupling = Math.min(file.imports?.length || 0, 10) / 10;
-
     // Generate candidates based on file characteristics
     if (file.cognitiveLoad > 0.5 || file.lines > 300) {
       candidates.push(

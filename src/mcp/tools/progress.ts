@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 /**
  * MCP progress notification support (spec: notifications/progress).
  *
@@ -16,6 +17,7 @@ export interface HandlerExtraLike {
 export type ProgressReporter = (progress: number, total: number, message?: string) => Promise<void>;
 
 const MIN_INTERVAL_MS = 250;
+const noopProgress: ProgressReporter = async () => undefined;
 
 /**
  * Build a progress reporter bound to the current tool-call request.
@@ -45,7 +47,7 @@ export function createProgressReporter(
   const send = extra?.sendNotification;
 
   if (token === undefined || typeof send !== 'function') {
-    return async () => {};
+    return noopProgress;
   }
 
   let lastSentAt = 0;
@@ -67,7 +69,8 @@ export function createProgressReporter(
           ...(message ? { message } : {}),
         },
       });
-    } catch {
+    } catch (error) {
+      reportSuppressedError(error, 'Intentional fallback src/mcp/tools/progress.ts:71');
       // Progress is best-effort: a failing notification channel must never
       // break the underlying operation.
     }
@@ -83,7 +86,7 @@ export function createStageProgressReporter(
   const send = extra?.sendNotification;
 
   if (token === undefined || typeof send !== 'function') {
-    return async () => {};
+    return noopProgress;
   }
 
   return async (progress: number, total: number, message?: string): Promise<void> => {
@@ -97,7 +100,8 @@ export function createStageProgressReporter(
           ...(message ? { message } : {}),
         },
       });
-    } catch {
+    } catch (error) {
+      reportSuppressedError(error, 'Intentional fallback src/mcp/tools/progress.ts:101');
       // best-effort, see above
     }
   };

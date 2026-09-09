@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { Command } from 'commander';
 import { asyncHandler, output, loadConfig, withService } from '@/cli/utils/shared.js';
 import { existsSync, readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
@@ -32,6 +33,10 @@ export function createAutopilotCommand(): Command {
   const cmd = new Command('autopilot').description(
     'Agent workflow enforcement: pre-commit quality gates and git hook installation',
   );
+
+  cmd.action(() => {
+    cmd.outputHelp();
+  });
 
   cmd
     .command('pre-commit')
@@ -151,10 +156,11 @@ export function createAutopilotCommand(): Command {
         writeFileSync(hookPath, script);
         try {
           chmodSync(hookPath, 0o755);
-        } catch {
+        } catch (error) {
+          reportSuppressedError(error, 'Intentional fallback src/cli/commands/autopilot.ts:158');
           // Windows filesystems may ignore chmod — git still executes the hook.
         }
-        output.success(`✓ Pre-commit hook installed at ${hookPath}`);
+        output.success(`Pre-commit hook installed at ${hookPath}`);
         output.kv(
           'Gate',
           'pm autopilot pre-commit (high-debt, cycles, genome threshold, API surface)',

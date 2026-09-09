@@ -11,12 +11,15 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   for (let i = 0; i < a.length; i++) {
     const ai = a[i]!;
     const bi = b[i]!;
+    if (!Number.isFinite(ai) || !Number.isFinite(bi)) return 0;
     dot += ai * bi;
     normA += ai * ai;
     normB += bi * bi;
   }
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 0 : dot / denom;
+  if (denom === 0 || !Number.isFinite(denom)) return 0;
+  const score = dot / denom;
+  return Number.isFinite(score) ? score : 0;
 }
 
 export function vectorDistance(a: number[], b: number[]): number {
@@ -43,7 +46,11 @@ export function textToEmbedding(text: string, dim: number = EMBEDDING_DIM): numb
   const vector = new Float32Array(dim);
 
   for (const token of tokens) {
-    let cached = tokenVectorCache.get(token);
+    // The token vector depends on the requested dimension. A cache keyed only
+    // by token returns a short vector when a caller later asks for a larger
+    // dimension, which makes the accumulation silently produce NaN values.
+    const cacheKey = `${dim}:${token}`;
+    let cached = tokenVectorCache.get(cacheKey);
     if (!cached) {
       let hash = 0;
       for (let i = 0; i < token.length; i++) {
@@ -58,7 +65,7 @@ export function textToEmbedding(text: string, dim: number = EMBEDDING_DIM): numb
         const firstKey = tokenVectorCache.keys().next().value;
         if (firstKey !== undefined) tokenVectorCache.delete(firstKey);
       }
-      tokenVectorCache.set(token, cached);
+      tokenVectorCache.set(cacheKey, cached);
     }
     for (let d = 0; d < dim; d++) {
       vector[d] += cached[d]!;

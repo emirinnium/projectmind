@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { confineToProject } from '@/mcp/tools/_shared.js';
 import {
   type SbomPackage,
   generateSpdx,
@@ -14,7 +15,7 @@ import {
 export function createSbomCommand(): Command {
   const sbomCmd = new Command('sbom')
     .description('Generate Software Bill of Materials (SPDX/CycloneDX)')
-    .option('--format <fmt>', 'Output format: spdx|cyclonedx|json|spdx-tag', 'spdx')
+    .option('--format <fmt>', 'Output format: spdx|spdx-tag (alias)|cyclonedx|json', 'spdx')
     .option('-o, --output <file>', 'Output file path')
     .option('--include-dev', 'Include devDependencies', 'true')
     .option('--include-peer', 'Include peerDependencies', 'true')
@@ -38,19 +39,21 @@ export function createSbomCommand(): Command {
           sign: boolean;
           validate: boolean;
         }) => {
-          await withService(['scale'], async (_ctx, services) => {
-            services.scale!;
+          await withService(['scale'], async (_ctx, _services) => {
             const { loadConfig } = await import('../../utils/config.js');
             const config = loadConfig();
+            const outputPath = opts.output
+              ? confineToProject(opts.output, config.projectRoot)
+              : undefined;
 
             output.section('SBOM Generator');
 
             if (opts.validate) {
-              if (!opts.output || !existsSync(opts.output)) {
+              if (!outputPath || !existsSync(outputPath)) {
                 output.error('Specify SBOM file to validate with -o');
                 return;
               }
-              const content = readFileSync(opts.output, 'utf-8');
+              const content = readFileSync(outputPath, 'utf-8');
               const result = validateSbom(content, opts.format);
               if (result.valid) {
                 output.success('SBOM is valid');
@@ -98,16 +101,10 @@ export function createSbomCommand(): Command {
             switch (opts.format) {
               case 'spdx':
               case 'spdx-tag':
-                content = generateSpdx(
-                  projectName,
-                  projectVersion,
-                  namespace,
-                  packages,
-                  opts.format === 'spdx-tag',
-                );
+                content = generateSpdx(projectName, projectVersion, namespace, packages);
                 break;
               case 'cyclonedx':
-                content = generateCycloneDx(projectName, projectVersion, namespace, packages);
+                content = generateCycloneDx(projectName, projectVersion, packages);
                 break;
               case 'json':
                 content = JSON.stringify(
@@ -128,8 +125,8 @@ export function createSbomCommand(): Command {
             }
 
             if (opts.output) {
-              writeFileSync(opts.output, content);
-              output.success(`SBOM written to ${opts.output}`);
+              writeFileSync(outputPath!, content);
+              output.success(`SBOM written to ${outputPath}`);
             } else {
               output.info(content);
             }
@@ -138,7 +135,7 @@ export function createSbomCommand(): Command {
               if (!opts.output) {
                 output.warn('Signing requires --output <file> (cosign signs a file on disk)');
               } else {
-                signWithCosign(opts.output);
+                signWithCosign(outputPath!);
               }
             }
 

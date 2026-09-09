@@ -265,13 +265,6 @@ export class AgentFingerprintExtractor {
     if (abstractions.length === 0) abstractions.push('none');
     return abstractions;
   }
-  private hashToken(token: string): number {
-    let hash = 0;
-    for (let i = 0; i < token.length; i++) {
-      hash = ((hash << 5) - hash + token.charCodeAt(i)) | 0;
-    }
-    return Math.abs(hash);
-  }
 }
 
 /** Singleton extractor for reuse across engine and storage layers. */

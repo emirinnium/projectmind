@@ -1,7 +1,8 @@
+import { reportSuppressedError } from '../../src/utils/errors.js';
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { McpDependencies } from '../../src/mcp/tools/types.js';
 import {
   startLiveWatch,
@@ -35,7 +36,11 @@ describe('live file watches — unregister_file_watch resurrection fix', () => {
     for (const dir of tempDirs.splice(0)) {
       try {
         rmSync(dir, { recursive: true, force: true });
-      } catch {
+      } catch (error) {
+        reportSuppressedError(
+          error,
+          'Intentional test fallback tests/unit/sync-filewatch.test.ts:38',
+        );
         // best effort cleanup
       }
     }
@@ -72,6 +77,36 @@ describe('live file watches — unregister_file_watch resurrection fix', () => {
     closeAllLiveWatchers();
     await new Promise((r) => setTimeout(r, 50));
     expect(liveWatcherStats().active).toBe(0);
+    expect(liveWatcherStats().pendingRestarts).toBe(0);
+  });
+
+  it('removes a deleted file from the graph and stops its registration', async () => {
+    const file = makeTempFile();
+    const removed: string[] = [];
+    const deps = {
+      projectRoot: dirname(file),
+      kg: {
+        markAgentTouched: () => Promise.resolve(),
+        upsertFile: async () => 1,
+        storeFileDetails: () => Promise.resolve(),
+        removeFile: (relativePath: string) => {
+          removed.push(relativePath);
+          return true;
+        },
+      },
+    } as unknown as McpDependencies;
+
+    startLiveWatch(deps, file, 'agent-deletion');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    rmSync(file);
+
+    const deadline = Date.now() + 3000;
+    while (removed.length === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    expect(removed).toEqual(['watched.ts']);
+    expect(hasLiveWatch(file, 'agent-deletion')).toBe(false);
     expect(liveWatcherStats().pendingRestarts).toBe(0);
   });
 });

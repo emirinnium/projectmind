@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { createRequire } from 'node:module';
+import { decodeEmbedding } from './embedding-codec.js';
 import { logger } from '../../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -15,11 +16,17 @@ function cosineSimilarity(a: number[], b: number[]): number {
   let normA = 0;
   let normB = 0;
   for (let i = 0; i < a.length; i++) {
+    if (!Number.isFinite(a[i]) || !Number.isFinite(b[i])) return 0;
     dotProduct += a[i] * b[i];
     normA += a[i] * a[i];
     normB += b[i] * b[i];
   }
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+  // Zero vectors have no direction. Treat them as unrelated instead of
+  // leaking NaN into sorting, JSON responses, or downstream confidence math.
+  if (denominator === 0 || !Number.isFinite(denominator)) return 0;
+  const score = dotProduct / denominator;
+  return Number.isFinite(score) ? score : 0;
 }
 
 /**
@@ -89,8 +96,8 @@ export class VectorIndex {
 // nearest-neighbor search via `MATCH`.
 //
 // When the extension cannot be loaded (e.g. unsupported platform, missing
-// native binary, or older DB files), every method silently degrades so the
-// caller can fall back to full-table scan.
+// native binary, or older DB files), every method degrades with an explicit
+// warning so the caller can fall back to full-table scan.
 // ---------------------------------------------------------------------------
 
 const VEC_TABLE_NAME = 'pm_vec_files';
@@ -107,20 +114,24 @@ const esmRequire = createRequire(import.meta.url);
 /** Warn exactly once per process when sqlite-vec fails to load. */
 let vecLoadWarned = false;
 
-/** One VecIndex per DatabaseSync instance, lazily created. */
+/** One dimension-consistent VecIndex per DatabaseSync instance, lazily created. */
 const vecIndexRegistry = new WeakMap<DatabaseSync, VecIndex>();
 
 /**
- * Get or create the singleton VecIndex for a given database.
+ * Get or create the singleton VecIndex for a given database. A supplied
+ * dimension is authoritative; without one, an existing index dimension is
+ * reused so lifecycle operations do not accidentally rebuild a configured
+ * non-default index.
  * Returns a VecIndex whose `isAvailable()` may be `false` if the
  * extension failed to load — callers must check.
  */
-export function getVecIndex(db: DatabaseSync): VecIndex {
-  let idx = vecIndexRegistry.get(db);
-  if (!idx) {
-    idx = new VecIndex(db);
-    vecIndexRegistry.set(db, idx);
-  }
+export function getVecIndex(db: DatabaseSync, dimension?: number): VecIndex {
+  const existing = vecIndexRegistry.get(db);
+  const requestedDimension = dimension ?? existing?.dimension() ?? DEFAULT_DIMENSION;
+  if (existing && existing.dimension() === requestedDimension) return existing;
+
+  const idx = new VecIndex(db, requestedDimension);
+  vecIndexRegistry.set(db, idx);
   return idx;
 }
 
@@ -128,7 +139,7 @@ export class VecIndex {
   private readonly db: DatabaseSync;
   private readonly dim: number;
   private readonly _available: boolean;
-  private readonly dimensionChanged: boolean;
+  private readonly needsRebuild: boolean;
 
   /**
    * @param db  An **already-opened** DatabaseSync with `allowExtension: true`.
@@ -143,13 +154,18 @@ export class VecIndex {
     this.dim = dim;
     const init = this.tryInit();
     this._available = init.available;
-    this.dimensionChanged = init.dimensionChanged;
-    if (this._available && this.dimensionChanged) this.rebuild();
+    this.needsRebuild = init.needsRebuild;
+    if (this._available && this.needsRebuild) this.rebuild();
   }
 
   /** Whether sqlite-vec loaded successfully and the virtual table exists. */
   isAvailable(): boolean {
     return this._available;
+  }
+
+  /** Embedding dimension enforced by the persistent index. */
+  dimension(): number {
+    return this.dim;
   }
 
   // -- Write operations ----------------------------------------------------
@@ -281,25 +297,28 @@ export class VecIndex {
     try {
       this.db.exec(`DROP TABLE IF EXISTS ${VEC_TABLE_NAME}`);
       this.db.exec(
-        `CREATE VIRTUAL TABLE ${VEC_TABLE_NAME} USING vec0(embedding float[${this.dim}])`,
+        `CREATE VIRTUAL TABLE ${VEC_TABLE_NAME} USING vec0(embedding float[${this.dim}] distance_metric=cosine)`,
       );
 
       const rows = this.db
         .prepare('SELECT id, embedding FROM files WHERE embedding IS NOT NULL')
-        .all() as Array<{ id: number; embedding: Buffer | null }>;
+        .all() as Array<{ id: number; embedding: unknown }>;
 
       const ins = this.db.prepare(`INSERT INTO ${VEC_TABLE_NAME}(rowid, embedding) VALUES (?, ?)`);
 
       let count = 0;
       for (const row of rows) {
-        if (!row.embedding) continue;
         try {
-          const floats = new Float32Array(
-            row.embedding.buffer,
-            row.embedding.byteOffset,
-            Math.floor(row.embedding.byteLength / 4),
-          );
-          ins.run(BigInt(row.id), new Float32Array(floats));
+          const values = decodeEmbedding(row.embedding as Parameters<typeof decodeEmbedding>[0]);
+          if (values.length !== this.dim) {
+            logger.warn('VecIndex rebuild: skipping embedding with invalid dimension', {
+              fileId: row.id,
+              expectedDimension: this.dim,
+              receivedDimension: values.length,
+            });
+            continue;
+          }
+          ins.run(BigInt(row.id), new Float32Array(values));
           count++;
         } catch (e) {
           // Skip corrupt embedding.
@@ -321,7 +340,7 @@ export class VecIndex {
    * Attempt to load sqlite-vec and create the virtual table.
    * Returns `true` on success, `false` if anything fails (graceful degradation).
    */
-  private tryInit(): { available: boolean; dimensionChanged: boolean } {
+  private tryInit(): { available: boolean; needsRebuild: boolean } {
     try {
       // Dynamic import so the module never crashes when sqlite-vec is
       // unavailable or the native binary is missing.
@@ -334,17 +353,25 @@ export class VecIndex {
       const existingDimension = existing?.sql?.match(/float\[(\d+)\]/i)?.[1];
       const dimensionChanged =
         existingDimension !== undefined && Number(existingDimension) !== this.dim;
+      const metricChanged =
+        existing !== undefined && !/distance_metric\s*=\s*cosine/i.test(existing.sql ?? '');
+      const tableMissing = existing === undefined;
 
-      if (dimensionChanged) {
+      if (dimensionChanged || metricChanged) {
         logger.warn(
-          `Vector index dimension changed (${existingDimension} -> ${this.dim}); rebuilding ${VEC_TABLE_NAME}.`,
+          dimensionChanged
+            ? `Vector index dimension changed (${existingDimension} -> ${this.dim}); rebuilding ${VEC_TABLE_NAME}.`
+            : `Vector index metric changed to cosine; rebuilding ${VEC_TABLE_NAME}.`,
         );
         this.db.exec(`DROP TABLE IF EXISTS ${VEC_TABLE_NAME}`);
       }
       this.db.exec(
-        `CREATE VIRTUAL TABLE IF NOT EXISTS ${VEC_TABLE_NAME} USING vec0(embedding float[${this.dim}])`,
+        `CREATE VIRTUAL TABLE IF NOT EXISTS ${VEC_TABLE_NAME} USING vec0(embedding float[${this.dim}] distance_metric=cosine)`,
       );
-      return { available: true, dimensionChanged };
+      return {
+        available: true,
+        needsRebuild: tableMissing || dimensionChanged || metricChanged,
+      };
     } catch (e) {
       // sqlite-vec unavailable or extension loading disabled – degrade.
       // Log a clear ONE-TIME warning with the real reason (previously the
@@ -356,7 +383,7 @@ export class VecIndex {
           `sqlite-vec unavailable — vector search falls back to brute-force: ${e instanceof Error ? e.message : String(e)}`,
         );
       }
-      return { available: false, dimensionChanged: false };
+      return { available: false, needsRebuild: false };
     }
   }
 }

@@ -20,8 +20,9 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run lint
+      - run: npm run format:check
       - run: npm run typecheck
-      - run: npm run test:vitest
+      - run: npm run test
 
   build:
     needs: lint-and-test
@@ -51,6 +52,14 @@ jobs:
           registry-url: 'https://registry.npmjs.org/'
       - run: npm ci
       - run: npm run build
+      - name: Verify tag matches package version
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          package_version="$(node -p "require('./package.json').version")"
+          test "$tag_version" = "$package_version"
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm pack --dry-run
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

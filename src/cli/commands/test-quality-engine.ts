@@ -1,4 +1,6 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 export interface TestFile {
   path: string;
@@ -35,6 +37,7 @@ export function analyzeTestFile(
   content: string,
   filePath: string,
   frameworkFilter: string,
+  projectRoot = process.cwd(),
 ): TestFile {
   // Detect framework
   let framework: TestFile['framework'] = 'vitest';
@@ -48,12 +51,7 @@ export function analyzeTestFile(
   }
 
   // Count tests
-  const testPatterns = [
-    /(it|test)\s*\(\s*['"`]/g, // vitest/jest
-    /describe\s*\(\s*['"`]/g, // describe blocks
-    /it\s*\(\s*['"`]/g, // mocha
-    /it\(['"`]/g, // playwright
-  ];
+  const testPatterns = [/\b(?:it|test)(?:\.(?:skip|only|todo))?\s*\(\s*['"`]/g];
 
   let tests = 0;
   for (const pattern of testPatterns) {
@@ -65,10 +63,6 @@ export function analyzeTestFile(
     /expect\s*\(/g, // vitest/jest
     /assert\s*\./g, // assert
     /should\s*\./g, // should.js
-    /\.toBe\s*\(/g, // toBe
-    /\.toEqual\s*\(/g, // toEqual
-    /\.toContain\s*\(/g, // toContain
-    /\.toHaveLength\s*\(/g, // toHaveLength
   ];
 
   let assertions = 0;
@@ -87,10 +81,13 @@ export function analyzeTestFile(
   // otherwise -1 signals 'unmeasured' (never fabricate).
   let coverage = -1;
   try {
-    const summary = JSON.parse(readFileSync('coverage/coverage-summary.json', 'utf-8'));
+    const summary = JSON.parse(
+      readFileSync(join(projectRoot, 'coverage', 'coverage-summary.json'), 'utf-8'),
+    );
     const total = summary.total?.statements?.pct ?? summary.total?.lines?.pct;
     if (typeof total === 'number') coverage = Math.max(0, Math.min(100, total));
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional fallback src/cli/commands/test-quality-engine.ts:88');
     /* no coverage artifact */
   }
 
@@ -112,6 +109,7 @@ export function generateQualityReport(
   coverageTarget: number,
   slowThreshold: number,
   _flakyThreshold: number,
+  projectRoot = process.cwd(),
 ): TestQualityReport {
   const totalTests = testFiles.reduce((sum, f) => sum + f.tests, 0);
   const totalAssertions = testFiles.reduce((sum, f) => sum + f.assertions, 0);
@@ -168,7 +166,7 @@ export function generateQualityReport(
   }
 
   // Real mutation score when a Stryker report artifact exists; otherwise -1.
-  const mutationScore = readStrykerMutationScore();
+  const mutationScore = readStrykerMutationScore(projectRoot);
 
   return {
     totalFiles: testFiles.length,
@@ -189,18 +187,22 @@ export function generateQualityReport(
  * Mutation testing cannot be derived statically — without an artifact this
  * returns -1 ('unmeasured'), never a fabricated number.
  */
-function readStrykerMutationScore(): number {
+function readStrykerMutationScore(projectRoot: string): number {
   const candidates = [
-    'reports/mutation/mutation.json',
-    'reports/mutation.json',
-    'reports/evaluation/mutation.json',
+    join(projectRoot, 'reports', 'mutation', 'mutation.json'),
+    join(projectRoot, 'reports', 'mutation.json'),
+    join(projectRoot, 'reports', 'evaluation', 'mutation.json'),
   ];
   for (const candidate of candidates) {
     try {
       const raw = JSON.parse(readFileSync(candidate, 'utf-8')) as unknown;
       const score = extractStrykerScore(raw);
       if (score !== null) return Math.max(0, Math.min(100, score));
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional fallback src/cli/commands/test-quality-engine.ts:199',
+      );
       /* artifact not present / unreadable at this location */
     }
   }

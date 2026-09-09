@@ -31,6 +31,18 @@ export interface UserContextResult {
   note: string;
 }
 
+/** The graph traversal intentionally exposes only fields needed for ranking.
+ * Keep that reduced shape explicit instead of casting it to a full FileInfo. */
+interface ContextFile {
+  id: number;
+  path: string;
+  relativePath: string;
+  language: string;
+  cognitiveLoad: number;
+  agentTouched: boolean;
+  agentTouchedBy: string | null;
+}
+
 const MAX_TOKENS_PER_ITEM = 90; // ~chars reserved per serialized entry
 
 export function assembleUserContext(
@@ -47,15 +59,8 @@ export function assembleUserContext(
   const { fileId } = options;
 
   // ---- Candidate pools -------------------------------------------------
-  const scores = new Map<
-    number,
-    { info: import('../../storage/kg/types.js').FileInfo; score: number; reasons: Set<string> }
-  >();
-  const consider = (
-    info: import('../../storage/kg/types.js').FileInfo,
-    points: number,
-    reason: string,
-  ): void => {
+  const scores = new Map<number, { info: ContextFile; score: number; reasons: Set<string> }>();
+  const consider = (info: ContextFile, points: number, reason: string): void => {
     if (info.id === fileId) return; // the target itself is not a suggestion
     let entry = scores.get(info.id);
     if (!entry) {
@@ -85,7 +90,7 @@ export function assembleUserContext(
     for (const node of affected) {
       // GraphNode lacks FileInfo fields (sizeBytes etc.) — synthesize a
       // minimal FileInfo-compatible object from what we have.
-      const pseudoInfo = {
+      const contextFile: ContextFile = {
         id: node.id,
         path: node.path,
         relativePath: node.relativePath,
@@ -93,10 +98,10 @@ export function assembleUserContext(
         cognitiveLoad: node.cognitiveLoad,
         agentTouched: node.agentTouched,
         agentTouchedBy: node.agentTouchedBy,
-      } as import('../../storage/kg/types.js').FileInfo;
+      };
       const isDirect = directIds.has(String(node.id));
       consider(
-        pseudoInfo,
+        contextFile,
         isDirect ? 0.5 : 0.28,
         isDirect ? 'direct-dependent' : 'in-blast-radius',
       );

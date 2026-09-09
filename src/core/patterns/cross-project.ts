@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 /**
  * Cross-Project Pattern Engine (F4)
  * Pattern extraction, cross-project sync, and embedding-based comparison.
@@ -146,7 +147,8 @@ function scanTsFiles(
         results.push(full);
       }
     }
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional fallback src/core/patterns/cross-project.ts:149');
     // ignore unreadable dirs
   }
   return results;
@@ -222,7 +224,8 @@ export function templateFromCodeHash(codeHash: string, name: string): AbstractTe
         returnType: typeof t.returnType === 'string' ? t.returnType : '',
       };
     }
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional fallback src/core/patterns/cross-project.ts:225');
     // opaque hash — fall through
   }
   return { interfaceName: name, methodSignatures: [], parameters: [], returnType: '' };
@@ -307,7 +310,8 @@ export class CrossProjectPatternEngine {
     if (this.ownsDb) {
       try {
         this.db.close();
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/core/patterns/cross-project.ts:310');
         // already closed
       }
     }
@@ -387,7 +391,8 @@ export class CrossProjectPatternEngine {
             );
           }
         });
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/core/patterns/cross-project.ts:390');
         // Skip unparseable files
       }
     }

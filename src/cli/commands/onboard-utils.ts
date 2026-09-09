@@ -72,20 +72,27 @@ export function generateOnboardingPath(
   });
 
   if (role === 'backend' || role === 'fullstack') {
-    steps.push(...generateBackendSteps(depth, stepOrder, report, allFiles));
-    stepOrder += steps.filter((s) => s.type === 'explore' || s.type === 'read').length;
+    const backendSteps = generateBackendSteps(depth, stepOrder, report, allFiles);
+    steps.push(...backendSteps);
+    stepOrder += backendSteps.length;
   }
 
   if (role === 'frontend' || role === 'fullstack') {
-    steps.push(...generateFrontendSteps(depth, stepOrder, report, allFiles));
+    const frontendSteps = generateFrontendSteps(depth, stepOrder, report, allFiles);
+    steps.push(...frontendSteps);
+    stepOrder += frontendSteps.length;
   }
 
   if (role === 'devops') {
-    steps.push(...generateDevOpsSteps(depth, stepOrder, report, allFiles));
+    const devOpsSteps = generateDevOpsSteps(depth, stepOrder, report, allFiles);
+    steps.push(...devOpsSteps);
+    stepOrder += devOpsSteps.length;
   }
 
   if (role === 'ml') {
-    steps.push(...generateMLSteps(depth, stepOrder, report, allFiles));
+    const mlSteps = generateMLSteps(depth, stepOrder, report, allFiles);
+    steps.push(...mlSteps);
+    stepOrder += mlSteps.length;
   }
 
   if (depth >= 3) {
@@ -270,9 +277,15 @@ export function generateDevOpsSteps(
     order: order++,
     title: 'Build & CI/CD Pipeline',
     description: 'Build process, CI/CD configuration, deployment strategies',
-    files: ['.github/workflows/', '.gitlab-ci.yml', 'Dockerfile', 'package.json scripts'].filter(
-      (f) => allFiles.some((af) => af.relativePath.includes(f.replace('.yml', ''))),
-    ),
+    files: Array.from(
+      new Set([
+        ...['.github/workflows/', '.gitlab-ci.yml', 'Dockerfile', 'package.json scripts'].filter(
+          (f) => allFiles.some((af) => af.relativePath.includes(f.replace('.yml', ''))),
+        ),
+        ...findModuleFiles(report, 'ci', allFiles),
+        ...findModuleFiles(report, 'devops', allFiles),
+      ]),
+    ).slice(0, 10),
     estimatedTime: '40 min',
     prerequisites: [],
     type: 'read',
@@ -333,6 +346,20 @@ export function generateMLSteps(
     prerequisites: ['Pipeline understanding'],
     type: 'read',
   });
+
+  if (depth >= 3) {
+    steps.push({
+      order: order++,
+      title: 'Model Monitoring & Governance',
+      description: 'Model drift, observability, evaluation and release governance',
+      files: findModuleFiles(report, 'monitor', allFiles)
+        .concat(findModuleFiles(report, 'model', allFiles))
+        .slice(0, 10),
+      estimatedTime: '35 min',
+      prerequisites: ['Model serving basics'],
+      type: 'explore',
+    });
+  }
 
   return steps;
 }
@@ -397,7 +424,33 @@ export function generateMarkdownOnboarding(path: OnboardingPath): string {
 }
 
 export async function runInteractiveOnboarding(path: OnboardingPath): Promise<void> {
+  const { createInterface } = await import('node:readline/promises');
+  const { stdin, stdout } = await import('node:process');
   const { output } = await import('@/cli/utils/shared.js');
-  output.info('Interactive mode not fully implemented. Showing path instead:');
-  output.info(JSON.stringify(path, null, 2));
+
+  // A non-interactive caller (CI, MCP, redirected stdin) must never hang.
+  if (!stdin.isTTY || !stdout.isTTY) {
+    output.raw(generateMarkdownOnboarding(path));
+    return;
+  }
+
+  const readline = createInterface({ input: stdin, output: stdout });
+  try {
+    output.section(`Interactive onboarding: ${path.role}`);
+    output.info('Press Enter after each step, or type q to stop.');
+    for (const step of path.steps) {
+      output.section(`Step ${step.order}/${path.totalSteps}: ${step.title}`);
+      output.info(step.description);
+      output.kv('Estimated time', step.estimatedTime);
+      if (step.files.length > 0) output.list(step.files);
+      const answer = await readline.question('Continue? [Enter/q] ');
+      if (answer.trim().toLowerCase() === 'q') {
+        output.info(`Stopped after step ${step.order}.`);
+        return;
+      }
+    }
+    output.success('Onboarding path completed.');
+  } finally {
+    readline.close();
+  }
 }

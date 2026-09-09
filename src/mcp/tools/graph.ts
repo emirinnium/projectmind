@@ -2,11 +2,14 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { createProgressReporter } from './progress.js';
+import { confineToProject } from './_shared.js';
+import { relative } from 'node:path';
+import { buildFeatureMap } from '../../core/feature-map/feature-map.js';
 
 /**
  * kg_query — agent-facing surface for the in-memory graph engine
  * (BFS traversal, shortest path, PageRank, community detection,
- * N-hop subgraph extraction, impact radius).
+ * N-hop subgraph extraction, impact radius, and deterministic feature flows).
  *
  * This is the "2-hop subgraph around the file I want to change" tool:
  * agents call it BEFORE refactors to understand blast radius structurally
@@ -24,13 +27,22 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
       title: 'Knowledge Graph Query',
       description:
         'Run real graph algorithms over the project knowledge graph.\n' +
-        'WHEN to call: before refactors ("give me the 2-hop subgraph around this file"), to find critical files (pagerank), detect module clusters (communities), or compute the shortest import chain between two files (path).\n' +
+        'WHEN to call: before refactors ("give me the 2-hop subgraph around this file"), to find critical files (pagerank), detect module clusters (communities), compute the shortest import chain between two files (path), or map path-derived feature candidates and cross-feature flows (feature-map).\n' +
         'Returns structured JSON per action. Read-only.',
       inputSchema: {
         action: z
-          .enum(['stats', 'pagerank', 'communities', 'subgraph', 'path', 'impact', 'bfs'])
+          .enum([
+            'stats',
+            'pagerank',
+            'communities',
+            'subgraph',
+            'path',
+            'impact',
+            'bfs',
+            'feature-map',
+          ])
           .describe(
-            'Graph operation: stats=nodes/edges overview, pagerank=critical files by score, communities=module clusters, subgraph=N-hop neighborhood around file, path=shortest import chain from→to, impact=direct+transitive affected set of file, bfs=traversal from file',
+            'Graph operation: stats=nodes/edges overview, pagerank=critical files by score, communities=module clusters, subgraph=N-hop neighborhood around file, path=shortest import chain from→to, impact=direct+transitive affected set of file, bfs=traversal from file, feature-map=path-derived feature candidates plus import flows',
           ),
         file: z
           .string()
@@ -68,7 +80,12 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
 
         const resolveFile = (p?: string): { id: number; rel: string } | null => {
           if (!p) return null;
-          const info = kg.getFileByPath(p) ?? kg.getFileByPath(p.replace(/\\/g, '/'));
+          const confined = confineToProject(p, deps.projectRoot);
+          const relativePath = relative(deps.projectRoot, confined).replace(/\\/g, '/');
+          const info =
+            kg.getFileByPath(p) ??
+            kg.getFileByPath(p.replace(/\\/g, '/')) ??
+            kg.getFileByPath(relativePath);
           return info ? { id: info.id, rel: info.relativePath || info.path } : null;
         };
 
@@ -78,6 +95,18 @@ export function registerGraphQueryTool(server: McpServer, deps: McpDependencies)
             const s = g.getStats();
             await progress(100, 100, 'done');
             return json({ success: true, action: 'stats', ...s });
+          }
+          case 'feature-map': {
+            await progress(60, 100, 'grouping source boundaries and import flows');
+            const map = buildFeatureMap(kg, args.limit);
+            await progress(100, 100, `done: ${map.totalFeatures} feature candidates`);
+            return json({
+              success: true,
+              action: 'feature-map',
+              ...map,
+              nextAction:
+                'Use the candidate files and flows to choose a review scope; confirm business semantics from source before making architectural decisions.',
+            });
           }
           case 'pagerank': {
             await progress(40, 100, `pageRank iterations on graph`);

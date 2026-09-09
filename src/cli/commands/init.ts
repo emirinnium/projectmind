@@ -16,19 +16,20 @@ export function createInitCommand(): Command {
     asyncHandler(async () => {
       await withContext(async (ctx) => {
         const config = ctx.config;
-        output.info(`Initializing ProjectMind in: ${process.cwd()}`);
+        const projectRoot = config.projectRoot;
+        output.info(`Initializing ProjectMind in: ${projectRoot}`);
         output.kv('Database path', config.databasePath);
 
         await ctx.kg.getAllFiles(); // Force DB init
 
-        const configDir = join(process.cwd(), '.projectmind');
+        const configDir = join(projectRoot, '.projectmind');
         if (!existsSync(configDir)) {
           mkdirSync(configDir, { recursive: true });
         }
 
         // .mcp.json is the Claude Code/Cursor-compatible project config. Other
         // agents have dedicated layouts exposed by `pm mcp-init <agent>`.
-        const mcpPath = join(process.cwd(), '.mcp.json');
+        const mcpPath = join(projectRoot, '.mcp.json');
         if (!existsSync(mcpPath)) {
           const mcpConfig = {
             mcpServers: {
@@ -42,24 +43,24 @@ export function createInitCommand(): Command {
             },
           };
           writeFileSync(mcpPath, JSON.stringify(mcpConfig, null, 2) + '\n');
-          output.success('✓ .mcp.json written (universal MCP config — read by all agents)');
+          output.success('.mcp.json written (universal MCP config — read by all agents)');
         }
 
         // loadConfig() reads .projectmindrc.json from the project ROOT,
-        const configFile = join(process.cwd(), '.projectmindrc.json');
+        const configFile = join(projectRoot, '.projectmindrc.json');
         if (!existsSync(configFile)) {
           writeFileSync(configFile, JSON.stringify({ description: 'ProjectMind config' }, null, 2));
           output.kv('Config created', '.projectmindrc.json');
         }
 
-        const pmignoreFile = join(process.cwd(), '.pmignore');
+        const pmignoreFile = join(projectRoot, '.pmignore');
         if (!existsSync(pmignoreFile)) {
           writeFileSync(pmignoreFile, DEFAULT_PMIGNORE_CONTENT);
           output.kv('Ignore file created', '.pmignore');
         }
 
         // .gitignore entries for project-specific configs
-        const gitignorePath = join(process.cwd(), '.gitignore');
+        const gitignorePath = join(projectRoot, '.gitignore');
         addToGitignore(gitignorePath, '.projectmindrc.json');
         addToGitignore(gitignorePath, '.projectmind/');
 

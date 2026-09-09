@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { withService, asyncHandler, output, logger } from '@/cli/utils/shared.js';
 import { Command } from 'commander';
 import { writeFileSync } from 'node:fs';
@@ -30,14 +31,39 @@ export function createTestQualityCommand(): Command {
           format: string;
           output: string;
         }) => {
-          await withService(['scale', 'coherence'], async (_ctx, services) => {
+          await withService(['scale'], async (ctx, services) => {
             const scale = services.scale!;
-            services.coherence!;
 
-            output.section('Test Quality Analysis');
-            output.kv('Mutation testing', opts.mutation ? 'enabled' : 'disabled');
-            output.kv('Framework filter', opts.framework);
-            output.kv('Coverage target', `${opts.coverageTarget}%`);
+            if (!['all', 'vitest', 'jest', 'playwright', 'cypress'].includes(opts.framework)) {
+              throw new Error(`--framework is invalid: ${opts.framework}`);
+            }
+            if (!['text', 'json', 'html'].includes(opts.format)) {
+              throw new Error(`--format must be text, json, or html: ${opts.format}`);
+            }
+            const coverageTarget = Number.parseInt(opts.coverageTarget, 10);
+            const slowThreshold = Number.parseInt(opts.slowThreshold, 10);
+            const flakyThreshold = Number.parseInt(opts.flakyThreshold, 10);
+            if (!Number.isInteger(coverageTarget) || coverageTarget < 0 || coverageTarget > 100) {
+              throw new Error(
+                `--coverage-target must be between 0 and 100: ${opts.coverageTarget}`,
+              );
+            }
+            if (!Number.isInteger(slowThreshold) || slowThreshold < 0) {
+              throw new Error(
+                `--slow-threshold must be a non-negative integer: ${opts.slowThreshold}`,
+              );
+            }
+            if (!Number.isInteger(flakyThreshold) || flakyThreshold < 1) {
+              throw new Error(
+                `--flaky-threshold must be a positive integer: ${opts.flakyThreshold}`,
+              );
+            }
+            if (opts.format === 'text') {
+              output.section('Test Quality Analysis');
+              output.kv('Mutation testing', opts.mutation ? 'enabled' : 'disabled');
+              output.kv('Framework filter', opts.framework);
+              output.kv('Coverage target', `${coverageTarget}%`);
+            }
 
             const report = scale.getScaleReport();
             const allFiles = report.modules.flatMap((m) => m.files || []);
@@ -51,11 +77,12 @@ export function createTestQualityCommand(): Command {
             );
 
             if (testFiles.length === 0) {
-              output.warn('No test files found. Run "projectmind testgen" to generate tests.');
+              if (opts.format === 'json') output.json({ testFiles: [], report: null });
+              else output.warn('No test files found. Run "projectmind testgen" to generate tests.');
               return;
             }
 
-            output.kv('Test files found', testFiles.length);
+            if (opts.format === 'text') output.kv('Test files found', testFiles.length);
 
             // Analyze each test file
             const testAnalysis: TestFile[] = [];
@@ -64,7 +91,12 @@ export function createTestQualityCommand(): Command {
             for (const file of testFiles.slice(0, 50)) {
               try {
                 const content = readFileSync(file.path, 'utf-8');
-                const analysis = analyzeTestFile(content, file.relativePath, opts.framework);
+                const analysis = analyzeTestFile(
+                  content,
+                  file.relativePath,
+                  opts.framework,
+                  ctx.config.projectRoot,
+                );
                 testAnalysis.push(analysis);
               } catch (e) {
                 logger.warn(
@@ -76,9 +108,10 @@ export function createTestQualityCommand(): Command {
             // Generate report
             const qualityReport = generateQualityReport(
               testAnalysis,
-              parseInt(opts.coverageTarget, 10),
-              parseInt(opts.slowThreshold, 10),
-              parseInt(opts.flakyThreshold, 10),
+              coverageTarget,
+              slowThreshold,
+              flakyThreshold,
+              ctx.config.projectRoot,
             );
 
             // Coverage trend: persist this run and diff against the previous one.
@@ -105,19 +138,25 @@ export function createTestQualityCommand(): Command {
                 (
                   qualityReport as { coverageTrend?: { previous: number; delta: number } }
                 ).coverageTrend = { previous: prev.avg_coverage, delta };
-                output.section('Coverage Trend');
-                output.kv('Previous run', `${prev.avg_coverage.toFixed(1)}%`);
-                output.kv(
-                  'Delta',
-                  `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}% ${delta < 0 ? '📉 regression' : delta > 0 ? '📈 improvement' : '➖ flat'}`,
-                );
-                if (delta < -2) {
-                  output.warn(
-                    `Coverage regressed by ${Math.abs(delta).toFixed(1)}% since the last recorded run`,
+                if (opts.format === 'text') {
+                  output.section('Coverage Trend');
+                  output.kv('Previous run', `${prev.avg_coverage.toFixed(1)}%`);
+                  output.kv(
+                    'Delta',
+                    `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}% ${delta < 0 ? '📉 regression' : delta > 0 ? '📈 improvement' : '➖ flat'}`,
                   );
+                  if (delta < -2) {
+                    output.warn(
+                      `Coverage regressed by ${Math.abs(delta).toFixed(1)}% since the last recorded run`,
+                    );
+                  }
                 }
               }
-            } catch {
+            } catch (error) {
+              reportSuppressedError(
+                error,
+                'Intentional fallback src/cli/commands/test-quality.ts:154',
+              );
               // Snapshot persistence is best-effort; never block the report.
             }
 

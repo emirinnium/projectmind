@@ -34,6 +34,9 @@ export function createApiSurfaceCommand(): Command {
           await withService(['scale'], async (_ctx, services) => {
             const scale = services.scale!;
             const config = loadConfig();
+            if (!['text', 'json', 'markdown'].includes(opts.format)) {
+              throw new Error(`--format must be text, json, or markdown: ${opts.format}`);
+            }
 
             output.section('API Surface Analysis');
             output.kv('Base ref', opts.base);

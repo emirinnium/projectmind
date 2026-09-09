@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../../utils/errors.js';
 import { dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import type { SQLOutputValue } from 'node:sqlite';
@@ -59,7 +60,11 @@ export class ScaleReporter {
       try {
         const content = readFileSync(join(projectRoot, file.relativePath), 'utf8');
         totalLines += content.length === 0 ? 0 : content.split(/\r\n|\r|\n/).length;
-      } catch {
+      } catch (error) {
+        reportSuppressedError(
+          error,
+          'Intentional fallback src/core/scale/reporting/reporter.ts:62',
+        );
         // A deleted/unreadable file contributes no fabricated line estimate.
       }
     }

@@ -7,8 +7,12 @@ export function createOwnershipCommand(): Command {
     .option('--since <days>', 'Days to look back', '30')
     .action(
       asyncHandler(async (opts: { since: string }) => {
+        const sinceDays = Number.parseInt(opts.since, 10);
+        if (!Number.isSafeInteger(sinceDays) || sinceDays < 0 || sinceDays > 3650) {
+          throw new Error(`--since must be an integer between 0 and 3650: ${opts.since}`);
+        }
         await withService(['scale'], async (_ctx, services) => {
-          const cutoff = new Date(Date.now() - Number(opts.since) * 24 * 60 * 60 * 1000).getTime();
+          const cutoff = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).getTime();
           const scale = services.scale!;
 
           output.section('Agent Ownership');

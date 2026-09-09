@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../../utils/errors.js';
 import type { SQLOutputValue } from 'node:sqlite';
 import type { KgContext } from './context.js';
 import { getVecIndex } from '../../../core/embeddings/vector-index.js';
@@ -8,7 +9,7 @@ export function ensureDefaultProject(ctx: KgContext): void {
   if (!existing) {
     ctx.db
       .prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)')
-      .run(1, 'default', process.cwd());
+      .run(1, 'default', ctx.projectRoot ?? process.cwd());
   }
 }
 
@@ -27,7 +28,8 @@ export function loadCurrentProjectId(ctx: KgContext): number {
         if (exists) return parsed;
       }
     }
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional fallback src/storage/kg/helpers/projects.ts:30');
     // settings table may not exist yet in older databases
   }
   return ctx.currentProjectId;
@@ -40,7 +42,8 @@ export function persistCurrentProjectId(ctx: KgContext): void {
         "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('current_project_id', ?, CURRENT_TIMESTAMP)",
       )
       .run(String(ctx.currentProjectId));
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional fallback src/storage/kg/helpers/projects.ts:43');
     // ignore persistence errors
   }
 }

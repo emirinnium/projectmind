@@ -144,20 +144,6 @@ function buildMermaid(report: ScaleReport): string {
     });
   }
 
-  // Build adjacency map for circular dependency detection
-  const adjacency = new Map<string, string[]>();
-  for (const mod of report.modules) {
-    const modId = mermaidId('m', mod.path);
-    const fileDeps: string[] = [];
-    for (const file of mod.files ?? []) {
-      const fileId = mermaidId('f', file.path);
-      fileDeps.push(fileId);
-    }
-    adjacency.set(modId, fileDeps);
-  }
-
-  const circularDeps = detectCircularDeps(adjacency);
-
   const lines = ['graph TD'];
   for (const mod of labeledModules) {
     const id = mermaidId('m', mod.path);
@@ -170,16 +156,6 @@ function buildMermaid(report: ScaleReport): string {
     const modId = mermaidId('m', mod.path);
     for (const file of mod.files ?? []) {
       lines.push(`  ${mermaidId('f', file.path)} --> ${modId}`);
-    }
-  }
-
-  // Report circular dependencies at the end as a sub-graph note
-  if (circularDeps.length > 0) {
-    lines.push('');
-    lines.push('%% Circular dependencies detected:');
-    for (const dep of circularDeps) {
-      const cycleLabel = dep.cycle.join(' → ') + ' → ' + dep.cycle[0];
-      lines.push(`  %% ${dep.severity} severity cycle: ${cycleLabel}`);
     }
   }
 
@@ -234,7 +210,12 @@ export function exportEnhancedArchitectureDiagramForTool(
   const format = args.format ?? 'mermaid';
   const filtered = filterReport(report, args.module, args.depth);
 
-  const content = buildMermaid(filtered);
+  const rendered = exportArchitectureDiagramForTool(deps, {
+    format,
+    module: args.module,
+    depth: args.depth,
+  });
+  const content = rendered.content;
 
   // Compute layer distribution from filtered modules
   const layerDistribution: Record<LayerName, number> = {
@@ -250,16 +231,31 @@ export function exportEnhancedArchitectureDiagramForTool(
     layerDistribution[layer]++;
   }
 
-  // Detect circular deps on the full report's adjacency for accuracy
+  // Detect circular dependencies from the live resolved import graph. The
+  // The module graph is backed by knowledge-graph import edges, so reported
+  // cycles represent actual project relationships rather than placeholders.
   const adjacency = new Map<string, string[]>();
+  const moduleByFile = new Map<string, string>();
   for (const mod of report.modules) {
-    const modId = mermaidId('m', mod.path);
-    const fileDeps: string[] = [];
+    adjacency.set(mod.path, []);
     for (const file of mod.files ?? []) {
-      const fileId = mermaidId('f', file.path);
-      fileDeps.push(fileId);
+      moduleByFile.set(file.relativePath.replace(/\\/g, '/'), mod.path);
     }
-    adjacency.set(modId, fileDeps);
+  }
+  for (const mod of report.modules) {
+    for (const file of mod.files ?? []) {
+      for (const imp of deps.kg.getImports(file.id)) {
+        const target = deps.kg.getFileByImport(imp.source, file.relativePath);
+        const targetModule = target
+          ? moduleByFile.get(target.relativePath.replace(/\\/g, '/'))
+          : undefined;
+        if (targetModule && targetModule !== mod.path) {
+          const edges = adjacency.get(mod.path) ?? [];
+          if (!edges.includes(targetModule)) edges.push(targetModule);
+          adjacency.set(mod.path, edges);
+        }
+      }
+    }
   }
   const circularDeps = detectCircularDeps(adjacency);
 
@@ -374,12 +370,15 @@ export function registerExportArchitectureDiagramTool(
             notes.push(`[${severityLabel} dep] ${cycleStr}`);
           }
         }
-        const responseText = [
-          result.content,
-          ...(notes.length > 0 ? [`%% Circular dependencies:`, ...notes] : []),
-        ].join('\n');
+        const responseContent = [{ type: 'text' as const, text: result.content }];
+        if (notes.length > 0) {
+          responseContent.push({
+            type: 'text' as const,
+            text: JSON.stringify({ circularDependencies: result.circularDeps }, null, 2),
+          });
+        }
         return {
-          content: [{ type: 'text', text: responseText }],
+          content: responseContent,
         };
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);

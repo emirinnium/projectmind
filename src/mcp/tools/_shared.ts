@@ -75,6 +75,11 @@ const PATH_VALUE_FLAGS = new Set([
   '--path',
   '--root',
   '--dir',
+  '--target',
+  '--output-dir',
+  '--model-path',
+  '--tsconfig',
+  '--policy',
 ]);
 
 /** Validate CLI file arguments while leaving `--root` as the explicit scope. */

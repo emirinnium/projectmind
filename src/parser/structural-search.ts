@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../utils/errors.js';
 import ts from 'typescript';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { logger } from '../utils/logger.js';
@@ -329,7 +330,8 @@ export class StructuralSearcher {
           return decl.initializer;
         }
       }
-    } catch {
+    } catch (error) {
+      reportSuppressedError(error, 'Intentional fallback src/parser/structural-search.ts:332');
       // Not a valid expression.
     }
     return undefined;
@@ -351,7 +353,8 @@ export class StructuralSearcher {
       if (sf.statements.length > 0) {
         return sf.statements[0];
       }
-    } catch {
+    } catch (error) {
+      reportSuppressedError(error, 'Intentional fallback src/parser/structural-search.ts:354');
       // Not a valid statement.
     }
     return undefined;

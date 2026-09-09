@@ -1,17 +1,24 @@
 import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { CloneDetector } from '@/core/dedup/clone-detector.js';
+import { isTestPath } from '@/utils/test-detection.js';
 
 export function createDedupCommand(): Command {
   return new Command('dedup')
-    .description('Find duplicate code (debt-based redundancy or AST clone detection)')
+    .description('Find duplicate code with AST-based Type-2 clone detection')
     .option('-t, --type <type>', 'Legacy mode: filter debt items by type (e.g. redundancy)')
-    .option('-m, --mode <mode>', 'Detection mode: debt (default) | ast', 'debt')
+    .option('-m, --mode <mode>', 'Detection mode: ast (default) | debt', 'ast')
     .option('--min-lines <n>', 'AST mode: minimum function body lines', '6')
     .option('--limit <n>', 'AST mode: max groups to report', '20')
     .action(
       asyncHandler(
         async (opts: { type?: string; mode?: string; minLines?: string; limit?: string }) => {
+          if (opts.mode !== 'ast' && opts.mode !== 'debt') {
+            throw new Error(`--mode must be ast or debt: ${opts.mode}`);
+          }
+          if (opts.type && opts.type !== 'redundancy') {
+            throw new Error(`--type currently supports only redundancy: ${opts.type}`);
+          }
           if (opts.mode === 'ast') {
             await runAstDedup(opts);
             return;
@@ -23,22 +30,29 @@ export function createDedupCommand(): Command {
 }
 
 async function runAstDedup(opts: { minLines?: string; limit?: string }): Promise<void> {
-  const minLines = Math.max(3, parseInt(opts.minLines ?? '6', 10) || 6);
-  const limit = Math.max(1, parseInt(opts.limit ?? '20', 10) || 20);
+  const minLines = Number.parseInt(opts.minLines ?? '6', 10);
+  const limit = Number.parseInt(opts.limit ?? '20', 10);
+  if (!Number.isSafeInteger(minLines) || minLines < 3 || minLines > 10_000) {
+    throw new Error(`--min-lines must be an integer between 3 and 10000: ${opts.minLines}`);
+  }
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+    throw new Error(`--limit must be an integer between 1 and 1000: ${opts.limit}`);
+  }
 
   await withService([], async (ctx) => {
     output.section('Clone Detection (AST, Type-2)');
     const files = ctx.kg
       .getAllFiles()
       .map((f) => f.relativePath || f.path)
-      .filter((p) => /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(p));
+      .filter((p) => /\.(ts|tsx|js|jsx|mjs|cjs)$/i.test(p))
+      .filter((p) => !isTestPath(p));
 
     if (files.length === 0) {
       output.warn('No indexed JS/TS files. Run scan_project first.');
       return;
     }
 
-    const detector = new CloneDetector(process.cwd());
+    const detector = new CloneDetector(ctx.config.projectRoot);
     const result = detector.detect(files, { minLines, maxGroups: limit });
 
     output.kv(
@@ -87,6 +101,6 @@ async function runDebtDedup(typeFilter?: string): Promise<void> {
       output.kv(`${i + 1}. ${item.filePath || 'project-wide'}`, item.description);
       if (item.suggestion) output.kv('Suggestion', item.suggestion);
     }
-    output.info('Tip: use --mode ast for rename-tolerant function-level clone detection.');
+    output.info('Legacy debt mode now reports only AST-confirmed Type-2 clone evidence.');
   });
 }

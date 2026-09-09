@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
@@ -153,7 +154,8 @@ export function runPackageOutdated(
         if (entry && typeof entry === 'object') result.set(name, entry);
       }
     }
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional fallback src/cli/commands/deps-fresh-utils.ts:156');
     // offline / no package manager: callers fall back to current-as-latest
   }
   return result;

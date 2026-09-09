@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { Command } from 'commander';
 import { asyncHandler, output } from '@/cli/utils/shared.js';
 import { loadConfig } from '@/cli/utils/shared.js';
@@ -86,7 +87,8 @@ export function createLicenseCommand(): Command {
         try {
           projectName =
             (JSON.parse(readFileSync(pkgPath, 'utf-8')) as { name?: string }).name ?? 'unknown';
-        } catch {
+        } catch (error) {
+          reportSuppressedError(error, 'Intentional fallback src/cli/commands/license.ts:89');
           // Non-fatal: report can proceed without project name.
         }
 

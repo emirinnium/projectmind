@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../src/utils/errors.js';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,7 +31,11 @@ describe('getApiAtRef — command-injection hardening (shell:false)', () => {
   afterAll(() => {
     try {
       rmSync(tmpDir, { recursive: true, force: true });
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional test fallback tests/unit/api-surface-utils.test.ts:33',
+      );
       /* ignore */
     }
   });
@@ -55,32 +60,35 @@ describe('getApiAtRef — command-injection hardening (shell:false)', () => {
     expect(await getApiAtRef('', nongit)).toEqual([]);
   });
 
-  it.skipIf(!hasGit)('reads files whose NAMES contain shell metacharacters without executing them', async () => {
-    const repo = join(tmpDir, 'repo');
-    mkdirSync(repo, { recursive: true });
-    git(['init', '-q'], repo);
-    git(['config', 'user.email', 'test@example.com'], repo);
-    git(['config', 'user.name', 'Test'], repo);
+  it.skipIf(!hasGit)(
+    'reads files whose NAMES contain shell metacharacters without executing them',
+    async () => {
+      const repo = join(tmpDir, 'repo');
+      mkdirSync(repo, { recursive: true });
+      git(['init', '-q'], repo);
+      git(['config', 'user.email', 'test@example.com'], repo);
+      git(['config', 'user.name', 'Test'], repo);
 
-    // Platform-specific injection payload that empirically executed when the
-    // repo-derived filename was interpolated into `git show ${ref}:${rel}`
-    // under shell:true. The marker file only exists if the command ran.
-    const isWin = process.platform === 'win32';
-    const markerName = isWin ? 'PM-PWNED-marker.txt.ts' : 'PM-PWNED-marker.ts';
-    const evilName = isWin ? `x&copy nul ${markerName}` : `x&touch ${markerName}`;
-    const marker = join(repo, markerName);
+      // Platform-specific injection payload that empirically executed when the
+      // repo-derived filename was interpolated into `git show ${ref}:${rel}`
+      // under shell:true. The marker file only exists if the command ran.
+      const isWin = process.platform === 'win32';
+      const markerName = isWin ? 'PM-PWNED-marker.txt.ts' : 'PM-PWNED-marker.ts';
+      const evilName = isWin ? `x&copy nul ${markerName}` : `x&touch ${markerName}`;
+      const marker = join(repo, markerName);
 
-    writeFileSync(join(repo, evilName), 'export function evil(): number { return 1; }\n');
-    writeFileSync(join(repo, 'clean.ts'), 'export function clean(): number { return 1; }\n');
-    git(['add', '-A'], repo);
-    git(['-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'init'], repo);
+      writeFileSync(join(repo, evilName), 'export function evil(): number { return 1; }\n');
+      writeFileSync(join(repo, 'clean.ts'), 'export function clean(): number { return 1; }\n');
+      git(['add', '-A'], repo);
+      git(['-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'init'], repo);
 
-    const symbols = await getApiAtRef('HEAD', repo);
+      const symbols = await getApiAtRef('HEAD', repo);
 
-    // Both files are read through git as DATA — no shell ever parses the name.
-    expect(symbols.some((s) => s.name === 'evil')).toBe(true);
-    expect(symbols.some((s) => s.name === 'clean')).toBe(true);
-    // And the injected command never ran.
-    expect(existsSync(marker)).toBe(false);
-  });
+      // Both files are read through git as DATA — no shell ever parses the name.
+      expect(symbols.some((s) => s.name === 'evil')).toBe(true);
+      expect(symbols.some((s) => s.name === 'clean')).toBe(true);
+      // And the injected command never ran.
+      expect(existsSync(marker)).toBe(false);
+    },
+  );
 });

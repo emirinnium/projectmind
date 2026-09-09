@@ -15,6 +15,8 @@ export class CachePersistence<K, V> {
   private cacheMap: Map<K, CacheEntry<V>> | null = null;
 
   constructor(options: CacheOptions<K, V>) {
+    const noopEvict = (_key: K, _value: V): void => undefined;
+    const noopError = (_error: Error): void => undefined;
     this.options = {
       maxSize: options.maxSize,
       ttlMs: options.ttlMs,
@@ -22,8 +24,8 @@ export class CachePersistence<K, V> {
       persistPath: options.persistPath ?? '.projectmind/cache.json',
       serialize: options.serialize ?? JSON.stringify,
       deserialize: options.deserialize ?? JSON.parse,
-      onEvict: options.onEvict ?? (() => {}),
-      onError: options.onError ?? (() => {}),
+      onEvict: options.onEvict ?? noopEvict,
+      onError: options.onError ?? noopError,
     };
 
     if (this.options.persistent) {

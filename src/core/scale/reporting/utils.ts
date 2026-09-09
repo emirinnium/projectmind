@@ -52,6 +52,28 @@ export function dominantNaming(camel: number, snake: number, pascal: number): st
   return entries[0][1] >= total * 0.6 ? entries[0][0] : 'mixed';
 }
 
+function classifyTestPattern(describeHits: number, itHits: number, testHits: number): string {
+  const total = describeHits + itHits + testHits;
+  if (total === 0) return 'none';
+  if (describeHits > 0 && itHits > 0) return 'bdd';
+  if (testHits > 0 || itHits > 0) return 'unit';
+  return 'mixed';
+}
+
+function favoriteAbstractions(
+  interfaceHits: number,
+  typeAliasHits: number,
+  genericHits: number,
+  classHits: number,
+): string[] {
+  const abstractions: string[] = [];
+  if (interfaceHits > 0) abstractions.push('interface');
+  if (typeAliasHits > 0) abstractions.push('type-alias');
+  if (genericHits > 0) abstractions.push('generic');
+  if (classHits > 0) abstractions.push('class');
+  return abstractions.length > 0 ? abstractions : ['none'];
+}
+
 /**
  * Derive a coding-style fingerprint from the real content of files an agent
  * touched. All metrics are computed from source text; when nothing is
@@ -74,6 +96,13 @@ export function computeFingerprint(
   let camel = 0;
   let snake = 0;
   let pascal = 0;
+  let describeHits = 0;
+  let itHits = 0;
+  let testHits = 0;
+  let interfaceHits = 0;
+  let typeAliasHits = 0;
+  let genericHits = 0;
+  let classHits = 0;
 
   let read = 0;
   const FINGERPRINT_MAX_FILES = 30;
@@ -99,6 +128,13 @@ export function computeFingerprint(
     dotCatch += countMatches(content, /\.catch\s*\(/g);
     throws += countMatches(content, /\bthrow\b/g);
     resultObjects += countMatches(content, /\{\s*(?:ok|err)\s*[:,]/g);
+    describeHits += countMatches(content, /\bdescribe\s*\(/g);
+    itHits += countMatches(content, /\bit\s*\(/g);
+    testHits += countMatches(content, /\btest\s*\(/g);
+    interfaceHits += countMatches(content, /\binterface\s+[A-Za-z_$][\w$]*/g);
+    typeAliasHits += countMatches(content, /\btype\s+[A-Za-z_$][\w$]*\s*=/g);
+    genericHits += countMatches(content, /\b(?:function|class)\s+[A-Za-z_$][\w$]*\s*<[^>]+>/g);
+    classHits += countMatches(content, /\bclass\s+[A-Za-z_$][\w$]*/g);
 
     for (const m of content.matchAll(/(?:const|let|var|function|class)\s+([A-Za-z_$][\w$]*)/g)) {
       const name = m[1];
@@ -128,7 +164,12 @@ export function computeFingerprint(
     typeStrictness: Math.min(1, round2(assertionCount / (totalLines / 10))),
     errorHandlingStyle: classifyErrorHandling(tryBlocks, dotCatch, throws, resultObjects),
     namingConvention: dominantNaming(camel, snake, pascal),
-    testPattern: 'none',
-    favoriteAbstractions: ['none'],
+    testPattern: classifyTestPattern(describeHits, itHits, testHits),
+    favoriteAbstractions: favoriteAbstractions(
+      interfaceHits,
+      typeAliasHits,
+      genericHits,
+      classHits,
+    ),
   };
 }

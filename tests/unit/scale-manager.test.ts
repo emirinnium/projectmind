@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { initDatabase, closeDatabase } from '../../src/storage/database.js';
 import { ScaleManager } from '../../src/core/scale/manager.js';
+import { computeFingerprint } from '../../src/core/scale/reporting/utils.js';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 describe('ScaleManager', () => {
   let manager: ScaleManager;
@@ -27,8 +31,9 @@ describe('ScaleManager', () => {
 
     it('returns report with files after adding data', () => {
       const db = manager['scanner']['db'];
-      db.prepare('INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(1, '/test/src/index.ts', 'src/index.ts', 'typescript', 1024, 'hash1');
+      db.prepare(
+        'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash) VALUES (?, ?, ?, ?, ?, ?)',
+      ).run(1, '/test/src/index.ts', 'src/index.ts', 'typescript', 1024, 'hash1');
 
       const report = manager.getScaleReport();
       expect(report.totalFiles).toBeGreaterThanOrEqual(0);
@@ -54,6 +59,25 @@ describe('ScaleManager', () => {
       const profiles = manager.getAgentProfiles();
       expect(profiles).toBeDefined();
       expect(profiles).toHaveLength(0);
+    });
+  });
+
+  describe('measured fingerprints', () => {
+    it('reports test patterns and abstractions from touched source content', () => {
+      const root = mkdtempSync(join(tmpdir(), 'pm-scale-fingerprint-'));
+      try {
+        writeFileSync(
+          join(root, 'agent.ts'),
+          'interface User { id: string; }\ntype UserId = string;\nclass UserStore<T> {}\ndescribe("users", () => { it("loads", () => {}); });',
+        );
+        const fingerprint = computeFingerprint(['agent.ts'], root);
+        expect(fingerprint.testPattern).toBe('bdd');
+        expect(fingerprint.favoriteAbstractions).toEqual(
+          expect.arrayContaining(['interface', 'type-alias', 'generic', 'class']),
+        );
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
     });
   });
 

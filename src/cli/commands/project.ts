@@ -6,6 +6,10 @@ export function createProjectCommand(): Command {
     'Multi-project management: create, list, switch projects',
   );
 
+  projectCmd.action(() => {
+    projectCmd.outputHelp();
+  });
+
   projectCmd
     .command('list')
     .description('List all projects')
@@ -50,7 +54,10 @@ export function createProjectCommand(): Command {
         await withService(['scale'], async (ctx, services) => {
           const kg = ctx.kg;
           const scale = services.scale!;
-          const projectId = parseInt(id, 10);
+          const projectId = Number.parseInt(id, 10);
+          if (!Number.isSafeInteger(projectId) || projectId <= 0) {
+            throw new Error(`Project ID must be a positive integer: ${id}`);
+          }
           const result = kg.switchProject(projectId);
 
           if (!result.success) {
@@ -111,7 +118,10 @@ export function createProjectCommand(): Command {
       asyncHandler(async (id: string) => {
         await withService(['scale'], async (ctx) => {
           const kg = ctx.kg;
-          const projectId = parseInt(id, 10);
+          const projectId = Number.parseInt(id, 10);
+          if (!Number.isSafeInteger(projectId) || projectId <= 0) {
+            throw new Error(`Project ID must be a positive integer: ${id}`);
+          }
 
           if (projectId === 1) {
             output.error('Cannot delete the default project');

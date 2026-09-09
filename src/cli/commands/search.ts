@@ -2,6 +2,9 @@ import { Command } from 'commander';
 import { withService, asyncHandler, output, logger } from '@/cli/utils/shared.js';
 import { readFileSync } from 'node:fs';
 import { IntentEngine, createKgGraphAdapter } from '../../core/search/intent-engine.js';
+import { parseFile } from '@/parser/ast-parser.js';
+import { initializeConfiguredEmbeddingProvider } from '@/parser/embeddings.js';
+import { resolve } from 'node:path';
 
 export function createSearchCommand(): Command {
   return new Command('search')
@@ -13,7 +16,13 @@ export function createSearchCommand(): Command {
       asyncHandler(async (query: string, opts: { type: string; limit: string }) => {
         await withService(['scale'], async (ctx, services) => {
           const scale = services.scale!;
-          const limit = parseInt(opts.limit, 10);
+          const limit = Number.parseInt(opts.limit, 10);
+          if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+            throw new Error(`--limit must be an integer between 1 and 1000: ${opts.limit}`);
+          }
+          if (!['function', 'class', 'interface', 'all'].includes(opts.type)) {
+            throw new Error(`--type must be function, class, interface, or all: ${opts.type}`);
+          }
 
           output.section(`Search: "${query}"`);
 
@@ -21,19 +30,23 @@ export function createSearchCommand(): Command {
           // failure or empty result set falls back to substring search below.
           let intentHandled = false;
           try {
+            await initializeConfiguredEmbeddingProvider();
             const engine = new IntentEngine({ db: ctx.db, projectRoot: ctx.config.projectRoot });
             const results = await engine.search(
               { naturalLanguage: query },
               createKgGraphAdapter(ctx.kg),
               limit,
             );
-            if (results.length > 0) {
+            const filteredResults = results.filter((result) =>
+              matchesRequestedType(result.filePath, opts.type, ctx.config.projectRoot),
+            );
+            if (filteredResults.length > 0) {
               intentHandled = true;
-              output.section(`Results (${results.length}) — intent-ranked`);
-              for (const r of results) {
+              output.section(`Results (${filteredResults.length}) — intent-ranked`);
+              for (const r of filteredResults) {
                 output.kv(
                   `  ${r.rank}. ${r.filePath}`,
-                  `score: ${r.score.total.toFixed(2)} (${r.source ?? 'hybrid'})`,
+                  `score: ${r.score.total.toFixed(2)} (${r.source ?? 'hybrid'}; ${r.semanticEvidence ?? 'unclassified'})`,
                 );
                 const firstLine = (r.snippet ?? '').split(/\r?\n/)[0]?.trim();
                 if (firstLine) output.info(`     ${firstLine.substring(0, 100)}`);
@@ -54,6 +67,7 @@ export function createSearchCommand(): Command {
           const matches: Array<{ file: string; line: number; content: string }> = [];
 
           for (const file of files) {
+            if (!matchesRequestedType(file, opts.type, ctx.config.projectRoot)) continue;
             try {
               const content = readFileSync(file, 'utf-8');
               const lines = content.split(/\r?\n/);
@@ -81,4 +95,17 @@ export function createSearchCommand(): Command {
         });
       }),
     );
+}
+
+function matchesRequestedType(filePath: string, type: string, projectRoot: string): boolean {
+  if (type === 'all') return true;
+  try {
+    const structure = parseFile(resolve(projectRoot, filePath));
+    if (!structure) return false;
+    if (type === 'function') return structure.functions.length > 0;
+    if (type === 'class') return structure.classes.length > 0;
+    return /\binterface\s+[$A-Z_a-z][$\w]*/.test(structure.sourceText ?? '');
+  } catch {
+    return false;
+  }
 }

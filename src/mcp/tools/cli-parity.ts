@@ -52,6 +52,7 @@ export async function registerCliParityTools(
               .join(' | ')}`
           : '',
         'Call with options:{"flag":value} and args:[...].',
+        'Set options.help=true to inspect the command without executing its action.',
       ]
         .filter(Boolean)
         .join(' — ');
@@ -61,7 +62,7 @@ export async function registerCliParityTools(
         {
           title: `PM: ${path.join(' ')}`,
           description,
-          annotations: parityAnnotations(path),
+          annotations: parityAnnotations(path, longFlags),
           inputSchema: {
             options: z
               .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
@@ -79,9 +80,15 @@ export async function registerCliParityTools(
         },
         async (a: { options?: Record<string, string | number | boolean>; args?: string[] }) => {
           const argv = [...path];
+          // Commander does not expose its built-in --help option through
+          // cmd.options. Treat it as a first-class parity pseudo-option so
+          // clients can safely inspect commands with required positionals or
+          // long-running actions without accidentally executing them.
+          if (a.options?.help === true) argv.push('--help');
           for (const opt of cmd.options) {
             const key = opt.long?.slice(2);
             if (!key) continue;
+            if (key === 'help') continue;
             const v = a.options?.[key];
             if (v === undefined || v === false) continue;
             argv.push(opt.long!);

@@ -7,6 +7,10 @@ import { join } from '@/cli/utils/shared.js';
 export function createMigrateCommand(): Command {
   const migrateCmd = new Command('migrate').description('Migration helpers for common upgrades');
 
+  migrateCmd.action(() => {
+    migrateCmd.outputHelp();
+  });
+
   migrateCmd
     .command('check-deps')
     .description('Check for outdated dependencies')

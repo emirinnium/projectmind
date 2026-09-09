@@ -1,7 +1,9 @@
 import { Command } from 'commander';
-import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
+import { withService, asyncHandler, output, loadConfig } from '@/cli/utils/shared.js';
 import { existsSync, readFileSync } from 'node:fs';
 import { z } from 'zod';
+import { confineToProject } from '@/mcp/tools/_shared.js';
+import { convertTraceContent, type TraceConversionFormat } from '@/core/trace/converter.js';
 
 const TraceCallSchema = z.object({
   fromFunctionName: z.string().min(1),
@@ -30,6 +32,10 @@ export function createTraceCommand(): Command {
     'Runtime call tracing: ingest test traces and dynamic call data into the knowledge graph',
   );
 
+  traceCmd.action(() => {
+    traceCmd.outputHelp();
+  });
+
   traceCmd
     .command('ingest <file>')
     .description('Ingest a trace JSON file into the knowledge graph')
@@ -39,15 +45,16 @@ export function createTraceCommand(): Command {
       asyncHandler(async (file: string, opts: { workloadId?: string; clear?: boolean }) => {
         await withService(['scale'], async (ctx) => {
           const kg = ctx.kg;
+          const tracePath = confineToProject(file, loadConfig().projectRoot);
           const workloadId = opts.workloadId || `trace-${Date.now()}`;
 
-          if (!existsSync(file)) {
-            throw new Error(`Trace file not found: ${file}`);
+          if (!existsSync(tracePath)) {
+            throw new Error(`Trace file not found: ${tracePath}`);
           }
 
           let raw: TraceInputFile | TraceRawEvent[] = [];
           try {
-            const content = readFileSync(file, 'utf-8');
+            const content = readFileSync(tracePath, 'utf-8');
             raw = JSON.parse(content) as TraceInputFile | TraceRawEvent[];
           } catch (e) {
             throw new Error(`Invalid trace file: ${e instanceof Error ? e.message : e}`);
@@ -99,100 +106,43 @@ export function createTraceCommand(): Command {
   traceCmd
     .command('convert <input>')
     .description('Normalize a trace-events file into ProjectMind ingest format')
-    .option('--format <fmt>', 'Input format: json|csv', 'json')
+    .option(
+      '--format <fmt>',
+      'Input format: json|csv|cgr|cpuprofile (Code-Graph-RAG JSONL or V8 profile)',
+      'json',
+    )
+    .option('-w, --workload-id <id>', 'Default workload identifier for records without one')
     .option('-o, --output <file>', 'Output file path')
     .action(
-      asyncHandler(async (input: string, opts: { format: string; output?: string }) => {
-        const { readFileSync, writeFileSync } = await import('node:fs');
-
-        interface NormalizedEvent {
-          fromFunctionName: string;
-          toFunctionName: string;
-          workloadId: string;
-          callCount: number;
-          staticMissed: boolean;
-        }
-        let normalized: NormalizedEvent[] = [];
-
-        if (opts.format === 'json') {
-          interface RawTraceEvent {
-            fromFunctionName?: string;
-            toFunctionName?: string;
-            workloadId?: string;
-            callCount?: number;
-            staticMissed?: boolean;
-          }
-          interface TraceFile {
-            events?: RawTraceEvent[];
-          }
-          const raw = JSON.parse(readFileSync(input, 'utf-8'));
-          const events: RawTraceEvent[] = Array.isArray(raw)
-            ? (raw as RawTraceEvent[])
-            : ((raw as TraceFile).events ?? []);
-          normalized = events
-            .filter(
-              (e) =>
-                e && typeof e.fromFunctionName === 'string' && typeof e.toFunctionName === 'string',
-            )
-            .map((e) => ({
-              fromFunctionName: String(e.fromFunctionName),
-              toFunctionName: String(e.toFunctionName),
-              workloadId: typeof e.workloadId === 'string' ? e.workloadId : 'converted',
-              callCount: typeof e.callCount === 'number' ? e.callCount : 1,
-              staticMissed: Boolean(e.staticMissed),
-            }));
-        } else if (opts.format === 'csv') {
-          // Real CSV edge-list reader:
-          // header: fromFunctionName,toFunctionName[,workloadId][,callCount][,staticMissed]
-          const text = readFileSync(input, 'utf-8').trim();
-          if (!text) throw new Error(`CSV input "${input}" is empty`);
-          const [rawHeader, ...rows] = text.split(/\r?\n/);
-          const header = rawHeader.split(',').map((h) => h.trim().toLowerCase());
-          const col = (name: string): number => header.indexOf(name.toLowerCase());
-          if (col('fromFunctionName') < 0 || col('toFunctionName') < 0) {
+      asyncHandler(
+        async (input: string, opts: { format: string; workloadId?: string; output?: string }) => {
+          const { writeFileSync } = await import('node:fs');
+          const root = loadConfig().projectRoot;
+          const inputPath = confineToProject(input, root);
+          const outputPath = opts.output ? confineToProject(opts.output, root) : undefined;
+          const supportedFormats: TraceConversionFormat[] = ['json', 'csv', 'cgr', 'cpuprofile'];
+          if (!supportedFormats.includes(opts.format as TraceConversionFormat)) {
             throw new Error(
-              'CSV must have at least "fromFunctionName" and "toFunctionName" columns',
+              `Unsupported trace input format: ${opts.format}. Use --format json, csv, cgr, or cpuprofile.`,
             );
           }
-          const callCol = col('callCount');
-          const workloadCol = col('workloadId');
-          const missedCol = col('staticMissed');
-          normalized = rows
-            .filter((line) => line.trim().length > 0)
-            .map((line) => {
-              const cells = line.split(',');
-              const callCountRaw = callCol >= 0 ? Number(cells[callCol]?.trim()) : NaN;
-              return {
-                fromFunctionName: cells[col('fromFunctionName')]?.trim() ?? '',
-                toFunctionName: cells[col('toFunctionName')]?.trim() ?? '',
-                workloadId:
-                  workloadCol >= 0 && cells[workloadCol]?.trim()
-                    ? cells[workloadCol].trim()
-                    : 'converted',
-                callCount:
-                  Number.isFinite(callCountRaw) && callCountRaw > 0 ? Math.floor(callCountRaw) : 1,
-                staticMissed:
-                  missedCol >= 0 ? /^(true|1|yes)$/i.test(cells[missedCol]?.trim() ?? '') : false,
-              };
-            })
-            .filter((e) => e.fromFunctionName.length > 0 && e.toFunctionName.length > 0);
-        } else {
-          throw new Error(
-            `Converter for '${opts.format}' is not implemented. Supported input formats: json, csv. ` +
-              'Use --format json or --format csv.',
-          );
-        }
 
-        const out = JSON.stringify(normalized, null, 2);
-        if (opts.output) {
-          writeFileSync(opts.output, out);
-          output.success(
-            `Converted ${normalized.length} events (${opts.format}) -> ${opts.output}`,
-          );
-        } else {
-          output.raw(out);
-        }
-      }),
+          const format = opts.format as TraceConversionFormat;
+          const content = readFileSync(inputPath, 'utf-8');
+          const result = convertTraceContent(content, format, opts.workloadId);
+          const out = JSON.stringify(result.events, null, 2);
+          if (outputPath) {
+            writeFileSync(outputPath, out);
+            output.success(`Converted ${result.events.length} events (${format}) -> ${outputPath}`);
+          } else {
+            output.raw(out);
+          }
+          if (result.skippedRecords > 0) {
+            output.warn(`Skipped ${result.skippedRecords} invalid or unresolvable trace records.`);
+          }
+          for (const warning of result.warnings) output.info(`Trace note: ${warning}`);
+        },
+      ),
     );
 
   traceCmd

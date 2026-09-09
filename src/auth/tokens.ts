@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../utils/errors.js';
 import { randomBytes, createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { getDatabase } from '../storage/database.js';
@@ -58,7 +59,8 @@ export class TokenService {
     } catch (error) {
       try {
         this.db.exec('ROLLBACK');
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/auth/tokens.ts:61');
         // ignore rollback failure — original error is the one to surface
       }
       throw error;

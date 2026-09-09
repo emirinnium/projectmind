@@ -1,9 +1,16 @@
 import { runWithRetry } from '../../database.js';
-import { resolve } from 'node:path';
+import { dirname } from 'node:path';
 import { FileInfo } from '../types.js';
 import type { KgContext } from './context.js';
 import type { SQLOutputValue } from 'node:sqlite';
-import { getFileByPath, getAllFiles, getImports, resolveImportSource } from './files.js';
+import type { DatabaseSync } from 'node:sqlite';
+import {
+  getFileById,
+  getFileByPath,
+  getAllFiles,
+  getImports,
+  resolveImportSource,
+} from './files.js';
 
 export function getDependents(ctx: KgContext, fileId: number): FileInfo[] {
   // Dependents are files whose imports RESOLVED to this file.
@@ -74,9 +81,13 @@ export function getImportsWithDetails(
   fileId: number,
 ): { source: string; kind: string; resolvedFile: FileInfo | null }[] {
   const imports = getImports(ctx, fileId);
+  const importingFile = getFileById(ctx, fileId);
+  const fromDir = importingFile
+    ? dirname(importingFile.relativePath).replace(/\\/g, '/')
+    : undefined;
   return imports.map((imp) => ({
     ...imp,
-    resolvedFile: resolveImportSource(ctx, imp.source),
+    resolvedFile: resolveImportSource(ctx, imp.source, fromDir),
   }));
 }
 
@@ -93,8 +104,12 @@ export function traceImports(
     visited.add(currentFileId);
 
     const fileImports = getImports(ctx, currentFileId);
+    const importingFile = getFileById(ctx, currentFileId);
+    const fromDir = importingFile
+      ? dirname(importingFile.relativePath).replace(/\\/g, '/')
+      : undefined;
     for (const imp of fileImports) {
-      const resolved = resolveImportSource(ctx, imp.source);
+      const resolved = resolveImportSource(ctx, imp.source, fromDir);
       if (resolved && !visited.has(resolved.id)) {
         const newPath = [...path, imp.source];
         results.push({ file: resolved, depth: depth + 1, path: newPath });
@@ -126,11 +141,21 @@ function cyclesEqual(a: string[], b: string[]): boolean {
 // Full-project cycle detection is expensive (DFS over every file).
 // Hot callers like get_context invoke it repeatedly, so results are
 // memoized briefly; scans naturally outlive this TTL.
-let _cycleCache: { cycles: string[][]; computedAt: number } | null = null;
+let _cycleCache: {
+  db: DatabaseSync;
+  projectId: number;
+  cycles: string[][];
+  computedAt: number;
+} | null = null;
 const CYCLE_CACHE_TTL_MS = 60_000;
 
 export function findCircularDependencies(ctx: KgContext): string[][] {
-  if (_cycleCache && Date.now() - _cycleCache.computedAt < CYCLE_CACHE_TTL_MS) {
+  if (
+    _cycleCache &&
+    _cycleCache.db === ctx.db &&
+    _cycleCache.projectId === ctx.currentProjectId &&
+    Date.now() - _cycleCache.computedAt < CYCLE_CACHE_TTL_MS
+  ) {
     return _cycleCache.cycles;
   }
   const allFiles = getAllFiles(ctx);
@@ -159,8 +184,12 @@ export function findCircularDependencies(ctx: KgContext): string[][] {
     path.push(fileId);
 
     const fileImports = getImports(ctx, fileId);
+    const importingFile = fileMap.get(fileId);
+    const fromDir = importingFile
+      ? dirname(importingFile.relativePath).replace(/\\/g, '/')
+      : undefined;
     for (const imp of fileImports) {
-      const resolved = resolveImportSource(ctx, imp.source);
+      const resolved = resolveImportSource(ctx, imp.source, fromDir);
       if (resolved) {
         dfs(resolved.id, path);
       }
@@ -203,8 +232,18 @@ export function findCircularDependencies(ctx: KgContext): string[][] {
     },
   );
 
-  _cycleCache = { cycles: uniqueCycles, computedAt: Date.now() };
+  _cycleCache = {
+    db: ctx.db,
+    projectId: ctx.currentProjectId,
+    cycles: uniqueCycles,
+    computedAt: Date.now(),
+  };
   return uniqueCycles;
+}
+
+/** Invalidate cached cycles after a file's import relations change. */
+export function invalidateCircularDependencyCache(): void {
+  _cycleCache = null;
 }
 
 export function ingestDynamicCalls(
@@ -407,8 +446,9 @@ export function getDependencyGraph(
 
   for (const file of moduleFiles) {
     const fileImports = getImports(ctx, file.id);
+    const fromDir = dirname(file.relativePath).replace(/\\/g, '/');
     for (const imp of fileImports) {
-      const resolved = resolveImportSource(ctx, imp.source);
+      const resolved = resolveImportSource(ctx, imp.source, fromDir);
       if (resolved && moduleFileIds.has(resolved.id)) {
         edges.push({ from: file.relativePath, to: resolved.relativePath, kind: imp.kind });
       }
@@ -452,9 +492,8 @@ export function getFileByImport(
   if (fromFilePath) {
     const fromFile = getFileByPath(ctx, fromFilePath);
     if (fromFile) {
-      const fromDir = fromFile.relativePath.substring(0, fromFile.relativePath.lastIndexOf('/'));
-      const resolvedPath = resolve(fromDir, importPath).replace(/\\/g, '/');
-      file = resolveImportSource(ctx, resolvedPath);
+      const fromDir = dirname(fromFile.relativePath).replace(/\\/g, '/');
+      file = resolveImportSource(ctx, importPath, fromDir);
       if (file) return file;
     }
   }

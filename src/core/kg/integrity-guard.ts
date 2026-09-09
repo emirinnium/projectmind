@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 /**
  * Knowledge Graph Integrity Guard.
  *
@@ -17,7 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { getDatabase } from '../../storage/database.js';
 import { parseFile } from '../../parser/ast-parser.js';
-import type { IntegrityViolation, IntegrityReport } from './types.js';
+import type { IntegrityEvidenceStatus, IntegrityViolation, IntegrityReport } from './types.js';
 import { getProjectIgnorePatterns, isIgnoredRelativePath } from '../../utils/ignore.js';
 
 /** Directories the filesystem fallback never enters (F26). */
@@ -113,12 +114,30 @@ export function parseGitRenameLog(output: string, startPath: string): ParsedRena
 }
 
 export class IntegrityGuard {
-  private root: string;
-  private ignorePatterns: string[];
+  private readonly root: string;
+  private readonly ignorePatterns: string[];
+  private readonly projectId?: number;
 
-  constructor(root = process.cwd()) {
-    this.root = root;
+  constructor(root = process.cwd(), projectId?: number) {
+    this.root = resolve(root);
+    this.projectId = projectId;
     this.ignorePatterns = getProjectIgnorePatterns(root);
+  }
+
+  /** Resolve the database project matching this guard's filesystem root. */
+  private getScopedProjectId(db: ReturnType<typeof getDatabase>): number | undefined {
+    if (this.projectId !== undefined) return this.projectId;
+
+    const rows = db.prepare('SELECT id, root_path FROM projects').all() as Array<{
+      id: number;
+      root_path: string;
+    }>;
+    const normalizeRoot = (value: string): string => {
+      const normalized = normalizePosix(resolve(value));
+      return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+    };
+    const target = normalizeRoot(this.root);
+    return rows.find((row) => normalizeRoot(row.root_path) === target)?.id;
   }
 
   /**
@@ -128,11 +147,19 @@ export class IntegrityGuard {
   checkConsistency(): IntegrityViolation[] {
     const violations: IntegrityViolation[] = [];
     const db = getDatabase();
+    const projectId = this.getScopedProjectId(db);
+    const evidence = this.getEvidenceStatus(db, projectId);
     const missingPaths = new Set<string>();
 
     // 1. Missing / moved files
     const fileRows = (
-      db.prepare('SELECT id, relative_path FROM files').all() as Array<{
+      db
+        .prepare(
+          projectId === undefined
+            ? 'SELECT id, relative_path FROM files'
+            : 'SELECT id, relative_path FROM files WHERE project_id = ?',
+        )
+        .all(...(projectId === undefined ? [] : [projectId])) as Array<{
         id: number;
         relative_path: string;
       }>
@@ -206,12 +233,24 @@ export class IntegrityGuard {
     // 3. Stale imports (unresolved) — carry structured data (F27).
     const staleImports = db
       .prepare(
-        `SELECT i.id AS import_id, i.file_id AS file_id, f.relative_path AS file, i.source AS src
-         FROM imports i
-         JOIN files f ON f.id = i.file_id
-         WHERE i.resolved = 0`,
+        projectId === undefined
+          ? `SELECT i.id AS import_id, i.file_id AS file_id, f.relative_path AS file, i.source AS src
+             FROM imports i
+             JOIN files f ON f.id = i.file_id
+             WHERE i.resolved = 0
+               AND (i.source LIKE './%' OR i.source LIKE '../%')`
+          : `SELECT i.id AS import_id, i.file_id AS file_id, f.relative_path AS file, i.source AS src
+             FROM imports i
+             JOIN files f ON f.id = i.file_id AND f.project_id = ?
+             WHERE i.resolved = 0
+               AND (i.source LIKE './%' OR i.source LIKE '../%')`,
       )
-      .all() as Array<{ import_id: number; file_id: number; file: string; src: string }>;
+      .all(...(projectId === undefined ? [] : [projectId])) as Array<{
+      import_id: number;
+      file_id: number;
+      file: string;
+      src: string;
+    }>;
 
     for (const s of staleImports) {
       violations.push({
@@ -228,24 +267,78 @@ export class IntegrityGuard {
     }
 
     // 4. Orphan nodes (files with zero connections)
-    const orphans = this.detectOrphansWithIds();
+    const orphans = this.detectOrphansWithIds(projectId);
     for (const o of orphans) {
       violations.push({
         type: 'orphan_node',
         filePath: o.relativePath,
-        message: `Orphan node: no imports or references`,
+        message: `Orphan node: no resolved imports or references`,
         kgNodeId: o.id,
         suggestedAction: 'delete_node',
         confidence: 0.5,
+        details: {
+          reason: 'no_resolved_import_edges',
+          note: 'Entry points and leaf modules can be intentionally unreferenced; review before deleting.',
+        },
       });
     }
 
     // 5. F28 — Orphan functions: NOT exported AND zero call edges AND zero
-    // import references. Function name lives in functionName/details, never
-    // in filePath.
-    violations.push(...this.detectOrphanFunctionViolations(missingPaths));
+    // import references. A call-free graph is not evidence that functions are
+    // dead: static scans currently do not populate `calls`, while runtime
+    // traces do. Skip this heuristic until call-graph evidence exists.
+    if (evidence.callGraphAvailable) {
+      violations.push(...this.detectOrphanFunctionViolations(missingPaths, projectId));
+    }
 
     return violations;
+  }
+
+  /**
+   * Explain which integrity heuristics have enough evidence to run.
+   *
+   * This is intentionally part of the public result surface so callers do
+   * not mistake an empty orphan-function result for proof that no dead code
+   * exists.
+   */
+  getEvidenceStatus(
+    db = getDatabase(),
+    projectId = this.getScopedProjectId(db),
+  ): IntegrityEvidenceStatus {
+    const callGraphEdgeCount = this.getCallGraphEdgeCount(db, projectId);
+    const callGraphAvailable = callGraphEdgeCount > 0;
+    return {
+      callGraphAvailable,
+      callGraphEdgeCount,
+      orphanFunctionAnalysis: callGraphAvailable ? 'enabled' : 'skipped',
+      limitations: callGraphAvailable
+        ? []
+        : [
+            'Orphan-function detection was skipped because this project has no recorded call-graph evidence; a static scan cannot prove that a function is dead.',
+          ],
+    };
+  }
+
+  /** Count call edges belonging to the active project. */
+  private getCallGraphEdgeCount(
+    db: ReturnType<typeof getDatabase>,
+    projectId: number | undefined,
+  ): number {
+    const row = db
+      .prepare(
+        projectId === undefined
+          ? `SELECT COUNT(*) AS count
+             FROM calls c
+             JOIN functions from_fn ON from_fn.id = c.from_function_id
+             JOIN files from_file ON from_file.id = from_fn.file_id`
+          : `SELECT COUNT(*) AS count
+             FROM calls c
+             JOIN functions from_fn ON from_fn.id = c.from_function_id
+             JOIN files from_file ON from_file.id = from_fn.file_id
+             WHERE from_file.project_id = ?`,
+      )
+      .get(...(projectId === undefined ? [] : [projectId])) as { count?: number } | undefined;
+    return typeof row?.count === 'number' ? row.count : 0;
   }
 
   /**
@@ -307,19 +400,35 @@ export class IntegrityGuard {
    * derived from the AST when parseable (confidence 0.85) and approximated
    * via an `export` keyword content check otherwise (confidence 0.6).
    */
-  detectOrphanFunctionViolations(missingPaths?: Set<string>): IntegrityViolation[] {
+  detectOrphanFunctionViolations(
+    missingPaths?: Set<string>,
+    projectId = this.getScopedProjectId(getDatabase()),
+  ): IntegrityViolation[] {
     const db = getDatabase();
+    if (!this.getEvidenceStatus(db, projectId).callGraphAvailable) return [];
     const missing = missingPaths ?? new Set<string>();
     const rows = db
       .prepare(
-        `SELECT fn.id AS fn_id, fn.name AS name, fn.file_id AS file_id, f.relative_path AS rel
-         FROM functions fn
-         JOIN files f ON f.id = fn.file_id
-         WHERE NOT EXISTS (SELECT 1 FROM calls c WHERE c.from_function_id = fn.id)
-           AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.to_function_id = fn.id)
-           AND NOT EXISTS (SELECT 1 FROM imports i WHERE i.source LIKE '%' || fn.name || '%')`,
+        projectId === undefined
+          ? `SELECT fn.id AS fn_id, fn.name AS name, fn.file_id AS file_id, f.relative_path AS rel
+             FROM functions fn
+             JOIN files f ON f.id = fn.file_id
+             WHERE NOT EXISTS (SELECT 1 FROM calls c WHERE c.from_function_id = fn.id)
+               AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.to_function_id = fn.id)
+               AND NOT EXISTS (SELECT 1 FROM imports i WHERE i.source LIKE '%' || fn.name || '%')`
+          : `SELECT fn.id AS fn_id, fn.name AS name, fn.file_id AS file_id, f.relative_path AS rel
+             FROM functions fn
+             JOIN files f ON f.id = fn.file_id AND f.project_id = ?
+             WHERE NOT EXISTS (SELECT 1 FROM calls c WHERE c.from_function_id = fn.id)
+               AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.to_function_id = fn.id)
+               AND NOT EXISTS (SELECT 1 FROM imports i WHERE i.source LIKE '%' || fn.name || '%')`,
       )
-      .all() as Array<{ fn_id: number; name: string; file_id: number; rel: string }>;
+      .all(...(projectId === undefined ? [] : [projectId])) as Array<{
+      fn_id: number;
+      name: string;
+      file_id: number;
+      rel: string;
+    }>;
 
     const violations: IntegrityViolation[] = [];
     const parseCache = new Map<string, ReturnType<typeof parseFile> | undefined>();
@@ -387,13 +496,19 @@ export class IntegrityGuard {
    */
   detectOrphanFunctions(): string[] {
     const db = getDatabase();
+    const projectId = this.getScopedProjectId(db);
     const rows = db
       .prepare(
-        `SELECT f.name FROM functions f
-         WHERE NOT EXISTS (SELECT 1 FROM calls c WHERE c.from_function_id = f.id)
-          AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.to_function_id = f.id)`,
+        projectId === undefined
+          ? `SELECT f.name FROM functions f
+             WHERE NOT EXISTS (SELECT 1 FROM calls c WHERE c.from_function_id = f.id)
+              AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.to_function_id = f.id)`
+          : `SELECT fn.name FROM functions fn
+             JOIN files fi ON fi.id = fn.file_id AND fi.project_id = ?
+             WHERE NOT EXISTS (SELECT 1 FROM calls c WHERE c.from_function_id = fn.id)
+              AND NOT EXISTS (SELECT 1 FROM calls c WHERE c.to_function_id = fn.id)`,
       )
-      .all() as Array<{ name: string }>;
+      .all(...(projectId === undefined ? [] : [projectId])) as Array<{ name: string }>;
     return rows.map((r) => r.name);
   }
 
@@ -401,22 +516,48 @@ export class IntegrityGuard {
    * Detect orphan nodes: files with no import connections.
    */
   detectOrphans(): string[] {
-    return this.detectOrphansWithIds().map((o) => o.relativePath);
+    return this.detectOrphansWithIds(this.getScopedProjectId(getDatabase())).map(
+      (o) => o.relativePath,
+    );
   }
 
-  private detectOrphansWithIds(): Array<{ id: number; relativePath: string }> {
+  private detectOrphansWithIds(projectId = this.getScopedProjectId(getDatabase())): Array<{
+    id: number;
+    relativePath: string;
+  }> {
     const db = getDatabase();
     const rows = db
       .prepare(
-        `SELECT f.id, f.relative_path FROM files f
-         WHERE NOT EXISTS (
-           SELECT 1 FROM imports i WHERE i.file_id = f.id
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM imports i WHERE i.source LIKE '%' || f.relative_path || '%'
-         )`,
+        projectId === undefined
+          ? `SELECT f.id, f.relative_path FROM files f
+             WHERE NOT EXISTS (
+               SELECT 1 FROM imports i WHERE i.file_id = f.id
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM imports i
+               JOIN files source_file ON source_file.id = i.file_id
+               WHERE i.resolved_path = f.relative_path
+                  OR i.source = f.relative_path
+                  OR i.source LIKE '%' || f.relative_path || '%'
+             )`
+          : `SELECT f.id, f.relative_path FROM files f
+             WHERE f.project_id = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM imports i WHERE i.file_id = f.id
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM imports i
+               JOIN files source_file ON source_file.id = i.file_id
+                 AND source_file.project_id = f.project_id
+               WHERE i.resolved_path = f.relative_path
+                  OR i.source = f.relative_path
+                  OR i.source LIKE '%' || f.relative_path || '%'
+             )`,
       )
-      .all() as Array<{ id: number; relative_path: string }>;
+      .all(...(projectId === undefined ? [] : [projectId])) as Array<{
+      id: number;
+      relative_path: string;
+    }>;
     return rows.map((r) => ({ id: r.id, relativePath: r.relative_path }));
   }
 
@@ -500,7 +641,8 @@ export class IntegrityGuard {
           return normalizePosix(parts[2]);
         }
       }
-    } catch {
+    } catch (error) {
+      reportSuppressedError(error, 'Intentional fallback src/core/kg/integrity-guard.ts:643');
       // ignore — treated as pure deletion
     }
     return null;
@@ -590,7 +732,8 @@ export class IntegrityGuard {
         if (existsSync(cand) && statSync(cand).isFile()) {
           return rel;
         }
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/core/kg/integrity-guard.ts:733');
         // ignore unreadable candidates
       }
     }
@@ -606,7 +749,8 @@ export class IntegrityGuard {
     const timer = setInterval(() => {
       try {
         this.checkConsistency();
-      } catch {
+      } catch (error) {
+        reportSuppressedError(error, 'Intentional fallback src/core/kg/integrity-guard.ts:749');
         // keep the schedule alive; next tick may succeed
       }
     }, intervalMs);
@@ -619,6 +763,9 @@ export class IntegrityGuard {
    * the result is reused for repair and orphan reporting.
    */
   generateReport(): IntegrityReport {
+    const db = getDatabase();
+    const projectId = this.getScopedProjectId(db);
+    const analysis = this.getEvidenceStatus(db, projectId);
     const violations = this.checkConsistency();
     const repaired = this.repairStaleNodes(violations);
     const orphans = violations
@@ -629,6 +776,7 @@ export class IntegrityGuard {
       repaired,
       orphans,
       timestamp: new Date().toISOString(),
+      analysis,
     };
   }
 

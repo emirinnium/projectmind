@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
+import { resolve } from 'node:path';
 import { trackAgentAccess } from './types.js';
 
 export function registerProjectTools(server: McpServer, deps: McpDependencies): void {
@@ -121,6 +122,9 @@ export function registerProjectTools(server: McpServer, deps: McpDependencies): 
           trackAgentAccess(deps.kg, deps.agentName, 'switch-project');
         }
         const result = deps.kg.switchProject(args.projectId);
+        if (result.success && result.project) {
+          deps.projectRoot = resolve(result.project.rootPath);
+        }
         return {
           content: [
             {

@@ -22,6 +22,8 @@ export class CacheEviction<K, V> {
   private readonly purgeTimeIntervalMs: number;
 
   constructor(options: CacheOptions<K, V>) {
+    const noopEvict = (_key: K, _value: V): void => undefined;
+    const noopError = (_error: Error): void => undefined;
     this.options = {
       maxSize: options.maxSize,
       ttlMs: options.ttlMs,
@@ -29,8 +31,8 @@ export class CacheEviction<K, V> {
       persistPath: options.persistPath ?? '.projectmind/cache.json',
       serialize: options.serialize ?? JSON.stringify,
       deserialize: options.deserialize ?? JSON.parse,
-      onEvict: options.onEvict ?? (() => {}),
-      onError: options.onError ?? (() => {}),
+      onEvict: options.onEvict ?? noopEvict,
+      onError: options.onError ?? noopError,
     };
     // Purge expired entries every N operations or every 5 minutes, whichever comes first
     this.purgeInterval = Math.min(options.maxSize, PURGE_OPERATION_INTERVAL);

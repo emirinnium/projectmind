@@ -51,6 +51,7 @@ import { registerTeamMemoryTools } from '../team-memory.js';
 import { registerCliBridgeTool } from '../cli-bridge.js';
 import { registerCliParityTools } from '../cli-parity.js';
 import { registerScanCvesTool } from '../scan-cves.js';
+import { registerProveClaimTool, registerVerifyFreshnessTool } from '../proof.js';
 import { registerIntelligenceTools } from '../intelligence.js';
 import { registerSemanticSearchTool } from '../semantic-search.js';
 import { registerFindSymbolReferencesTool } from '../symbol-refs.js';
@@ -180,7 +181,7 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   registerCliBridgeTool(server, deps);
 
   // Auto-generated 1:1 CLI-parity tools (pm_<command>[_<sub>]).
-  // Registered when PROJECTMIND_TOOLS=all. Default is `core` (~45 tools)
+  // Registered when PROJECTMIND_TOOLS=all. Default is `core` (~66 dedicated tools)
   // for clients with a small active-tool budget (e.g. Cursor).
   if (shouldRegisterParityTools()) {
     const parityCount = await registerCliParityTools(server, deps);
@@ -195,4 +196,10 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
 
   // Security analysis tools
   registerScanCvesTool(server, deps);
+
+  // Evidence-first verification tools. These are intentionally registered
+  // after all analyzers so an agent can verify the source/graph boundary
+  // before trusting any analysis result.
+  registerProveClaimTool(server, deps);
+  registerVerifyFreshnessTool(server, deps);
 }

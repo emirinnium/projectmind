@@ -1,4 +1,5 @@
-import { execSync } from 'node:child_process';
+import { reportSuppressedError } from '../../utils/errors.js';
+import { execFileSync } from 'node:child_process';
 import { getStatement } from '../../storage/database.js';
 import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
 import { DEFAULT_PREDICTOR_CONFIG } from '../../core/predictive/config.js';
@@ -91,7 +92,7 @@ export async function runGates(
     try {
       // Determine project root for the git command to avoid CWD-dependent behavior.
       const projectRoot = loadConfig().projectRoot || process.cwd();
-      const staged = execSync('git diff --cached --name-only --diff-filter=ACM', {
+      const staged = execFileSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACM'], {
         encoding: 'utf8',
         timeout: 5000,
         cwd: projectRoot,
@@ -145,7 +146,11 @@ export async function runGates(
             if (significantFailures.length > 0) {
               fileFailures.push({ filePath: file, failures: significantFailures });
             }
-          } catch {
+          } catch (error) {
+            reportSuppressedError(
+              error,
+              'Intentional fallback src/cli/commands/autopilot-engine.ts:148',
+            );
             // ignore errors on individual files (e.g. binary, unreadable)
           }
         }
@@ -208,7 +213,7 @@ export async function runGates(
     try {
       const projectRoot = loadConfig().projectRoot || process.cwd();
 
-      const staged = execSync('git diff --cached --name-only --diff-filter=ACM', {
+      const staged = execFileSync('git', ['diff', '--cached', '--name-only', '--diff-filter=ACM'], {
         encoding: 'utf8',
         timeout: 5000,
         cwd: projectRoot,

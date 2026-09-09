@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 /**
  * Git-style 3-way merge (diff3) for team memory values.
  *
@@ -416,7 +417,8 @@ export async function buildMergeSuggestion(
           llmGenerated: true,
         };
       }
-    } catch {
+    } catch (error) {
+      reportSuppressedError(error, 'Intentional fallback src/core/team-memory/merge.ts:419');
       // Fall through to the deterministic heuristic.
     }
   }

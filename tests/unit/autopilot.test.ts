@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 // Track the mock implementation for predictTestBreaks
 let mockPredictTestBreaksImpl: ReturnType<typeof vi.fn>;
@@ -9,10 +9,11 @@ let mockExtractApiSurface: ReturnType<typeof vi.fn>;
 let mockGetApiAtRef: ReturnType<typeof vi.fn>;
 let mockComputeDiff: ReturnType<typeof vi.fn>;
 
-// Mock execSync from node:child_process
+// Mock execFileSync from node:child_process. The production code passes a
+// fixed argv array so repository-derived paths never enter shell syntax.
 vi.mock('node:child_process', () => {
   return {
-    execSync: vi.fn().mockReturnValue(''),
+    execFileSync: vi.fn().mockReturnValue(''),
   };
 });
 
@@ -84,14 +85,14 @@ vi.mock('../../src/cli/utils/shared.js', () => {
 });
 
 describe('autopilot pre-commit', () => {
-  let mockExecSync: ReturnType<typeof vi.fn>;
+  let mockExecFileSync: ReturnType<typeof vi.fn>;
   let mockOutput: any;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     // Re-setup mock implementations after clearAllMocks.
-    mockExecSync = execSync as unknown as ReturnType<typeof vi.fn>;
-    mockExecSync.mockReturnValue('');
+    mockExecFileSync = execFileSync as unknown as ReturnType<typeof vi.fn>;
+    mockExecFileSync.mockReturnValue('');
     // Re-setup the ImpactPredictor mock implementation.
     if (mockPredictTestBreaksImpl) {
       mockPredictTestBreaksImpl.mockReturnValue([]);
@@ -161,7 +162,7 @@ describe('autopilot pre-commit', () => {
 
   describe('runGates - impact risk gate', () => {
     it('passes when there are no staged files', async () => {
-      mockExecSync.mockReturnValue('');
+      mockExecFileSync.mockReturnValue('');
 
       const { exitCode, outputMock } = await runPreCommitAction({});
 
@@ -171,7 +172,7 @@ describe('autopilot pre-commit', () => {
     });
 
     it('skips impact check when --skip-impact-check is passed', async () => {
-      mockExecSync.mockReturnValue('src/test.ts\n');
+      mockExecFileSync.mockReturnValue('src/test.ts\n');
 
       const { exitCode, outputMock } = await runPreCommitAction({
         skipImpactCheck: true,
@@ -194,8 +195,8 @@ describe('autopilot pre-commit', () => {
       expect(options).toContain('--impact-risk-threshold');
     });
 
-    it('handles execSync timeout/error gracefully', async () => {
-      mockExecSync.mockImplementation(() => {
+    it('handles execFileSync timeout/error gracefully', async () => {
+      mockExecFileSync.mockImplementation(() => {
         throw new Error('Command timed out');
       });
 
@@ -210,7 +211,7 @@ describe('autopilot pre-commit', () => {
     });
 
     it('filters staged files to TypeScript/JavaScript extensions', async () => {
-      mockExecSync.mockReturnValue('src/test.ts\nsrc/component.tsx\nREADME.md\nsrc/styles.css\n');
+      mockExecFileSync.mockReturnValue('src/test.ts\nsrc/component.tsx\nREADME.md\nsrc/styles.css\n');
 
       mockPredictTestBreaksImpl.mockReturnValue([]);
 
@@ -223,7 +224,7 @@ describe('autopilot pre-commit', () => {
     });
 
     it('blocks when failure risk meets threshold', async () => {
-      mockExecSync.mockReturnValue('src/test.ts\n');
+      mockExecFileSync.mockReturnValue('src/test.ts\n');
 
       mockPredictTestBreaksImpl.mockReturnValue([
         {
@@ -246,7 +247,7 @@ describe('autopilot pre-commit', () => {
     });
 
     it('passes when all failures are below threshold', async () => {
-      mockExecSync.mockReturnValue('src/test.ts\n');
+      mockExecFileSync.mockReturnValue('src/test.ts\n');
 
       mockPredictTestBreaksImpl.mockReturnValue([
         {
@@ -267,7 +268,7 @@ describe('autopilot pre-commit', () => {
     });
 
     it('blocks when failure risk exceeds threshold (critical > high)', async () => {
-      mockExecSync.mockReturnValue('src/test.ts\n');
+      mockExecFileSync.mockReturnValue('src/test.ts\n');
 
       mockPredictTestBreaksImpl.mockReturnValue([
         {
@@ -290,7 +291,7 @@ describe('autopilot pre-commit', () => {
     });
 
     it('fails when threshold is low and failure is low (low >= low)', async () => {
-      mockExecSync.mockReturnValue('src/test.ts\n');
+      mockExecFileSync.mockReturnValue('src/test.ts\n');
 
       mockPredictTestBreaksImpl.mockReturnValue([
         {
@@ -315,7 +316,7 @@ describe('autopilot pre-commit', () => {
     });
 
     it('passes when threshold is critical and failure is high', async () => {
-      mockExecSync.mockReturnValue('src/test.ts\n');
+      mockExecFileSync.mockReturnValue('src/test.ts\n');
 
       mockPredictTestBreaksImpl.mockReturnValue([
         {
@@ -374,7 +375,7 @@ describe('autopilot pre-commit', () => {
       for (const level of ['low', 'medium', 'high', 'critical']) {
         vi.clearAllMocks();
         // Re-setup mock implementations after clearAllMocks.
-        mockExecSync.mockReturnValue('');
+        mockExecFileSync.mockReturnValue('');
         if (mockPredictTestBreaksImpl) {
           mockPredictTestBreaksImpl.mockReturnValue([]);
         }
@@ -389,14 +390,15 @@ describe('autopilot pre-commit', () => {
   });
 
   describe('git diff cwd option', () => {
-    it('passes cwd option to execSync for git diff', async () => {
-      mockExecSync.mockReturnValue('');
+    it('passes a fixed argv array and cwd option to execFileSync for git diff', async () => {
+      mockExecFileSync.mockReturnValue('');
 
       await runPreCommitAction({});
 
-      // Verify execSync was called with the cwd option.
-      expect(mockExecSync).toHaveBeenCalledWith(
-        'git diff --cached --name-only --diff-filter=ACM',
+      // Verify no shell command string is parsed: git receives fixed argv.
+      expect(mockExecFileSync).toHaveBeenCalledWith(
+        'git',
+        ['diff', '--cached', '--name-only', '--diff-filter=ACM'],
         expect.objectContaining({
           encoding: 'utf8',
           timeout: 5000,
@@ -420,7 +422,7 @@ describe('autopilot pre-commit', () => {
 
   describe('runGates - API surface compatibility gate', () => {
     it('fails when breaking API changes detected', async () => {
-      mockExecSync.mockReturnValue('src/foo.ts\n');
+      mockExecFileSync.mockReturnValue('src/foo.ts\n');
       // Provide a base API reference so the diff is computed.
       mockGetApiAtRef.mockResolvedValue([{ name: 'existingFn', relativePath: 'src/foo.ts', type: 'function' }]);
       mockComputeDiff.mockReturnValue({
@@ -440,7 +442,7 @@ describe('autopilot pre-commit', () => {
     });
 
     it('passes when no breaking changes', async () => {
-      mockExecSync.mockReturnValue('src/foo.ts\n');
+      mockExecFileSync.mockReturnValue('src/foo.ts\n');
       // Provide a base API reference so the diff is computed.
       mockGetApiAtRef.mockResolvedValue([{ name: 'existingFn', relativePath: 'src/foo.ts', type: 'function' }]);
       mockComputeDiff.mockReturnValue({ breaking: [] });
@@ -456,7 +458,7 @@ describe('autopilot pre-commit', () => {
     });
 
     it('is skipped with --allow-breaking-api', async () => {
-      mockExecSync.mockReturnValue('src/foo.ts\n');
+      mockExecFileSync.mockReturnValue('src/foo.ts\n');
 
       const { exitCode, outputMock } = await runPreCommitAction({
         allowBreakingApi: true,
@@ -473,7 +475,7 @@ describe('autopilot pre-commit', () => {
     });
 
     it('passes when no base API reference (first commit scenario)', async () => {
-      mockExecSync.mockReturnValue('src/foo.ts\n');
+      mockExecFileSync.mockReturnValue('src/foo.ts\n');
       mockGetApiAtRef.mockResolvedValue([]);
 
       const { exitCode, outputMock } = await runPreCommitAction({});

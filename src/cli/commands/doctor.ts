@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { existsSync, readFileSync } from 'node:fs';
-import { basename, dirname } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
 import { DEFAULT_PREDICTOR_CONFIG } from '../../core/predictive/config.js';
@@ -32,6 +32,10 @@ function formatRiskLevel(riskLevel?: string): string {
 export function createDoctorCommand(): Command {
   const doctorCmd = new Command('doctor').description('Automated fixes and health remediation');
 
+  doctorCmd.action(() => {
+    doctorCmd.outputHelp();
+  });
+
   doctorCmd.addCommand(createDoctorFixImportsCommand());
 
   doctorCmd
@@ -42,11 +46,13 @@ export function createDoctorCommand(): Command {
     .action(
       asyncHandler(async (opts: { olderThan: string; dryRun?: boolean }) => {
         await withService(['debt'], async (_ctx, _services) => {
-          // ... (same logic as before but using services.debt instead of withDebt callback parameter)
           const { getDatabase } = await import('../../storage/database.js');
           const db = getDatabase();
 
           const days = Number(opts.olderThan);
+          if (!Number.isFinite(days) || days < 0) {
+            throw new Error(`--older-than must be a non-negative number: ${opts.olderThan}`);
+          }
           const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
           // Get resolved debt items older than cutoff
@@ -98,7 +104,6 @@ export function createDoctorCommand(): Command {
     .action(
       asyncHandler(async (_opts: { dryRun?: boolean }) => {
         await withService(['scale'], async (_ctx, _services) => {
-          // ... (same logic as before)
           const { getDatabase } = await import('../../storage/database.js');
           const db = getDatabase();
 
@@ -130,7 +135,7 @@ export function createDoctorCommand(): Command {
           output.kv('Total records', totalRecords);
 
           // Integrity Guard: auto-repair before destructive rebuild
-          const guard = new IntegrityGuard();
+          const guard = new IntegrityGuard(_ctx.config.projectRoot, _ctx.kg.getCurrentProjectId());
           const report = guard.generateReport();
           output.section('Integrity Guard Report');
           output.kv('Violations', report.violations.length);
@@ -307,7 +312,7 @@ export function createDoctorCommand(): Command {
           const genomeScore = genome.coherenceScore * 100;
           output.kv('Current score', `${genomeScore.toFixed(1)}%`);
           try {
-            const trendPath = '.projectmind/pm-genome-trend.json';
+            const trendPath = join(ctx.config.projectRoot, '.projectmind', 'pm-genome-trend.json');
             if (existsSync(trendPath)) {
               const trendData = JSON.parse(readFileSync(trendPath, 'utf-8'));
               if (trendData.lastScore !== undefined) {
@@ -325,8 +330,10 @@ export function createDoctorCommand(): Command {
                 }
               }
             }
-          } catch {
-            // No trend data available
+          } catch (error) {
+            output.warn(
+              `Genome trend could not be read: ${error instanceof Error ? error.message : String(error)}`,
+            );
           }
 
           output.section('Summary');

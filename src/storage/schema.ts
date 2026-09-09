@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS imports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   file_id INTEGER NOT NULL,
   source TEXT NOT NULL,
+  named TEXT NOT NULL DEFAULT '[]',
   kind TEXT,
   resolved BOOLEAN DEFAULT 0,
   resolved_path TEXT,
@@ -207,6 +208,7 @@ CREATE TABLE IF NOT EXISTS debt_items (
   detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   resolved BOOLEAN DEFAULT 0,
   resolved_at TIMESTAMP,
+  project_id INTEGER NOT NULL DEFAULT 1,
   FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 );
 

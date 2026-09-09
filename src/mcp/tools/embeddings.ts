@@ -15,17 +15,28 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
     {
       title: 'Init Embedding Provider',
       description:
-        'Initialize the embedding provider for code/text similarity. Supports simple, unixcoder, and codebert providers. UniXcoder/CodeBERT require onnxruntime-node and model files.',
+        'Initialize the embedding provider for code/text similarity. Supports simple, openai, transformers, unixcoder, and codebert. Optional providers may require credentials, model downloads, or onnxruntime-node; unavailable providers return an explicit fallback explanation.',
       inputSchema: {
         provider: z
-          .enum(['simple', 'unixcoder', 'codebert'])
+          .enum(['simple', 'openai', 'transformers', 'unixcoder', 'codebert'])
           .default('simple')
           .describe('Embedding provider to use'),
         modelPath: z
           .string()
           .optional()
           .describe('Path to ONNX model file (for unixcoder/codebert)'),
-        dimension: z.number().default(768).describe('Embedding dimension'),
+        openaiApiKey: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Optional OpenAI API key; OPENAI_API_KEY is used when omitted'),
+        openaiModel: z.string().min(1).optional().describe('Optional OpenAI embedding model'),
+        transformersModel: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Optional Transformers.js model identifier'),
+        dimension: z.number().int().min(1).max(8192).default(768).describe('Embedding dimension'),
       },
     },
     async (args) => {
@@ -39,10 +50,13 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
             ? confineToProject(args.modelPath, deps.projectRoot)
             : undefined;
 
-        await initEmbeddingProvider({
+        const initResult = await initEmbeddingProvider({
           provider: args.provider,
           modelPath,
           dimension: args.dimension,
+          openaiApiKey: args.openaiApiKey,
+          openaiModel: args.openaiModel,
+          transformersModel: args.transformersModel,
         });
 
         return {
@@ -52,8 +66,10 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
               text: JSON.stringify(
                 {
                   success: true,
-                  provider: getCurrentProvider(),
+                  ...initResult,
                   dimension: args.dimension,
+                  dimensionSemantics:
+                    'This is the requested generation dimension. The actual vector dimension is confirmed by generate_embedding.',
                 },
                 null,
                 2,
@@ -88,8 +104,11 @@ export function registerEmbeddingTools(server: McpServer, deps: McpDependencies)
       description:
         'Generate an embedding vector for the given text or code snippet using the current embedding provider.',
       inputSchema: {
-        text: z.string().describe('Text or code snippet to embed'),
-        dimension: z.number().default(768).describe('Embedding dimension'),
+        text: z
+          .string()
+          .max(200_000)
+          .describe('Text or code snippet to embed (maximum 200,000 characters)'),
+        dimension: z.number().int().min(1).max(8192).default(768).describe('Embedding dimension'),
       },
     },
     async (args) => {

@@ -6,6 +6,12 @@ import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
 import { DEFAULT_PREDICTOR_CONFIG } from '../../core/predictive/config.js';
 import type { CodeChange, PredictedFailure } from '../../core/predictive/types.js';
 import { getOverallRiskLevel } from '../../core/predictive/risk-levels.js';
+import { confineToProject } from './_shared.js';
+import {
+  attachEvidence,
+  buildEvidencePacket,
+  verifyProjectFreshness,
+} from '../../core/proof/evidence.js';
 
 /** Input accepted by the predict_impact_risk tool. */
 export interface PredictImpactRiskArgs {
@@ -34,10 +40,11 @@ export function predictImpactForTool(
   failureCount: number;
   error?: string;
 } {
+  const confinedPath = confineToProject(args.filePath, deps.projectRoot);
   const predictor = new ImpactPredictor(DEFAULT_PREDICTOR_CONFIG, deps.db);
   const change: CodeChange = {
-    filePath: args.filePath,
-    moduleName: basename(dirname(args.filePath)) || args.filePath,
+    filePath: confinedPath,
+    moduleName: basename(dirname(confinedPath)) || confinedPath,
     changeType: args.changeType ?? 'modify',
     crossModule: false,
     previousContent: args.previousContent,
@@ -45,7 +52,7 @@ export function predictImpactForTool(
   const failures = predictor.predictTestBreaks(change).slice(0, args.limit ?? 10);
   return {
     success: true,
-    filePath: args.filePath,
+    filePath: confinedPath,
     riskLevel: getOverallRiskLevel(failures.map((f) => f.riskLevel ?? 'low')),
     failures,
     failureCount: failures.length,
@@ -88,8 +95,25 @@ export function registerPredictImpactRiskTool(server: McpServer, deps: McpDepend
           previousContent: args.previousContent,
           limit: args.limit,
         });
+        const freshness = await verifyProjectFreshness(deps.kg, deps.projectRoot, [args.filePath]);
+        const evidence = buildEvidencePacket(freshness, {
+          evidence: freshness.details.map((detail) => ({
+            filePath: detail.filePath,
+            kind: 'indexed-graph' as const,
+            sourceHash: detail.sourceHash,
+            indexedHash: detail.indexedHash,
+            lineStart: detail.lineCount === undefined ? undefined : 1,
+            lineEnd: detail.lineCount,
+            note: `impact input evidence; freshness=${detail.status}`,
+          })),
+          limitations: [
+            'Impact risk is a graph-based prediction. It is not a proof that a test will fail; run the affected checks to validate behavior.',
+          ],
+        });
         return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          content: [
+            { type: 'text', text: JSON.stringify(attachEvidence(result, evidence), null, 2) },
+          ],
         };
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);

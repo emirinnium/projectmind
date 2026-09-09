@@ -1,5 +1,6 @@
 import { loadConfig } from '../../utils/config.js';
 import type { ProjectMindConfig } from '../../utils/config.js';
+import ts from 'typescript';
 
 export interface ArchitecturalContract {
   id: string;
@@ -123,15 +124,18 @@ export class ContractEngine {
       if (contract.forbiddenKeywords) {
         for (const kw of contract.forbiddenKeywords) {
           const lines = code.split(/\r?\n/);
+          const codeWithoutLiterals = maskNonCodeTokens(code, normalizedPath).split(/\r?\n/);
           const regex = ContractEngine.tryParseRegex(kw);
-          lines.forEach((lineText, idx) => {
+          codeWithoutLiterals.forEach((lineText, idx) => {
+            if (regex) regex.lastIndex = 0;
             const matches = regex ? regex.test(lineText) : lineText.includes(kw);
             if (matches) {
+              const originalLine = lines[idx] ?? lineText;
               violations.push({
                 contractId: contract.id,
                 contractName: contract.name,
                 severity: contract.severity,
-                message: `Forbidden keyword/pattern "${kw}" found: "${lineText.trim()}"`,
+                message: `Forbidden keyword/pattern "${kw}" found: "${originalLine.trim()}"`,
                 line: idx + 1,
               });
             }
@@ -196,26 +200,16 @@ export class ContractEngine {
     // Exact match
     if (path === pattern) return true;
 
-    // Wildcard - matches everything
-    if (pattern === '*' || pattern === '**/*.ts') return true;
+    // A single-star contract is intentionally a match-all shorthand.
+    if (pattern === '*') return true;
 
-    // Convert glob pattern to regex
-    // Handle patterns like "src/core/**/*.ts" or "src/cli/commands/**/*.ts"
-    const regexPattern = pattern
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape special regex chars except * and ?
-      .replace(/\*\*/g, '.*') // ** matches any path segments (including none)
-      .replace(/\*/g, '[^/]*'); // * matches anything except path separator
+    const regexPattern = globToRegex(pattern);
 
     try {
       const regex = new RegExp(`^${regexPattern}$`, 'i');
       return regex.test(path);
     } catch {
-      // Fallback to simple includes if regex fails
-      const cleanPattern = pattern
-        .replace(/^\*\*\//, '')
-        .replace(/\/\*\*\/\*$/, '')
-        .replace(/\*$/, '');
-      return path.includes(cleanPattern);
+      return false;
     }
   }
 
@@ -235,4 +229,68 @@ export class ContractEngine {
       return null; // Invalid regex, fall back to literal string matching
     }
   }
+}
+
+/**
+ * Replace comments and literal token text with spaces while preserving line
+ * breaks and character offsets. Contract patterns describe executable code;
+ * documentation, SQL strings, test fixtures, and regular-expression bodies
+ * must not be reported as executable violations.
+ */
+function maskNonCodeTokens(code: string, filePath: string): string {
+  const languageVariant = filePath.endsWith('.tsx')
+    ? ts.LanguageVariant.JSX
+    : ts.LanguageVariant.Standard;
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, languageVariant, code);
+  const masked = code.split('');
+  const ignoredTokens = new Set<ts.SyntaxKind>([
+    ts.SyntaxKind.SingleLineCommentTrivia,
+    ts.SyntaxKind.MultiLineCommentTrivia,
+    ts.SyntaxKind.StringLiteral,
+    ts.SyntaxKind.NoSubstitutionTemplateLiteral,
+    ts.SyntaxKind.RegularExpressionLiteral,
+    ts.SyntaxKind.TemplateHead,
+    ts.SyntaxKind.TemplateMiddle,
+    ts.SyntaxKind.TemplateTail,
+  ]);
+
+  let token = scanner.scan();
+  while (token !== ts.SyntaxKind.EndOfFileToken) {
+    if (ignoredTokens.has(token)) {
+      const start = scanner.getTokenPos();
+      const end = scanner.getTextPos();
+      for (let i = start; i < end; i++) {
+        if (masked[i] !== '\r' && masked[i] !== '\n') masked[i] = ' ';
+      }
+    }
+    token = scanner.scan();
+  }
+
+  return masked.join('');
+}
+
+/** Convert a slash-normalized glob to a regular expression source. */
+function globToRegex(pattern: string): string {
+  let result = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i];
+    if (char === '*') {
+      if (pattern[i + 1] === '*') {
+        i++;
+        if (pattern[i + 1] === '/') {
+          i++;
+          result += '(?:.*/)?';
+        } else {
+          result += '.*';
+        }
+      } else {
+        result += '[^/]*';
+      }
+    } else if (char === '?') {
+      result += '[^/]';
+    } else {
+      result += /[.+^${}()|[\]\\]/.test(char) ? `\\${char}` : char;
+    }
+  }
+  return result;
 }

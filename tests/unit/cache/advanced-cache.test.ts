@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../../src/utils/errors.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -28,7 +29,9 @@ import type { CacheOptions } from '../../../src/core/cache/types.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeOptions(overrides: Partial<CacheOptions<string, string>> = {}): CacheOptions<string, string> {
+function makeOptions(
+  overrides: Partial<CacheOptions<string, string>> = {},
+): CacheOptions<string, string> {
   return {
     maxSize: 5,
     ttlMs: 60_000,
@@ -45,7 +48,7 @@ describe('AdvancedCache — LRU Eviction Policy', () => {
       makeOptions({
         maxSize: 3,
         onEvict: (key, _value) => evicted.push(key),
-      })
+      }),
     );
 
     cache.set('a', '1');
@@ -66,7 +69,7 @@ describe('AdvancedCache — LRU Eviction Policy', () => {
       makeOptions({
         maxSize: 5,
         onEvict: (key, _value) => evicted.push(key),
-      })
+      }),
     );
 
     cache.set('a', '1');
@@ -83,7 +86,7 @@ describe('AdvancedCache — LRU Eviction Policy', () => {
       makeOptions({
         maxSize: 3,
         onEvict: (key, _value) => evicted.push(key),
-      })
+      }),
     );
 
     cache.set('a', '1');
@@ -109,7 +112,7 @@ describe('AdvancedCache — LRU Eviction Policy', () => {
       makeOptions({
         maxSize: 3,
         onEvict: (key, _value) => evicted.push(key),
-      })
+      }),
     );
 
     cache.set('a', '1');
@@ -131,7 +134,7 @@ describe('AdvancedCache — LRU Eviction Policy', () => {
       makeOptions({
         maxSize: 2,
         onEvict: (key, _value) => evicted.push(key),
-      })
+      }),
     );
 
     cache.set('a', '1');
@@ -149,9 +152,7 @@ describe('AdvancedCache — LRU Eviction Policy', () => {
 
 describe('AdvancedCache — TTL Expiration', () => {
   it('returns undefined for expired entries', () => {
-    const cache = new AdvancedCache<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 50 })
-    );
+    const cache = new AdvancedCache<string, string>(makeOptions({ maxSize: 10, ttlMs: 50 }));
 
     cache.set('key', 'value');
     expect(cache.get('key')).toBe('value');
@@ -169,9 +170,7 @@ describe('AdvancedCache — TTL Expiration', () => {
   it('returns value before TTL expires', () => {
     vi.useFakeTimers();
 
-    const cache = new AdvancedCache<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 1000 })
-    );
+    const cache = new AdvancedCache<string, string>(makeOptions({ maxSize: 10, ttlMs: 1000 }));
 
     cache.set('key', 'value');
     vi.advanceTimersByTime(500);
@@ -184,9 +183,7 @@ describe('AdvancedCache — TTL Expiration', () => {
   it('has() returns false for expired entries', () => {
     vi.useFakeTimers();
 
-    const cache = new AdvancedCache<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 100 })
-    );
+    const cache = new AdvancedCache<string, string>(makeOptions({ maxSize: 10, ttlMs: 100 }));
 
     cache.set('key', 'value');
     expect(cache.has('key')).toBe(true);
@@ -200,12 +197,8 @@ describe('AdvancedCache — TTL Expiration', () => {
   it('different entries can have different effective TTLs via separate caches', () => {
     vi.useFakeTimers();
 
-    const shortCache = new AdvancedCache<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 100 })
-    );
-    const longCache = new AdvancedCache<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 5000 })
-    );
+    const shortCache = new AdvancedCache<string, string>(makeOptions({ maxSize: 10, ttlMs: 100 }));
+    const longCache = new AdvancedCache<string, string>(makeOptions({ maxSize: 10, ttlMs: 5000 }));
 
     shortCache.set('key', 'short');
     longCache.set('key', 'long');
@@ -297,7 +290,11 @@ describe('AdvancedCache — Persistence (save/load)', () => {
     // Clean up test directory
     try {
       rmSync(testDir, { recursive: true, force: true });
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional test fallback tests/unit/cache/advanced-cache.test.ts:300',
+      );
       // ignore if doesn't exist
     }
   });
@@ -306,7 +303,11 @@ describe('AdvancedCache — Persistence (save/load)', () => {
     vi.clearAllMocks();
     try {
       rmSync(testDir, { recursive: true, force: true });
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional test fallback tests/unit/cache/advanced-cache.test.ts:309',
+      );
       // ignore
     }
   });
@@ -321,9 +322,7 @@ describe('AdvancedCache — Persistence (save/load)', () => {
     vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(readFileSync).mockReturnValue(JSON.stringify(cachedData));
 
-    const cache = new AdvancedCache<string, string>(
-      makeOptions({ persistent: true, persistPath })
-    );
+    const cache = new AdvancedCache<string, string>(makeOptions({ persistent: true, persistPath }));
 
     expect(cache.get('a')).toBe('1');
     expect(cache.get('b')).toBe('2');
@@ -339,9 +338,7 @@ describe('AdvancedCache — Persistence (save/load)', () => {
     vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(readFileSync).mockReturnValue(JSON.stringify(cachedData));
 
-    const cache = new AdvancedCache<string, string>(
-      makeOptions({ persistent: true, persistPath })
-    );
+    const cache = new AdvancedCache<string, string>(makeOptions({ persistent: true, persistPath }));
 
     expect(cache.get('fresh')).toBe('ok');
     expect(cache.get('stale')).toBe(undefined);
@@ -349,7 +346,7 @@ describe('AdvancedCache — Persistence (save/load)', () => {
 
   it('does not load from disk when persistent=false', () => {
     const cache = new AdvancedCache<string, string>(
-      makeOptions({ persistent: false, persistPath })
+      makeOptions({ persistent: false, persistPath }),
     );
 
     // existsSync should not be called for loading
@@ -360,9 +357,7 @@ describe('AdvancedCache — Persistence (save/load)', () => {
   it('persists to disk via persistNow()', () => {
     vi.mocked(existsSync).mockReturnValue(false);
 
-    const cache = new AdvancedCache<string, string>(
-      makeOptions({ persistent: true, persistPath })
-    );
+    const cache = new AdvancedCache<string, string>(makeOptions({ persistent: true, persistPath }));
 
     cache.set('x', 'value-x');
     cache.set('y', 'value-y');
@@ -381,9 +376,7 @@ describe('AdvancedCache — Persistence (save/load)', () => {
   it('creates directory if it does not exist when persisting', () => {
     vi.mocked(existsSync).mockReturnValue(false);
 
-    const cache = new AdvancedCache<string, string>(
-      makeOptions({ persistent: true, persistPath })
-    );
+    const cache = new AdvancedCache<string, string>(makeOptions({ persistent: true, persistPath }));
 
     cache.set('a', '1');
     cache.persistNow();
@@ -393,7 +386,7 @@ describe('AdvancedCache — Persistence (save/load)', () => {
 
   it('does not write to disk when persistent=false', () => {
     const cache = new AdvancedCache<string, string>(
-      makeOptions({ persistent: false, persistPath })
+      makeOptions({ persistent: false, persistPath }),
     );
 
     cache.set('a', '1');
@@ -407,9 +400,7 @@ describe('AdvancedCache — Persistence (save/load)', () => {
     vi.mocked(readFileSync).mockReturnValue('not valid json{{{');
 
     // Should not throw; just log error and start with empty cache
-    const cache = new AdvancedCache<string, string>(
-      makeOptions({ persistent: true, persistPath })
-    );
+    const cache = new AdvancedCache<string, string>(makeOptions({ persistent: true, persistPath }));
 
     expect(cache.getStats().size).toBe(0);
   });
@@ -422,7 +413,7 @@ describe('AdvancedCache — Size Limits and Eviction Callbacks', () => {
       makeOptions({
         maxSize: 2,
         onEvict: (key, value) => evicted.push({ key, value }),
-      })
+      }),
     );
 
     cache.set('a', 'val-a');
@@ -441,7 +432,7 @@ describe('AdvancedCache — Size Limits and Eviction Callbacks', () => {
         maxSize: 10,
         ttlMs: 100,
         onEvict: (key, value) => evicted.push({ key, value }),
-      })
+      }),
     );
 
     cache.set('a', 'val-a');
@@ -465,7 +456,7 @@ describe('AdvancedCache — Size Limits and Eviction Callbacks', () => {
       makeOptions({
         maxSize: 1,
         onEvict: (key, _value) => evicted.push(key),
-      })
+      }),
     );
 
     cache.set('a', '1');
@@ -479,9 +470,7 @@ describe('AdvancedCache — Size Limits and Eviction Callbacks', () => {
   });
 
   it('getStats reports correct size and maxSize', () => {
-    const cache = new AdvancedCache<string, string>(
-      makeOptions({ maxSize: 10 })
-    );
+    const cache = new AdvancedCache<string, string>(makeOptions({ maxSize: 10 }));
 
     cache.set('a', '1');
     cache.set('b', '2');
@@ -492,9 +481,7 @@ describe('AdvancedCache — Size Limits and Eviction Callbacks', () => {
   });
 
   it('getStats reports memory usage', () => {
-    const cache = new AdvancedCache<string, string>(
-      makeOptions({ maxSize: 10 })
-    );
+    const cache = new AdvancedCache<string, string>(makeOptions({ maxSize: 10 }));
 
     cache.set('key', 'some value');
     const stats = cache.getStats();
@@ -504,9 +491,7 @@ describe('AdvancedCache — Size Limits and Eviction Callbacks', () => {
   it('getStats reports oldest and newest entry timestamps', () => {
     vi.useFakeTimers();
 
-    const cache = new AdvancedCache<string, string>(
-      makeOptions({ maxSize: 10, ttlMs: 60_000 })
-    );
+    const cache = new AdvancedCache<string, string>(makeOptions({ maxSize: 10, ttlMs: 60_000 }));
 
     const t1 = Date.now();
     cache.set('a', '1');
@@ -557,7 +542,7 @@ describe('AdvancedCache — Additional Operations', () => {
     await expect(
       cache.warm(['a'], async () => {
         throw new Error('Generator failed');
-      })
+      }),
     ).rejects.toThrow('Generator failed');
   });
 
@@ -628,7 +613,7 @@ describe('AdvancedCache — Additional Operations', () => {
     vi.mocked(existsSync).mockReturnValue(false);
 
     const cache = new AdvancedCache<string, string>(
-      makeOptions({ persistent: true, persistPath: '/tmp/test/cache.json' })
+      makeOptions({ persistent: true, persistPath: '/tmp/test/cache.json' }),
     );
 
     cache.set('a', '1');
@@ -688,7 +673,11 @@ describe('CachePersistence — Direct Unit Tests', () => {
     vi.clearAllMocks();
     try {
       rmSync(testDir, { recursive: true, force: true });
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional test fallback tests/unit/cache/advanced-cache.test.ts:691',
+      );
       // ignore
     }
   });
@@ -697,7 +686,11 @@ describe('CachePersistence — Direct Unit Tests', () => {
     vi.clearAllMocks();
     try {
       rmSync(testDir, { recursive: true, force: true });
-    } catch {
+    } catch (error) {
+      reportSuppressedError(
+        error,
+        'Intentional test fallback tests/unit/cache/advanced-cache.test.ts:700',
+      );
       // ignore
     }
   });
@@ -727,7 +720,9 @@ describe('CachePersistence — Direct Unit Tests', () => {
       persistPath,
     });
 
-    const map = new Map([['a', { value: '1', createdAt: 0, expiresAt: 0, accessCount: 0, lastAccessed: 0 }]]);
+    const map = new Map([
+      ['a', { value: '1', createdAt: 0, expiresAt: 0, accessCount: 0, lastAccessed: 0 }],
+    ]);
     persistence.persistToDisk(map);
 
     expect(writeFileSync).not.toHaveBeenCalled();

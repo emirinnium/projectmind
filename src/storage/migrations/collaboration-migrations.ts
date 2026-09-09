@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Migration } from './types.js';
 
@@ -160,7 +161,11 @@ export const collaborationMigrations: Migration[] = [
         for (const idx of userIndexes) {
           try {
             db.exec(idx.sql);
-          } catch {
+          } catch (error) {
+            reportSuppressedError(
+              error,
+              'Intentional fallback src/storage/migrations/collaboration-migrations.ts:163',
+            );
             // index referenced a dropped column — intentionally skipped
           }
         }
@@ -217,7 +222,11 @@ export const collaborationMigrations: Migration[] = [
           try {
             db.exec('DROP INDEX IF EXISTS idx_pending_intents_timestamp;');
             db.exec('ALTER TABLE pending_intents DROP COLUMN timestamp;');
-          } catch {
+          } catch (error) {
+            reportSuppressedError(
+              error,
+              'Intentional fallback src/storage/migrations/collaboration-migrations.ts:220',
+            );
             // older SQLite or a dependent schema object — column is harmless
           }
         }

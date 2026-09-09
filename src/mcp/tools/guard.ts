@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { toolCacheHintMeta } from './list.js';
+export { parityAnnotations } from './parity-annotations.js';
 
 /** Root commands that must never be launched through the MCP surface. */
 export const BLOCKED_ROOT_COMMANDS = new Set(['mcp', 'init']);
@@ -59,7 +60,7 @@ const WRITE_DERIVED: CompleteToolAnnotations = {
   openWorldHint: false,
 };
 
-/** The 64 core tools plus the two resource-subscription tools. */
+/** The 66 dedicated tools plus the two resource-subscription tools. */
 export const MCP_CORE_TOOL_NAMES = [
   'check_coherence',
   'get_context',
@@ -125,6 +126,8 @@ export const MCP_CORE_TOOL_NAMES = [
   'recommend_skills',
   'run_cli',
   'scan_cves',
+  'prove_claim',
+  'verify_freshness',
   'resource_subscribe',
   'resource_unsubscribe',
 ] as const;
@@ -236,6 +239,8 @@ export const TOOL_ANNOTATIONS: Readonly<Record<string, CompleteToolAnnotations>>
     openWorldHint: true,
   },
   scan_cves: OPEN_WORLD_READ_ONLY,
+  prove_claim: READ_ONLY_LOCAL,
+  verify_freshness: READ_ONLY_LOCAL,
   resource_subscribe: REVERSIBLE_IDEMPOTENT,
   resource_unsubscribe: REVERSIBLE_IDEMPOTENT,
 };
@@ -250,9 +255,6 @@ function hasCompleteAnnotations(value: unknown): value is CompleteToolAnnotation
     typeof record.openWorldHint === 'boolean'
   );
 }
-
-/** Parity roots that may reach the outside world (deps-fresh --audit → npm registry). */
-const PARITY_OPEN_WORLD_EXCEPTIONS = new Set(['deps-fresh']);
 
 /** 'analyze_impact' -> 'Analyze Impact' (annotation title fallback). */
 function humanizeToolName(name: string): string {
@@ -313,73 +315,9 @@ export function annotateToolRegistration(server: McpServer): void {
 }
 
 /**
- * CLI roots whose parity tools are pure reports/analyses of the local
- * project (optional `-o <file>` export does not change their read nature).
- * Roots with ANY writing subcommand (taint record, embed init,
- * structural-search replace, layers --auto-fix, adr new, contract-test
- * generate, ...) are classified conservatively as state-changing below.
- */
-const PARITY_READ_ONLY_ROOTS = new Set([
-  'report',
-  'genome',
-  'scale',
-  'health',
-  'heatmap',
-  'ownership',
-  'search',
-  'impact',
-  'context',
-  'audit',
-  'license',
-  'graph',
-  'churn',
-  'api-surface',
-  'dedup',
-  'debug',
-  'coupling',
-  'refactor-roi',
-  'context-budget',
-  'pr-preview',
-  'doctor',
-  'debt-prioritize',
-  'flags',
-  'skill-recommend',
-  'test-quality',
-  'sbom',
-  'deps-fresh',
-  'secrets-life',
-  'migrate',
-  'export_architecture_diagram',
-  'find_symbol_references',
-  'find_symbol_definition',
-]);
-
-/** Full annotation set for a parity tool identified by its CLI path. */
-export function parityAnnotations(path: string[]): CompleteToolAnnotations {
-  if (path.length > 0 && PARITY_READ_ONLY_ROOTS.has(path[0])) {
-    const openWorld = !PARITY_OPEN_WORLD_EXCEPTIONS.has(path[0]);
-    return {
-      readOnlyHint: true,
-      idempotentHint: true,
-      destructiveHint: false,
-      openWorldHint: !openWorld,
-    };
-  }
-  // The generated parity surface is derived from CLI command metadata. A
-  // non-read-only root may contain a mutating subcommand, so advertise the
-  // conservative behavior even when a particular invocation is harmless.
-  return {
-    readOnlyHint: false,
-    destructiveHint: true,
-    idempotentHint: false,
-    openWorldHint: PARITY_OPEN_WORLD_EXCEPTIONS.has(path[0] ?? ''),
-  };
-}
-
-/**
  * Tool surface profile. `PROJECTMIND_TOOLS=all` registers the full surface
  * including generated pm_* parity tools (~130 total).
- * `PROJECTMIND_TOOLS=core` (DEFAULT) skips parity tools (~45 tools) so clients
+ * `PROJECTMIND_TOOLS=core` (DEFAULT) skips parity tools (~66 dedicated tools) so clients
  * with a small active-tool budget (e.g. Cursor's limit) can use ProjectMind.
  * The run_cli bridge always remains available as escape hatch.
  * Set `PROJECTMIND_TOOLS=all` to enable the full parity surface.

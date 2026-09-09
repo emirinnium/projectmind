@@ -15,7 +15,6 @@ export function analyzeTechnicalDebt(
   churn: Map<string, GitChurnEntry> = new Map(),
 ): DebtItem[] {
   const items: DebtItem[] = [];
-  const reasoningTrace: string[] = [];
 
   // 1. Complexity Analysis — count decision points inside function bodies.
   const complexFunctionNames: string[] = [];
@@ -33,9 +32,9 @@ export function analyzeTechnicalDebt(
   }
 
   if (complexFunctionNames.length > 0) {
-    reasoningTrace.push(
+    const reasoningTrace = [
       `High cyclomatic complexity detected in ${complexFunctionNames.length} functions`,
-    );
+    ];
     items.push({
       id: 0,
       type: 'complexity',
@@ -56,7 +55,7 @@ export function analyzeTechnicalDebt(
     const ageInDays = (now - lastModified) / (1000 * 60 * 60 * 24);
 
     if (ageInDays > 365) {
-      reasoningTrace.push(`File is ${Math.floor(ageInDays)} days old - potential legacy code`);
+      const reasoningTrace = [`File is ${Math.floor(ageInDays)} days old - potential legacy code`];
       items.push({
         id: 0,
         type: 'code_age',
@@ -74,7 +73,7 @@ export function analyzeTechnicalDebt(
   // 3. Cognitive Load Analysis — tiered scheme (consistent with architecture.ts and tracker-core.ts)
   if (file.cognitiveLoad) {
     if (file.cognitiveLoad > COGNITIVE_LOAD_THRESHOLD) {
-      reasoningTrace.push(`High cognitive load detected (${file.cognitiveLoad})`);
+      const reasoningTrace = [`High cognitive load detected (${file.cognitiveLoad})`];
       items.push({
         id: 0,
         type: 'cognitive_load',
@@ -87,7 +86,7 @@ export function analyzeTechnicalDebt(
         filePath: file.path,
       });
     } else if (file.cognitiveLoad > 0.4) {
-      reasoningTrace.push(`Moderate cognitive load detected (${file.cognitiveLoad})`);
+      const reasoningTrace = [`Moderate cognitive load detected (${file.cognitiveLoad})`];
       items.push({
         id: 0,
         type: 'cognitive_load',
@@ -104,14 +103,14 @@ export function analyzeTechnicalDebt(
   // 4. Change Frequency Analysis
   const churnEntry = churn.get(file.relativePath.replace(/\\/g, '/'));
   if (churnEntry && churnEntry.count >= 10) {
-    reasoningTrace.push(
+    const reasoningTrace = [
       `File changed ${churnEntry.count} times in the last 90 days by ${churnEntry.authors.size} author(s)`,
-    );
+    ];
     items.push({
       id: 0,
       type: 'change_frequency',
       description: `High change frequency in ${file.relativePath} (${churnEntry.count} commits in 90 days)`,
-      severity: 'medium',
+      severity: 'low',
       suggestion: `Frequently changed files attract regressions — consider strengthening test coverage or stabilizing the interface`,
       reasoningTrace,
       detectedAt: new Date().toISOString(),

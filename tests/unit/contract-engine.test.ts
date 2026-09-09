@@ -57,6 +57,40 @@ describe('ContractEngine', () => {
       const violations = engine.evaluate('src/test.ts', 'const many = 5;');
       expect(violations).toHaveLength(0);
     });
+
+    it('ignores forbidden text inside comments, strings, templates, and regex literals', () => {
+      const engine = new ContractEngine([{
+        id: 'no-dynamic-code',
+        name: 'No Dynamic Code',
+        sourcePattern: '**/*.ts',
+        forbiddenKeywords: ['eval\\s*\\('],
+        severity: 'error',
+      }]);
+      const forbidden = ['ev', 'al('].join('');
+      const code = [
+        `const text = '${forbidden}userInput)';`,
+        `// ${forbidden}commentOnly);`,
+        `const template = \`${forbidden}templateOnly)\`;`,
+        `const matcher = /${forbidden.replace('(', '\\(')}regexOnly\\)/;`,
+      ].join('\n');
+
+      expect(engine.evaluate('src/test.ts', code)).toHaveLength(0);
+    });
+
+    it('still detects executable forbidden calls after masking non-code tokens', () => {
+      const engine = new ContractEngine([{
+        id: 'no-dynamic-code',
+        name: 'No Dynamic Code',
+        sourcePattern: '**/*.ts',
+        forbiddenKeywords: ['eval\\s*\\('],
+        severity: 'error',
+      }]);
+      const forbidden = ['ev', 'al('].join('');
+
+      const violations = engine.evaluate('src/test.ts', `const value = ${forbidden}userInput);`);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.line).toBe(1);
+    });
   });
 
   describe('evaluate - forbidden imports', () => {
@@ -119,6 +153,19 @@ describe('ContractEngine', () => {
 
       const violations = engine.evaluate('src/anything/test.ts', 'exec(x);');
       expect(violations).toHaveLength(1);
+    });
+
+    it('matches recursive globs at the directory root and below it', () => {
+      const engine = new ContractEngine([{
+        id: 'core-only',
+        name: 'Core Only',
+        sourcePattern: 'src/core/**/*.ts',
+        forbiddenKeywords: ['debugger'],
+        severity: 'error',
+      }]);
+
+      expect(engine.evaluate('src/core/engine.ts', 'debugger;')).toHaveLength(1);
+      expect(engine.evaluate('src/core/nested/engine.ts', 'debugger;')).toHaveLength(1);
     });
   });
 

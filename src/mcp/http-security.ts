@@ -92,33 +92,52 @@ export function extractBearerOrHeaderToken(req: http.IncomingMessage): string | 
 
 /** Static-token check only (used by /mcp auth and the protected /oauth/register). */
 export function isStaticTokenValid(req: http.IncomingMessage): boolean {
+  return isStaticTokenValidFor(req, HTTP_AUTH_TOKEN);
+}
+
+function isStaticTokenValidFor(req: http.IncomingMessage, expectedToken: string): boolean {
+  if (!expectedToken) return false;
   const presented = extractBearerOrHeaderToken(req);
   if (presented === undefined) return false;
-  return timingSafeEqual(
-    Buffer.from(presented, 'utf8'),
-    Buffer.from(HTTP_AUTH_TOKEN ?? '', 'utf8'),
-  );
+  return safeTokenEqual(presented, expectedToken);
+}
+
+export interface HttpAuthorizationOptions {
+  /** Static bearer token; an empty string disables static-token auth. */
+  staticToken?: string;
+  /** Whether OAuth bearer validation is enabled for this request. */
+  oauthEnabled?: boolean;
+  /** Injectable verifier used by tests and embedders; defaults to the DB service. */
+  verifyOauthToken?: (bearer: string) => { scope?: string } | null;
 }
 
 /** HTTP authorization check (static token and/or OAuth). */
-export function isHttpAuthorized(req: http.IncomingMessage): true | { error: string } {
+export function isHttpAuthorized(
+  req: http.IncomingMessage,
+  options: HttpAuthorizationOptions = {},
+): boolean {
+  const staticToken = options.staticToken ?? HTTP_AUTH_TOKEN;
+  const oauthEnabled = options.oauthEnabled ?? OAUTH_ENABLED;
+
   // Static bearer (admin) token wins when configured.
-  if (HTTP_AUTH_TOKEN && isStaticTokenValid(req)) return true;
+  if (staticToken && isStaticTokenValidFor(req, staticToken)) return true;
   // Dual mode: a valid OAuth access token also authorizes /mcp — but only
   // when it carries the MCP-access scope (S1). Expiry is checked inside
   // verify(); scope is checked here so a "registry:read" token cannot be
   // replayed against the /mcp surface.
-  if (OAUTH_ENABLED) {
+  if (oauthEnabled) {
     const presented = extractBearerOrHeaderToken(req);
     if (presented !== undefined && presented.length > 0) {
-      const entry = getOauthTokens().verify(presented);
+      const entry = (options.verifyOauthToken ?? ((bearer) => getOauthTokens().verify(bearer)))(
+        presented,
+      );
       if (entry !== null && (entry.scope ?? '').split(/\s+/).includes(MCP_ACCESS_SCOPE))
         return true;
     }
   }
   // Open loopback mode ONLY when no authentication is configured at all.
-  if (!HTTP_AUTH_TOKEN && !OAUTH_ENABLED) return true;
-  return { error: 'Unauthorized: no token provided.' };
+  if (!staticToken && !oauthEnabled) return true;
+  return false;
 }
 
 /** Timing-safe token comparison. */

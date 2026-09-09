@@ -1,8 +1,11 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { Command } from 'commander';
 import { withService, asyncHandler, output, logger } from '@/cli/utils/shared.js';
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname } from 'node:path';
+import { loadConfig } from '@/cli/utils/shared.js';
+import { confineToProject } from '@/mcp/tools/_shared.js';
 
 interface FeatureFlag {
   name: string;
@@ -21,7 +24,11 @@ export function createFlagsCommand(): Command {
   const flagsCmd = new Command('flags')
     .description('Audit feature flags: usage, staleness, coverage, cleanup')
     .option('--stale-days <n>', 'Days to consider flag stale', '90')
-    .option('--framework <fw>', 'Framework filter: unleash|launchdarkly|custom|all', 'all')
+    .option(
+      '--framework <fw>',
+      'Framework filter: unleash|launchdarkly|custom|homegrown|all',
+      'all',
+    )
     .option('--unused', 'Show potentially unused flags')
     .option('--coverage', 'Show flag coverage by environment')
     .option('--format <fmt>', 'Output: text|json|markdown', 'text')
@@ -36,13 +43,33 @@ export function createFlagsCommand(): Command {
           format: string;
           output: string;
         }) => {
-          await withService(['scale', 'coherence'], async (_ctx, services) => {
+          await withService(['scale'], async (_ctx, services) => {
             const scale = services.scale!;
-            services.coherence!;
+            const framework = opts.framework.toLowerCase();
+            if (!['unleash', 'launchdarkly', 'custom', 'homegrown', 'all'].includes(framework)) {
+              throw new Error(
+                `--framework must be unleash, launchdarkly, custom, homegrown, or all: ${opts.framework}`,
+              );
+            }
 
-            output.section('Feature Flag Audit');
-            output.kv('Stale threshold', `${opts.staleDays} days`);
-            output.kv('Framework', opts.framework);
+            const staleDays = Number.parseInt(opts.staleDays, 10);
+            if (!Number.isSafeInteger(staleDays) || staleDays < 0 || staleDays > 3650) {
+              throw new Error(
+                `--stale-days must be an integer between 0 and 3650: ${opts.staleDays}`,
+              );
+            }
+            if (!['text', 'json', 'markdown'].includes(opts.format)) {
+              throw new Error(`--format must be text, json, or markdown: ${opts.format}`);
+            }
+            const outputPath = opts.output
+              ? confineToProject(opts.output, loadConfig().projectRoot)
+              : undefined;
+
+            if (opts.format === 'text') {
+              output.section('Feature Flag Audit');
+              output.kv('Stale threshold', `${staleDays} days`);
+              output.kv('Framework', opts.framework);
+            }
 
             const report = scale.getScaleReport();
             const allFiles = report.modules.flatMap((m) => m.files || []);
@@ -57,20 +84,24 @@ export function createFlagsCommand(): Command {
                 const content = readFileSync(file.path, 'utf-8');
                 const found = findFeatureFlags(content, file.relativePath, file.path);
                 flags.push(...found);
-              } catch (_e) {
+              } catch (error) {
+                reportSuppressedError(error, 'Intentional fallback src/cli/commands/flags.ts:86');
                 // Skip unreadable
               }
             }
 
-            if (flags.length === 0) {
-              output.info('No feature flags detected');
+            const filteredFlags =
+              framework === 'all' ? flags : flags.filter((flag) => flag.framework === framework);
+            if (filteredFlags.length === 0) {
+              if (opts.format === 'json') output.json({ flags: [], summary: { total: 0 } });
+              else output.info('No feature flags detected');
               return;
             }
 
-            output.kv('Total flags found', flags.length);
+            output.kv('Total flags found', filteredFlags.length);
 
             // Analyze flags
-            const staleThreshold = Date.now() - parseInt(opts.staleDays, 10) * 24 * 60 * 60 * 1000;
+            const staleThreshold = Date.now() - staleDays * 24 * 60 * 60 * 1000;
 
             // Resolve lastModified per source file (git last-commit date, fs mtime fallback).
             // Lazy + cached: only files that actually contain flags are queried.
@@ -94,9 +125,9 @@ export function createFlagsCommand(): Command {
               flag.references = countReferences(flag.name, tsFiles);
             }
 
-            const staleFlags = flags.filter((f) => f.stale);
-            const unusedFlags = flags.filter((f) => f.references === 0);
-            const byFramework = flags.reduce(
+            const staleFlags = filteredFlags.filter((f) => f.stale);
+            const unusedFlags = filteredFlags.filter((f) => f.references === 0);
+            const byFramework = filteredFlags.reduce(
               (acc, f) => {
                 acc[f.framework || 'unknown'] = (acc[f.framework || 'unknown'] || 0) + 1;
                 return acc;
@@ -106,18 +137,18 @@ export function createFlagsCommand(): Command {
 
             if (opts.format === 'json') {
               const result = {
-                flags,
+                flags: filteredFlags,
                 summary: {
-                  total: flags.length,
+                  total: filteredFlags.length,
                   stale: staleFlags.length,
                   unused: unusedFlags.length,
                   byFramework,
                 },
               };
               const content = JSON.stringify(result, null, 2);
-              if (opts.output) {
-                writeFileSync(opts.output, content);
-                output.success(`Written to ${opts.output}`);
+              if (outputPath) {
+                writeFileSync(outputPath, content);
+                output.success(`Written to ${outputPath}`);
               } else {
                 output.raw(content);
               }
@@ -125,10 +156,10 @@ export function createFlagsCommand(): Command {
             }
 
             if (opts.format === 'markdown') {
-              const content = generateMarkdownFlags(flags, staleFlags, unusedFlags);
-              if (opts.output) {
-                writeFileSync(opts.output, content);
-                output.success(`Written to ${opts.output}`);
+              const content = generateMarkdownFlags(filteredFlags, staleFlags, unusedFlags);
+              if (outputPath) {
+                writeFileSync(outputPath, content);
+                output.success(`Written to ${outputPath}`);
               } else {
                 output.raw(content);
               }
@@ -136,7 +167,7 @@ export function createFlagsCommand(): Command {
             }
 
             // Text format
-            output.section(`Feature Flags (${flags.length} total)`);
+            output.section(`Feature Flags (${filteredFlags.length} total)`);
 
             output.kv(
               'By framework',
@@ -148,7 +179,7 @@ export function createFlagsCommand(): Command {
             output.kv('Unused flags', unusedFlags.length);
 
             if (staleFlags.length > 0) {
-              output.section(`Stale Flags (>${opts.staleDays} days)`);
+              output.section(`Stale Flags (>${staleDays} days)`);
               for (const flag of staleFlags.slice(0, 20)) {
                 output.kv(
                   `  ⏰ ${flag.name}`,
@@ -166,7 +197,9 @@ export function createFlagsCommand(): Command {
 
             if (opts.coverage) {
               output.section('Environment Coverage');
-              const withEnvs = flags.filter((f) => f.environments && f.environments.length > 0);
+              const withEnvs = filteredFlags.filter(
+                (f) => f.environments && f.environments.length > 0,
+              );
               output.kv('Flags with env config', withEnvs.length);
               for (const flag of withEnvs.slice(0, 15)) {
                 output.kv(`  ${flag.name}`, flag.environments?.join(', ') || 'none');
@@ -186,21 +219,21 @@ export function createFlagsCommand(): Command {
                 'No references found in codebase',
               );
             }
-            if (flags.some((f) => !f.environments || f.environments.length === 0)) {
+            if (filteredFlags.some((f) => !f.environments || f.environments.length === 0)) {
               output.kv(
                 `  🌍 Add environment config`,
-                `${flags.filter((f) => !f.environments || f.environments.length === 0).length} flags lack environment config`,
+                `${filteredFlags.filter((f) => !f.environments || f.environments.length === 0).length} flags lack environment config`,
               );
             }
 
-            if (opts.output) {
+            if (outputPath) {
               writeFileSync(
-                opts.output,
+                outputPath,
                 JSON.stringify(
                   {
-                    flags,
+                    flags: filteredFlags,
                     summary: {
-                      total: flags.length,
+                      total: filteredFlags.length,
                       stale: staleFlags.length,
                       unused: unusedFlags.length,
                       byFramework,
@@ -210,7 +243,7 @@ export function createFlagsCommand(): Command {
                   2,
                 ),
               );
-              output.success(`Written to ${opts.output}`);
+              output.success(`Written to ${outputPath}`);
             }
           });
         },
@@ -308,7 +341,8 @@ function resolveLastModified(absolutePath: string): string | undefined {
       encoding: 'utf-8',
     }).trim();
     if (out) return out;
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional fallback src/cli/commands/flags.ts:342');
     // Not a git repo / git missing / file untracked: fall through to mtime.
   }
   try {

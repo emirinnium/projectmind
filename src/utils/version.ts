@@ -1,3 +1,4 @@
+import { reportSuppressedError } from './errors.js';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -16,7 +17,8 @@ export function resolvePackageVersion(moduleDir: string): string {
       if (pkg.name === '@emirhanturker/projectmind') {
         return pkg.version ?? '0.0.0';
       }
-    } catch {
+    } catch (error) {
+      reportSuppressedError(error, 'Intentional fallback src/utils/version.ts:19');
       // Continue searching upward.
     }
     dir = dirname(dir);

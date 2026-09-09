@@ -286,4 +286,36 @@ export const debtMigrations: Migration[] = [
       }
     },
   },
+  {
+    version: 99,
+    name: 'project-scoped-debt-items',
+    up: (db: DatabaseSync) => {
+      const exists = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'debt_items'")
+        .get();
+      if (!exists) return;
+
+      const columns = db.prepare('PRAGMA table_info(debt_items)').all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === 'project_id')) {
+        db.exec('ALTER TABLE debt_items ADD COLUMN project_id INTEGER NOT NULL DEFAULT 1');
+      }
+
+      // File-linked findings inherit their owning file's project. Project-wide
+      // findings retain the default project until a detector provides a file.
+      db.exec(`
+        UPDATE debt_items
+        SET project_id = COALESCE(
+          (SELECT project_id FROM files WHERE files.id = debt_items.file_id),
+          1
+        )
+        WHERE file_id IS NOT NULL;
+      `);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_debt_project ON debt_items(project_id, resolved);');
+    },
+    down: (db: DatabaseSync) => {
+      db.exec('DROP INDEX IF EXISTS idx_debt_project;');
+      // Keep the nullable compatibility column on rollback; SQLite table
+      // rewrites are intentionally avoided for a live user database.
+    },
+  },
 ];

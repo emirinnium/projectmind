@@ -14,10 +14,11 @@ export function startAgentSession(ctx: KgContext, agentName: string): number {
   return Number(result.lastInsertRowid);
 }
 
-export function endAgentSession(ctx: KgContext, sessionId: number): void {
-  ctx.db
+export function endAgentSession(ctx: KgContext, sessionId: number): boolean {
+  const result = ctx.db
     .prepare('UPDATE agent_sessions SET ended_at = CURRENT_TIMESTAMP WHERE id = ?')
     .run(sessionId);
+  return Number(result.changes) > 0;
 }
 
 export function storeMemory(

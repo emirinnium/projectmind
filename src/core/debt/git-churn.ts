@@ -1,3 +1,4 @@
+import { reportSuppressedError } from '../../utils/errors.js';
 import { execFileSync } from 'node:child_process';
 
 export interface GitChurnEntry {
@@ -42,7 +43,8 @@ export function collectGitChurn(
       entry.authors.add(currentAuthor);
       churn.set(normalized, entry);
     }
-  } catch {
+  } catch (error) {
+    reportSuppressedError(error, 'Intentional fallback src/core/debt/git-churn.ts:45');
     // Not a git repo / git missing: change-frequency analysis is skipped.
   }
   return churn;

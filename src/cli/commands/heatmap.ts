@@ -7,6 +7,9 @@ export function createHeatmapCommand(): Command {
     .option('--format <fmt>', 'Output: text|json', 'text')
     .action(
       asyncHandler(async (opts: { format: string }) => {
+        if (!['text', 'json'].includes(opts.format)) {
+          throw new Error(`--format must be text or json: ${opts.format}`);
+        }
         await withService(['scale'], async (_ctx, services) => {
           const scale = services.scale!;
 
@@ -31,9 +34,8 @@ export function createHeatmapCommand(): Command {
             const covered = items.filter((i) => i.covered).length;
             const total = items.length;
             const pct = total > 0 ? ((covered / total) * 100).toFixed(1) : '0.0';
-            const bar =
-              '█'.repeat(Math.floor((covered / total) * 20)) +
-              '░'.repeat(20 - Math.floor((covered / total) * 20));
+            const filled = total > 0 ? Math.min(20, Math.floor((covered / total) * 20)) : 0;
+            const bar = '█'.repeat(filled) + '░'.repeat(20 - filled);
             output.kv(`  ${bar} ${mod}`, `${covered}/${total} (${pct}%)`);
           }
 

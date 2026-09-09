@@ -9,12 +9,10 @@ export const coreMigrations: Migration[] = [
   {
     version: 1,
     name: 'initial_schema',
-    up: () => {
-      /* Initial schema is applied via SCHEMA_SQL */
-    },
-    down: () => {
-      /* Cannot rollback initial schema */
-    },
+    // The initial schema is applied by SCHEMA_SQL before migrations run.
+    up: () => undefined,
+    // The initial schema is intentionally not rolled back.
+    down: () => undefined,
   },
   {
     version: 2,
@@ -352,5 +350,25 @@ export const coreMigrations: Migration[] = [
     down: (db: DatabaseSync) => {
       db.exec('DROP INDEX IF EXISTS idx_circular_deps_cycle_path');
     },
+  },
+  {
+    version: 100,
+    name: 'persist_import_named_bindings',
+    up: (db: DatabaseSync) => {
+      const table = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'imports'")
+        .get();
+      if (!table) return;
+
+      const columns = db.prepare('PRAGMA table_info(imports)').all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === 'named')) {
+        // Nullable legacy rows are normalized to the empty JSON array by the
+        // DEFAULT; new writes always persist the parser's named bindings.
+        db.exec("ALTER TABLE imports ADD COLUMN named TEXT NOT NULL DEFAULT '[]'");
+      }
+    },
+    // SQLite cannot drop a column without rebuilding the table. Leaving the
+    // additive column in place is safe and keeps rollback non-destructive.
+    down: () => undefined,
   },
 ];

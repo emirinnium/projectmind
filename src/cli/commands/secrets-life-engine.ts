@@ -43,7 +43,6 @@ export const DEFAULT_POLICIES: Record<string, RotationPolicy> = {
 export function scanForSecrets(
   content: string,
   relativePath: string,
-  filePath: string,
   entropyThreshold: number,
 ): SecretFinding[] {
   const findings: SecretFinding[] = [];

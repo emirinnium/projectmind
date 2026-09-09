@@ -7,10 +7,16 @@ export function createResolveCommand(): Command {
     .argument('<id>', 'Debt item ID')
     .action(
       asyncHandler(async (id: string) => {
+        const debtId = Number(id);
+        if (!Number.isSafeInteger(debtId) || debtId <= 0) {
+          throw new Error(`Debt item ID must be a positive integer: ${id}`);
+        }
         await withService(['debt'], async (_ctx, services) => {
           const debt = services.debt!;
-          debt.resolveDebt(Number(id));
-          output.success(`Debt item ${id} resolved.`);
+          if (!debt.resolveDebt(debtId)) {
+            throw new Error(`Unresolved debt item not found: ${debtId}`);
+          }
+          output.success(`Debt item ${debtId} resolved.`);
         });
       }),
     );

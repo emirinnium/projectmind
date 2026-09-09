@@ -13,6 +13,10 @@ export function createStructuralSearchCommand(): Command {
     'AST-based structural search/replace across the codebase',
   );
 
+  structuralSearchCmd.action(() => {
+    structuralSearchCmd.outputHelp();
+  });
+
   structuralSearchCmd
     .command('search')
     .description('Search for AST nodes matching a pattern')

@@ -22,6 +22,9 @@ export function createMemoryCommand(): Command {
 
           if (opts.set) {
             const sessionId = opts.session ? Number(opts.session) : 0;
+            if (opts.session && (!Number.isSafeInteger(sessionId) || sessionId <= 0)) {
+              throw new Error(`--session must be a positive integer: ${opts.session}`);
+            }
             if (sessionId) {
               ctx.kg.storeMemory(sessionId, scope, key || 'default', JSON.stringify(opts.set));
               output.success(`Stored memory: ${scope}/${key || 'default'}`);
@@ -53,12 +56,20 @@ export function createMemoryCommand(): Command {
       asyncHandler(
         async (query: string, opts: { limit?: string; threshold?: string; agent?: string }) => {
           await withContext(async (ctx) => {
+            const limit = Number.parseInt(opts.limit ?? '5', 10);
+            const threshold = Number.parseFloat(opts.threshold ?? '0.05');
+            if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+              throw new Error(`--limit must be an integer between 1 and 1000: ${opts.limit}`);
+            }
+            if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+              throw new Error(`--threshold must be a number between 0 and 1: ${opts.threshold}`);
+            }
             const result = await searchTeamMemoriesSemantic(
               () => ctx.kg.getAllTeamMemories(opts.agent || 'unknown'),
               {
                 query,
-                limit: Math.max(1, parseInt(opts.limit ?? '5', 10) || 5),
-                threshold: parseFloat(opts.threshold ?? '0.05') || 0.05,
+                limit,
+                threshold,
                 ...(opts.agent ? { agentName: opts.agent } : {}),
               },
             );

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Made `mcp-init` reuse an existing OpenCode `.jsonc` or Kilo `.json` config
+  instead of creating a second client config, and made repeated initialization
+  idempotent with user settings preserved.
+- Removed duplicate success checkmarks from `init`, `mcp-init`, and autopilot
+  CLI output.
+- Removed a raw NUL byte from the import-resolution cache source while
+  preserving its runtime cache-key delimiter.
+- Fixed top-level `graph --format` handling so Commander does not overwrite an
+  explicitly selected format with the root command's absent option value.
+- Replaced silent fallback catches with typed, debug-level observability and
+  made intentional no-op migration/test callbacks explicit without changing
+  their behavior.
+- Split MCP HTTP transport lifecycle from its security policy and hardened
+  authorization to return strict booleans with length-safe token comparison;
+  invalid credentials and malformed requests are now rejected deterministically.
+- File watchers now remove deleted source files from the knowledge graph and
+  vector index, report `removed` separately from `failed`, and never resurrect
+  an intentionally unregistered MCP watch.
+- Split the MCP synchronization implementation into focused watcher, file
+  status, registration, and context modules while preserving `sync.ts` as the
+  public compatibility façade; context-enrichment failures are now observable
+  in structured results instead of being silently discarded.
+- Extended semantic MCP retrieval from files to indexed functions/classes via
+  `scope: "symbol"`, with source locations, provider/index dimensions,
+  malformed-vector diagnostics, persisted provider/model manifests, and
+  explicit freshness limitations. Missing or incompatible manifests now
+  downgrade evidence instead of allowing unverified semantic claims.
+- Made configured embedding providers effective during scan indexing for files
+  and symbols, with a shared dimension contract and no silent batch truncation.
+- Fixed dimension-sensitive token-vector caching and prevented non-finite
+  similarity scores from entering search or redundancy results.
+- Aligned the public embedding provider types and MCP schema with all five
+  supported providers (`simple`, `openai`, `transformers`, `unixcoder`,
+  `codebert`); unavailable optional providers now report the active fallback.
 - Retired obsolete UI integrations, their CI/release jobs, and the embedded
   `pm serve` command.
 - Removed obsolete planning, temporary, and generated agent artifacts from the

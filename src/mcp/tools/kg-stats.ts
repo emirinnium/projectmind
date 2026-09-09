@@ -23,7 +23,7 @@ export function registerKgStatsTool(server: McpServer, deps: McpDependencies): v
         // No inputs needed; the tool queries the full graph state.
       },
     },
-    async (_args, { _meta }) => {
+    async () => {
       try {
         const kg = deps.kg;
 

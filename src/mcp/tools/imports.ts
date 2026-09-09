@@ -11,7 +11,7 @@ export function registerTraceImportsTool(server: McpServer, deps: McpDependencie
         'Trace all transitive imports for a file to understand the full dependency tree.',
       inputSchema: {
         filePath: z.string().describe('Path of the file to trace imports for'),
-        maxDepth: z.number().default(10).describe('Maximum depth to trace'),
+        maxDepth: z.number().int().min(1).max(100).default(10).describe('Maximum depth to trace'),
       },
     },
     async (args) => {

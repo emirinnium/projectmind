@@ -54,6 +54,8 @@ export interface FileStructure {
   filePath: string;
   language: Language;
   sizeBytes: number;
+  /** Original source text when the structure was produced from source. */
+  sourceText?: string;
   functions: FunctionInfo[];
   classes: ClassInfo[];
   imports: { source: string; named: string[]; kind: string }[];

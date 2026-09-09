@@ -19,20 +19,28 @@ describe('FileRepository', () => {
 
   beforeEach(() => {
     db = createTestDb();
-    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(1, 'default', '/test');
+    db.prepare('INSERT INTO projects (id, name, root_path) VALUES (?, ?, ?)').run(
+      1,
+      'default',
+      '/test',
+    );
     repo = new FileRepository(db);
   });
 
   describe('upsert', () => {
     it('inserts a new file', () => {
-      const fileId = repo.upsert('/test/src/index.ts', {
-        relativePath: 'src/index.ts',
-        language: 'typescript',
-        sizeBytes: 1024,
-        hash: 'abc123',
-        embedding: null,
-        cognitiveLoad: 0.5,
-      }, 1);
+      const fileId = repo.upsert(
+        '/test/src/index.ts',
+        {
+          relativePath: 'src/index.ts',
+          language: 'typescript',
+          sizeBytes: 1024,
+          hash: 'abc123',
+          embedding: null,
+          cognitiveLoad: 0.5,
+        },
+        1,
+      );
 
       expect(fileId).toBe(1);
       const file = repo.getById(fileId, 1);
@@ -42,23 +50,31 @@ describe('FileRepository', () => {
     });
 
     it('updates an existing file', () => {
-      repo.upsert('/test/file.ts', {
-        relativePath: 'file.ts',
-        language: 'typescript',
-        sizeBytes: 100,
-        hash: 'hash1',
-        embedding: null,
-        cognitiveLoad: 0.3,
-      }, 1);
+      repo.upsert(
+        '/test/file.ts',
+        {
+          relativePath: 'file.ts',
+          language: 'typescript',
+          sizeBytes: 100,
+          hash: 'hash1',
+          embedding: null,
+          cognitiveLoad: 0.3,
+        },
+        1,
+      );
 
-      const fileId = repo.upsert('/test/file.ts', {
-        relativePath: 'file.ts',
-        language: 'typescript',
-        sizeBytes: 200,
-        hash: 'hash2',
-        embedding: null,
-        cognitiveLoad: 0.5,
-      }, 1);
+      const fileId = repo.upsert(
+        '/test/file.ts',
+        {
+          relativePath: 'file.ts',
+          language: 'typescript',
+          sizeBytes: 200,
+          hash: 'hash2',
+          embedding: null,
+          cognitiveLoad: 0.5,
+        },
+        1,
+      );
 
       const file = repo.getById(fileId, 1);
       expect(file!.sizeBytes).toBe(200);
@@ -68,14 +84,18 @@ describe('FileRepository', () => {
 
   describe('getByPath', () => {
     it('finds a file by path', () => {
-      repo.upsert('/test/src/utils.ts', {
-        relativePath: 'src/utils.ts',
-        language: 'typescript',
-        sizeBytes: 500,
-        hash: 'util-hash',
-        embedding: null,
-        cognitiveLoad: 0.2,
-      }, 1);
+      repo.upsert(
+        '/test/src/utils.ts',
+        {
+          relativePath: 'src/utils.ts',
+          language: 'typescript',
+          sizeBytes: 500,
+          hash: 'util-hash',
+          embedding: null,
+          cognitiveLoad: 0.2,
+        },
+        1,
+      );
 
       const file = repo.getByPath('/test/src/utils.ts', 1);
       expect(file).not.toBeNull();
@@ -83,14 +103,18 @@ describe('FileRepository', () => {
     });
 
     it('finds a file by relative path', () => {
-      repo.upsert('/test/src/app.ts', {
-        relativePath: 'src/app.ts',
-        language: 'typescript',
-        sizeBytes: 800,
-        hash: 'app-hash',
-        embedding: null,
-        cognitiveLoad: 0.4,
-      }, 1);
+      repo.upsert(
+        '/test/src/app.ts',
+        {
+          relativePath: 'src/app.ts',
+          language: 'typescript',
+          sizeBytes: 800,
+          hash: 'app-hash',
+          embedding: null,
+          cognitiveLoad: 0.4,
+        },
+        1,
+      );
 
       const file = repo.getByPath('src/app.ts', 1);
       expect(file).not.toBeNull();
@@ -105,22 +129,30 @@ describe('FileRepository', () => {
 
   describe('getAll', () => {
     it('returns all files for a project', () => {
-      repo.upsert('/test/a.ts', {
-        relativePath: 'a.ts',
-        language: 'typescript',
-        sizeBytes: 100,
-        hash: 'a-hash',
-        embedding: null,
-        cognitiveLoad: 0.1,
-      }, 1);
-      repo.upsert('/test/b.ts', {
-        relativePath: 'b.ts',
-        language: 'typescript',
-        sizeBytes: 200,
-        hash: 'b-hash',
-        embedding: null,
-        cognitiveLoad: 0.2,
-      }, 1);
+      repo.upsert(
+        '/test/a.ts',
+        {
+          relativePath: 'a.ts',
+          language: 'typescript',
+          sizeBytes: 100,
+          hash: 'a-hash',
+          embedding: null,
+          cognitiveLoad: 0.1,
+        },
+        1,
+      );
+      repo.upsert(
+        '/test/b.ts',
+        {
+          relativePath: 'b.ts',
+          language: 'typescript',
+          sizeBytes: 200,
+          hash: 'b-hash',
+          embedding: null,
+          cognitiveLoad: 0.2,
+        },
+        1,
+      );
 
       const files = repo.getAll(1);
       expect(files).toHaveLength(2);
@@ -129,22 +161,30 @@ describe('FileRepository', () => {
 
   describe('getByLanguage', () => {
     it('filters files by language', () => {
-      repo.upsert('/test/file.ts', {
-        relativePath: 'file.ts',
-        language: 'typescript',
-        sizeBytes: 100,
-        hash: 'ts-hash',
-        embedding: null,
-        cognitiveLoad: 0.1,
-      }, 1);
-      repo.upsert('/test/script.js', {
-        relativePath: 'script.js',
-        language: 'javascript',
-        sizeBytes: 200,
-        hash: 'py-hash',
-        embedding: null,
-        cognitiveLoad: 0.2,
-      }, 1);
+      repo.upsert(
+        '/test/file.ts',
+        {
+          relativePath: 'file.ts',
+          language: 'typescript',
+          sizeBytes: 100,
+          hash: 'ts-hash',
+          embedding: null,
+          cognitiveLoad: 0.1,
+        },
+        1,
+      );
+      repo.upsert(
+        '/test/script.js',
+        {
+          relativePath: 'script.js',
+          language: 'javascript',
+          sizeBytes: 200,
+          hash: 'py-hash',
+          embedding: null,
+          cognitiveLoad: 0.2,
+        },
+        1,
+      );
 
       const tsFiles = repo.getByLanguage('typescript', 1);
       expect(tsFiles).toHaveLength(1);
@@ -154,14 +194,18 @@ describe('FileRepository', () => {
 
   describe('markAgentTouched', () => {
     it('marks a file as agent-touched', () => {
-      repo.upsert('/test/touched.ts', {
-        relativePath: 'touched.ts',
-        language: 'typescript',
-        sizeBytes: 100,
-        hash: 'touch-hash',
-        embedding: null,
-        cognitiveLoad: 0.1,
-      }, 1);
+      repo.upsert(
+        '/test/touched.ts',
+        {
+          relativePath: 'touched.ts',
+          language: 'typescript',
+          sizeBytes: 100,
+          hash: 'touch-hash',
+          embedding: null,
+          cognitiveLoad: 0.1,
+        },
+        1,
+      );
 
       repo.markAgentTouched('/test/touched.ts', 'test-agent', 1);
 
@@ -173,22 +217,30 @@ describe('FileRepository', () => {
 
   describe('getAgentTouched', () => {
     it('returns files touched by a specific agent', () => {
-      repo.upsert('/test/file1.ts', {
-        relativePath: 'file1.ts',
-        language: 'typescript',
-        sizeBytes: 100,
-        hash: 'hash1',
-        embedding: null,
-        cognitiveLoad: 0.1,
-      }, 1);
-      repo.upsert('/test/file2.ts', {
-        relativePath: 'file2.ts',
-        language: 'typescript',
-        sizeBytes: 100,
-        hash: 'hash2',
-        embedding: null,
-        cognitiveLoad: 0.1,
-      }, 1);
+      repo.upsert(
+        '/test/file1.ts',
+        {
+          relativePath: 'file1.ts',
+          language: 'typescript',
+          sizeBytes: 100,
+          hash: 'hash1',
+          embedding: null,
+          cognitiveLoad: 0.1,
+        },
+        1,
+      );
+      repo.upsert(
+        '/test/file2.ts',
+        {
+          relativePath: 'file2.ts',
+          language: 'typescript',
+          sizeBytes: 100,
+          hash: 'hash2',
+          embedding: null,
+          cognitiveLoad: 0.1,
+        },
+        1,
+      );
 
       repo.markAgentTouched('/test/file1.ts', 'agent-a', 1);
       repo.markAgentTouched('/test/file2.ts', 'agent-b', 1);
@@ -199,14 +251,18 @@ describe('FileRepository', () => {
     });
 
     it('returns all agent-touched files when no agent specified', () => {
-      repo.upsert('/test/file1.ts', {
-        relativePath: 'file1.ts',
-        language: 'typescript',
-        sizeBytes: 100,
-        hash: 'hash1',
-        embedding: null,
-        cognitiveLoad: 0.1,
-      }, 1);
+      repo.upsert(
+        '/test/file1.ts',
+        {
+          relativePath: 'file1.ts',
+          language: 'typescript',
+          sizeBytes: 100,
+          hash: 'hash1',
+          embedding: null,
+          cognitiveLoad: 0.1,
+        },
+        1,
+      );
       repo.markAgentTouched('/test/file1.ts', 'agent-a', 1);
 
       const allTouched = repo.getAgentTouched(undefined, 1);
@@ -216,14 +272,18 @@ describe('FileRepository', () => {
 
   describe('getEmbedding', () => {
     it('returns null when no embedding exists', () => {
-      repo.upsert('/test/file.ts', {
-        relativePath: 'file.ts',
-        language: 'typescript',
-        sizeBytes: 100,
-        hash: 'hash',
-        embedding: null,
-        cognitiveLoad: 0.1,
-      }, 1);
+      repo.upsert(
+        '/test/file.ts',
+        {
+          relativePath: 'file.ts',
+          language: 'typescript',
+          sizeBytes: 100,
+          hash: 'hash',
+          embedding: null,
+          cognitiveLoad: 0.1,
+        },
+        1,
+      );
 
       const embedding = repo.getEmbedding(1);
       expect(embedding).toBeNull();
@@ -231,11 +291,25 @@ describe('FileRepository', () => {
 
     it('retrieves stored embedding', () => {
       const embedding = [0.1, 0.2, 0.3];
-      db.prepare('INSERT INTO files (project_id, path, relative_path, embedding) VALUES (?, ?, ?, ?)')
-        .run(1, '/test/file.ts', 'file.ts', JSON.stringify(embedding));
+      db.prepare(
+        'INSERT INTO files (project_id, path, relative_path, embedding) VALUES (?, ?, ?, ?)',
+      ).run(1, '/test/file.ts', 'file.ts', JSON.stringify(embedding));
 
       const result = repo.getEmbedding(1);
       expect(result).toEqual(embedding);
+    });
+
+    it('retrieves compact Float32 BLOB embeddings', () => {
+      const embedding = [0.1, 0.2, 0.3];
+      db.prepare(
+        'INSERT INTO files (project_id, path, relative_path, embedding) VALUES (?, ?, ?, ?)',
+      ).run(1, '/test/blob.ts', 'blob.ts', Buffer.from(new Float32Array(embedding).buffer));
+
+      const result = repo.getById(1, 1);
+      expect(result?.embedding).toHaveLength(3);
+      expect(result?.embedding?.[0]).toBeCloseTo(0.1, 5);
+      expect(result?.embedding?.[1]).toBeCloseTo(0.2, 5);
+      expect(result?.embedding?.[2]).toBeCloseTo(0.3, 5);
     });
   });
 
@@ -243,15 +317,72 @@ describe('FileRepository', () => {
     it('returns map of all embeddings', () => {
       const emb1 = [0.1, 0.2];
       const emb2 = [0.3, 0.4];
-      db.prepare('INSERT INTO files (project_id, path, relative_path, embedding) VALUES (?, ?, ?, ?)')
-        .run(1, '/test/a.ts', 'a.ts', JSON.stringify(emb1));
-      db.prepare('INSERT INTO files (project_id, path, relative_path, embedding) VALUES (?, ?, ?, ?)')
-        .run(1, '/test/b.ts', 'b.ts', JSON.stringify(emb2));
+      db.prepare(
+        'INSERT INTO files (project_id, path, relative_path, embedding) VALUES (?, ?, ?, ?)',
+      ).run(1, '/test/a.ts', 'a.ts', JSON.stringify(emb1));
+      db.prepare(
+        'INSERT INTO files (project_id, path, relative_path, embedding) VALUES (?, ?, ?, ?)',
+      ).run(1, '/test/b.ts', 'b.ts', JSON.stringify(emb2));
 
       const embeddings = repo.getAllEmbeddings(1);
       expect(embeddings.size).toBe(2);
       expect(embeddings.get(1)).toEqual(emb1);
       expect(embeddings.get(2)).toEqual(emb2);
+    });
+  });
+
+  describe('storeFileDetails', () => {
+    it('persists function and class embeddings instead of null placeholders', () => {
+      const fileId = repo.upsert(
+        '/test/details.ts',
+        {
+          relativePath: 'details.ts',
+          language: 'typescript',
+          sizeBytes: 100,
+          hash: 'details-hash',
+          embedding: null,
+          cognitiveLoad: 0.1,
+        },
+        1,
+      );
+
+      repo.storeFileDetails(
+        fileId,
+        [
+          {
+            name: 'run',
+            signature: 'run(input: string): string',
+            returnType: 'string',
+            startLine: 1,
+            endLine: 3,
+            cyclomaticComplexity: 1,
+          },
+        ],
+        [
+          {
+            name: 'Runner',
+            signature: 'Runner',
+            startLine: 5,
+            endLine: 9,
+            methodsCount: 1,
+            propertiesCount: 0,
+          },
+        ],
+        [{ source: './utils', named: ['helper'], kind: 'import' }],
+        '/test/details.ts',
+        1,
+      );
+
+      const embeddings = db
+        .prepare('SELECT embedding FROM functions UNION ALL SELECT embedding FROM classes')
+        .all() as Array<{
+        embedding: Uint8Array | string | null;
+      }>;
+      expect(embeddings).toHaveLength(2);
+      expect(embeddings.every((row) => row.embedding !== null)).toBe(true);
+      expect(db.prepare('SELECT named FROM imports WHERE file_id = ?').get(fileId)).toEqual({
+        named: '["helper"]',
+      });
     });
   });
 });
