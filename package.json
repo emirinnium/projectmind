@@ -1,6 +1,6 @@
 {
   "name": "@emirhanturker/projectmind",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Evidence-first codebase intelligence for JavaScript and TypeScript agents — persistent memory, graph-aware context, and real-time coherence",
   "bin": {
     "projectmind": "./cli.mjs",
@@ -104,8 +104,9 @@
   "overrides": {
     "adm-zip": "^0.6.0",
     "fast-uri": "^3.1.6",
+    "hono": "^4.13.7",
     "protobufjs": "^8.7.2",
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.4",
     "qs": "^6.15.4"
   }
 }
