@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { SCHEMA_SQL } from '../../src/storage/schema.js';
 import { runMigrations } from '../../src/storage/migrations.js';
 import { setDatabase } from '../../src/storage/database.js';
@@ -172,7 +173,7 @@ describe('TaintAnalyzer', () => {
 
   describe('analyzeProject', () => {
     it('follows a resolved static import into an exported sink function', () => {
-      const root = mkdtempSync(join(process.env.TEMP ?? '.', 'projectmind-taint-project-'));
+      const root = mkdtempSync(join(tmpdir(), 'projectmind-taint-project-'));
       try {
         const callerPath = join(root, 'caller.ts');
         const sinkPath = join(root, 'sink.ts');
@@ -234,7 +235,7 @@ describe('TaintAnalyzer', () => {
     });
 
     it('does not follow unresolved or computed module boundaries', () => {
-      const root = mkdtempSync(join(process.env.TEMP ?? '.', 'projectmind-taint-project-'));
+      const root = mkdtempSync(join(tmpdir(), 'projectmind-taint-project-'));
       try {
         const callerPath = join(root, 'caller.ts');
         writeFileSync(
@@ -272,7 +273,7 @@ describe('TaintAnalyzer', () => {
     });
 
     it('does not read an unindexed entry path during project analysis', () => {
-      const indexedPath = join(process.env.TEMP ?? '.', 'projectmind-taint-indexed.ts');
+      const indexedPath = join(tmpdir(), 'projectmind-taint-indexed.ts');
       const projectAnalyzer = new TaintAnalyzer({
         getAllFiles: () => [
           {
@@ -305,7 +306,7 @@ describe('TaintAnalyzer', () => {
     });
 
     it('excludes unrelated indexed files from the entry import closure', () => {
-      const root = mkdtempSync(join(process.env.TEMP ?? '.', 'projectmind-taint-scope-'));
+      const root = mkdtempSync(join(tmpdir(), 'projectmind-taint-scope-'));
       try {
         const entryPath = join(root, 'entry.ts');
         const unrelatedPath = join(root, 'unrelated.ts');

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Cross-platform CI reliability:** temporary fixtures now use absolute OS temp
+  roots, the path-security regression test sends a real NUL byte, and coverage
+  builds `dist` before importing standalone benchmark scripts. Release and CI
+  workflows use Node 24-compatible action runtimes.
+- **MCP install reliability:** the generated `npx` handshake invocation now
+  separates package arguments from ProjectMind arguments, so `--profile` is
+  forwarded correctly on Windows and POSIX clients.
 - **Analysis follow-up hardening:** reduced repeated graph/index work, added
   bounded async source preparation, fixed structural-search glob filtering,
   and kept all selected source paths behind the central security contract.

@@ -18,7 +18,7 @@ describe('central path-security contract', () => {
     expect(result.exists).toBe(true);
   });
 
-  it.each(['../outside.ts', '/etc/passwd', 'C:\\Windows\\System32\\drivers\\etc\\hosts', '\\0bad'])(
+  it.each(['../outside.ts', '/etc/passwd', 'C:\\Windows\\System32\\drivers\\etc\\hosts', '\0bad'])(
     'rejects unsafe path %s',
     (value) => {
       const root = mkdtempSync(join(tmpdir(), 'projectmind-path-'));

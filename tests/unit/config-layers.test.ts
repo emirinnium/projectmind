@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { getGlobalConfigPath, loadConfig, loadEffectiveConfig } from '@/utils/config.js';
 
 describe('configuration layers', () => {
   it('uses global values as defaults and project values as overrides', () => {
-    const root = mkdtempSync(join(process.env.TEMP ?? '.', 'projectmind-config-'));
+    const root = mkdtempSync(join(tmpdir(), 'projectmind-config-'));
     const previousCwd = process.cwd();
     const previousXdg = process.env.XDG_CONFIG_HOME;
     try {
@@ -38,7 +39,7 @@ describe('configuration layers', () => {
   });
 
   it('loads a --root-style working directory without changing process cwd', () => {
-    const root = mkdtempSync(join(process.env.TEMP ?? '.', 'projectmind-config-root-'));
+    const root = mkdtempSync(join(tmpdir(), 'projectmind-config-root-'));
     const previousCwd = process.cwd();
     const previousXdg = process.env.XDG_CONFIG_HOME;
     try {
@@ -71,7 +72,7 @@ describe('configuration layers', () => {
   });
 
   it('does not inherit the invoking project config when the selected root has none', () => {
-    const root = mkdtempSync(join(process.env.TEMP ?? '.', 'projectmind-config-isolation-'));
+    const root = mkdtempSync(join(tmpdir(), 'projectmind-config-isolation-'));
     const previousCwd = process.cwd();
     const previousXdg = process.env.XDG_CONFIG_HOME;
     try {

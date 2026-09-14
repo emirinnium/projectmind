@@ -32,7 +32,7 @@
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:vitest": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "npm run build && vitest run --coverage",
     "fuzz:nightly": "npm run build && node --max-old-space-size=512 scripts/fuzz-smoke.mjs",
     "test:watch": "vitest watch",
     "start:mcp": "npm run build && node --no-deprecation dist/mcp-server.js",
