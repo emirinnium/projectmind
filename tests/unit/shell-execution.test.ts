@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { join } from 'node:path';
 
 const { spawnSyncMock } = vi.hoisted(() => ({ spawnSyncMock: vi.fn() }));
 
@@ -35,8 +36,11 @@ describe('shell execution hardening', () => {
   });
 
   it('confines Git hooksPath to the trusted project root', () => {
-    expect(resolveGitHooksDirectory('.git/hooks', 'C:\\repo')).toBe('C:\\repo\\.git\\hooks');
-    expect(() => resolveGitHooksDirectory('../outside/hooks', 'C:\\repo')).toThrow(
+    const projectRoot = process.platform === 'win32' ? 'C:\\repo' : '/repo';
+    expect(resolveGitHooksDirectory('.git/hooks', projectRoot)).toBe(
+      join(projectRoot, '.git', 'hooks'),
+    );
+    expect(() => resolveGitHooksDirectory('../outside/hooks', projectRoot)).toThrow(
       /outside-project|outside the project root/,
     );
   });

@@ -133,7 +133,13 @@ export function validateProjectPath(
     );
   }
 
-  const absolutePath = isAbsolute(inputPath) ? resolve(inputPath) : resolve(root, inputPath);
+  // Treat either separator convention as a directory separator on every host.
+  // This keeps project-relative paths copied from another OS portable while the
+  // convention check above still rejects foreign absolute paths.
+  const normalizedInputPath = normalizeForComparison(inputPath);
+  const absolutePath = isAbsolute(normalizedInputPath)
+    ? resolve(normalizedInputPath)
+    : resolve(root, normalizedInputPath);
   if (!isInside(root, absolutePath)) {
     throw new PathSecurityError(
       'outside-project',
