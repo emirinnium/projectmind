@@ -65,6 +65,25 @@ jobs:
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify package is visible on npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_name="$(node -p "require('./package.json').name")"
+          expected_version="${GITHUB_REF_NAME#v}"
+          for attempt in {1..18}; do
+            published_version="$(npm view "${package_name}@${expected_version}" version --registry=https://registry.npmjs.org/ 2>/dev/null || true)"
+            if [[ "$published_version" == "$expected_version" ]]; then
+              echo "${package_name}@${expected_version} is visible on npm."
+              exit 0
+            fi
+            if [[ "$attempt" -lt 18 ]]; then
+              echo "Waiting for npm registry visibility (attempt ${attempt}/18)..."
+              sleep 10
+            fi
+          done
+          echo "${package_name}@${expected_version} was accepted by npm but is not visible on the public registry after 3 minutes."
+          exit 1
 
   create-release:
     needs: publish-npm
