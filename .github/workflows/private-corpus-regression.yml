@@ -17,21 +17,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CORPUS_ROOT: ${{ runner.temp }}/projectmind-private-corpus
-      REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-report.md
-      PRODUCT_REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-product-report.md
-      RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-result.json
-      PRODUCT_RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-product-result.json
-      CONTRACT_REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-contract-report.md
-      CONTRACT_RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-contract-result.json
-      STRUCTURAL_REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-structural-report.md
-      STRUCTURAL_RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-structural-result.json
-      CROSS_PROJECT_REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-cross-project-report.md
-      CROSS_PROJECT_RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-cross-project-result.json
-      MONOREPO_REPORT_PATH: ${{ runner.temp }}/projectmind-monorepo-report.md
-      MONOREPO_RESULT_PATH: ${{ runner.temp }}/projectmind-monorepo-result.json
-      SECURITY_REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-security-report.md
-      SECURITY_RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-security-result.json
+      CORPUS_ROOT: ${{ github.workspace }}/.ci-private-corpus
+      REPORT_PATH: ${{ github.workspace }}/.ci-private-corpus-report.md
+      PRODUCT_REPORT_PATH: ${{ github.workspace }}/.ci-private-corpus-product-report.md
+      RESULT_PATH: ${{ github.workspace }}/.ci-private-corpus-result.json
+      PRODUCT_RESULT_PATH: ${{ github.workspace }}/.ci-private-corpus-product-result.json
+      CONTRACT_REPORT_PATH: ${{ github.workspace }}/.ci-private-corpus-contract-report.md
+      CONTRACT_RESULT_PATH: ${{ github.workspace }}/.ci-private-corpus-contract-result.json
+      STRUCTURAL_REPORT_PATH: ${{ github.workspace }}/.ci-private-corpus-structural-report.md
+      STRUCTURAL_RESULT_PATH: ${{ github.workspace }}/.ci-private-corpus-structural-result.json
+      CROSS_PROJECT_REPORT_PATH: ${{ github.workspace }}/.ci-private-corpus-cross-project-report.md
+      CROSS_PROJECT_RESULT_PATH: ${{ github.workspace }}/.ci-private-corpus-cross-project-result.json
+      MONOREPO_REPORT_PATH: ${{ github.workspace }}/.ci-private-monorepo-report.md
+      MONOREPO_RESULT_PATH: ${{ github.workspace }}/.ci-private-monorepo-result.json
+      SECURITY_REPORT_PATH: ${{ github.workspace }}/.ci-private-security-report.md
+      SECURITY_RESULT_PATH: ${{ github.workspace }}/.ci-private-security-result.json
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
