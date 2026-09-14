@@ -8,7 +8,7 @@ inputs:
   version:
     description: ProjectMind version to execute (exact published version)
     required: false
-    default: 1.0.4
+    default: 1.0.5
   format:
     description: Report format; health always uses json
     required: false

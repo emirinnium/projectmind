@@ -86,7 +86,7 @@ The repository ships a bounded cross-platform composite action for CI:
 - uses: emirinnium/projectmind/.github/actions/projectmind@master
   with:
     command: audit
-    version: 1.0.4
+    version: 1.0.5
     report-path: projectmind-audit.json
 ```
 

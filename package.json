@@ -1,6 +1,6 @@
 {
   "name": "@emirhanturker/projectmind",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Evidence-first codebase intelligence for JavaScript and TypeScript agents — persistent memory, graph-aware context, and real-time coherence",
   "bin": {
     "projectmind": "cli.mjs",

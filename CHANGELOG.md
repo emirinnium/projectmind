@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-09-14
+
 - **Cross-platform CI reliability:** temporary fixtures now use absolute OS temp
   roots, the path-security regression test sends a real NUL byte, and coverage
   builds `dist` before importing standalone benchmark scripts. Release and CI
