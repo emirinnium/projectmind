@@ -12,7 +12,7 @@ import { logger } from '../../utils/logger.js';
  *
  * Walks the commander tree built by `buildProgram()` and registers one MCP
  * tool per executable CLI command/subcommand (`pm_<name>[_<sub>]`). This
- * guarantees 1:1 tool/command parity FOREVER: any future CLI command shows
+ * guarantees 1:1 tool/command parity: every future CLI command shows
  * up as an MCP tool automatically on the next server start.
  *
  * Input contract for generated tools (kept intentionally uniform):

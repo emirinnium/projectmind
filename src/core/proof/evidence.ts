@@ -114,7 +114,7 @@ function confidenceFromStatus(status: VerificationStatus, details: FileFreshness
  * must not silently treat an unreadable or unindexed file as fresh.
  */
 export async function verifyFileFreshness(
-  kg: KnowledgeGraph,
+  kg: Pick<KnowledgeGraph, 'getFileByPath'>,
   projectRoot: string,
   filePath: string,
 ): Promise<FileFreshness> {
@@ -173,7 +173,7 @@ export async function verifyFileFreshness(
 
 /** Verify a selected set of files or every visible indexed file. */
 export async function verifyProjectFreshness(
-  kg: KnowledgeGraph,
+  kg: Pick<KnowledgeGraph, 'getAllFiles' | 'getFileByPath'>,
   projectRoot: string,
   filePaths?: string[],
 ): Promise<FreshnessSummary> {

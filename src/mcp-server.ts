@@ -83,7 +83,7 @@ export async function initMcpServer(): Promise<void> {
     const server = new McpServer({
       name: 'projectmind',
       // Real package version (was hardcoded '1.0.0' while package.json said 0.2.x).
-      version: resolvePackageVersion(currentModuleDir(import.meta.url)) || '0.0.0',
+      version: resolvePackageVersion(currentModuleDir(import.meta.url)),
     });
 
     await registerAllTools(server, getDependencies());

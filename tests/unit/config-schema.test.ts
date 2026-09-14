@@ -50,4 +50,54 @@ describe('Config Schema - validateConfig', () => {
       expect(config.contracts.length).toBeGreaterThanOrEqual(0);
     }
   });
+
+  it('accepts OpenRouter as an explicit OpenAI-compatible provider', () => {
+    const config = validateConfig({ llm: { provider: 'openrouter', model: 'openai/gpt-4o-mini' } });
+    expect(config.llm.provider).toBe('openrouter');
+    expect(config.llm.model).toBe('openai/gpt-4o-mini');
+  });
+
+  it('validates optional OpenRouter reasoning controls without enabling them by default', () => {
+    const config = validateConfig({
+      llm: {
+        provider: 'openrouter',
+        model: 'cohere/north-mini-code:free',
+        reasoning: { effort: 'none', exclude: true, maxTokens: 128 },
+      },
+    });
+    expect(config.llm.reasoning).toEqual({ effort: 'none', exclude: true, maxTokens: 128 });
+    expect(validateConfig({}).llm.reasoning).toBeUndefined();
+  });
+
+  it('validates auditable optional LLM pricing metadata', () => {
+    const config = validateConfig({
+      llm: {
+        pricing: {
+          inputPricePer1k: 0.15,
+          outputPricePer1k: 0.6,
+          source: 'https://provider.example/pricing',
+          effectiveAt: '2026-01-01T00:00:00Z',
+          expiresAt: '2027-01-01T00:00:00Z',
+        },
+      },
+    });
+    expect(config.llm.pricing).toMatchObject({
+      inputPricePer1k: 0.15,
+      outputPricePer1k: 0.6,
+      currency: 'USD',
+    });
+  });
+
+  it('rejects an LLM price record whose expiry precedes its effective date', () => {
+    const config = validateConfig({
+      llm: {
+        pricing: {
+          inputPricePer1k: 0.15,
+          effectiveAt: '2027-01-01T00:00:00Z',
+          expiresAt: '2026-01-01T00:00:00Z',
+        },
+      },
+    });
+    expect(config.llm.pricing).toBeUndefined();
+  });
 });

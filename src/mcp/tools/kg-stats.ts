@@ -27,14 +27,15 @@ export function registerKgStatsTool(server: McpServer, deps: McpDependencies): v
       try {
         const kg = deps.kg;
 
-        // Build/adjugacy graph to ensure fresh stats
-        await kg.getGraphTraversal(true);
+        // Build the graph once. Recreating it for every metric was an O(3E)
+        // cold-path regression and also made the tool needlessly sensitive to
+        // graph size. The forced rebuild still preserves the freshness
+        // contract; all metrics now read the same snapshot.
+        const traversal = kg.getGraphTraversal(true);
 
-        // Get basic graph statistics
-        const stats = kg.getGraphTraversal(true).getStats();
-
-        // Get PageRank rankings to identify top files
-        const pagerankResults = kg.getGraphTraversal(true).pageRank(20, 0.85);
+        // Get basic graph statistics and PageRank from one fresh snapshot.
+        const stats = traversal.getStats();
+        const pagerankResults = traversal.pageRank(20, 0.85);
 
         // Extract top file paths from PageRank, confined to project root
         const topPagerank = pagerankResults.slice(0, 10).map((r) => {

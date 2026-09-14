@@ -27,8 +27,8 @@ export abstract class BaseCommand {
     this.cmd = new Command(name).description(description);
   }
 
-  protected withContext<T>(fn: (ctx: CLIContext) => Promise<T>): Promise<T> {
-    return withContext(fn);
+  protected withContext<T>(fn: (ctx: CLIContext) => Promise<T>, overrideRoot?: string): Promise<T> {
+    return withContext(fn, overrideRoot);
   }
 
   protected withService<T>(

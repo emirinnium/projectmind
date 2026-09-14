@@ -70,6 +70,10 @@ correctness.
 
 - `agent_locks` — Advisory per-file locks for concurrent agents.
 - `predict_merge_risk` — Estimate collision risk before multi-agent edits.
+- `arbitrate_agents` — Combine all submitted agent plans into pairwise risk,
+  lock collisions, dependency-aware rebase order, conflict groups, and
+  isolated-file shard suggestions. The report is advisory; by default only a
+  payload-free hash receipt is added to the Evidence Ledger.
 - `predict_impact_risk` — Predict change impact with risk levels.
 - `predict_impact` — Predict affected tests and callers from a change.
 - `broadcast_intent` / `check_intent_conflicts` — Share and inspect planned edits.
@@ -95,6 +99,9 @@ correctness.
 - `find_symbol_references` — Find symbol references through the TypeScript language service.
 - `find_symbol_definition` — Find a symbol definition through the TypeScript language service.
 - `analyze_taint` / `record_taint` — Analyze or persist taint flows.
+- `exploit_path` — Produce safe source-to-sink evidence; pass `includeProject: true`
+  to follow the bounded forward static-import closure of the requested indexed
+  entry into named exported functions. Unrelated indexed files are excluded.
 - `record_data_flow` / `get_data_flows` / `get_resource_flows` — Manage data-flow edges.
 - `clear_data_flows` — Clear current-project data-flow edges; protected by MCP safety guards.
 
@@ -105,7 +112,8 @@ correctness.
 - `init_embedding_provider` — Select and initialize `simple`, `openai`,
   `transformers`, `unixcoder`, or `codebert`. Optional providers report an
   explicit fallback and limitations when credentials, model files, or runtime
-  dependencies are unavailable. Repeating the call is idempotent for the full
+  dependencies are unavailable; the transformer/ONNX packages are optional
+  peer providers and are not installed by the core package. Repeating the call is idempotent for the full
   provider/model/key/path configuration; changing that configuration causes a
   deliberate reinitialization.
 - `generate_embedding` — Generate a vector for text or code.

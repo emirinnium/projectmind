@@ -149,6 +149,13 @@ export function deleteProject(
 
   const result = ctx.db.prepare('DELETE FROM files WHERE project_id = ?').run(projectId);
   const deletedFiles = Number(result.changes);
+  ctx.db
+    .prepare(
+      'DELETE FROM agent_memory WHERE session_id IN (SELECT id FROM agent_sessions WHERE project_id = ?)',
+    )
+    .run(projectId);
+  ctx.db.prepare('DELETE FROM agent_sessions WHERE project_id = ?').run(projectId);
+  ctx.db.prepare('DELETE FROM scan_profiles WHERE project_id = ?').run(projectId);
   ctx.db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
 
   // If the deleted project was active, fall back to the default project so

@@ -10,7 +10,8 @@ import { reportSuppressedError } from '../../utils/errors.js';
  *
  * F35: syncPatternToProject no longer creates the patterns table ad-hoc; the
  * table must exist (created by normal schema init, which includes the
- * UNIQUE(code_hash, name) constraint). A missing table throws a clear error.
+ * project-scoped UNIQUE(code_hash, name, project_id) constraint). A missing
+ * table throws a clear error.
  *
  * F36: the engine REQUIRES an explicit database (DatabaseSync or file path).
  * There is NO initDatabase('projectmind.db') fallback — tests pass a temp DB
@@ -352,7 +353,8 @@ export class CrossProjectPatternEngine {
             };
             const embedding = computeBagOfWordsEmbedding(abstractTemplate);
             // Canonical serialized template doubles as the stable identity
-            // (UNIQUE(code_hash, name) dedupes cross-project syncs).
+            // (project-scoped UNIQUE(code_hash, name, project_id) dedupes
+            // repeated syncs without collapsing different projects).
             const codeHash = JSON.stringify(abstractTemplate);
             const now = new Date().toISOString();
             const id = `pat-${projectId}-${patterns.length + 1}`;
@@ -402,7 +404,8 @@ export class CrossProjectPatternEngine {
   /**
    * Sync a pattern to a target project (cross-project sync).
    * F35: requires the patterns table to exist (normal schema init, including
-   * UNIQUE(code_hash, name)); throws a clear error otherwise. Dedup is
+   * project-scoped UNIQUE(code_hash, name, project_id)); throws a clear error
+   * otherwise. Dedup is
    * handled by INSERT OR IGNORE against that constraint.
    * F37: project ids are bound as strings — no parseInt coercion.
    */

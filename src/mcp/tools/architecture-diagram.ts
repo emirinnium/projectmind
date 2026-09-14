@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { posix } from 'node:path';
 import type { McpDependencies } from './types.js';
 import type { ScaleReport } from '@/core/scale/reporting/types.js';
 import { renderModuleSvg, renderModulePng } from '@/cli/commands/graph-render.js';
+import { asUntrustedContent } from '@/mcp/security/untrusted-content.js';
 
 /**
  * Cross-Layer Architecture Diagram.
@@ -46,11 +48,11 @@ export type ExportArchitectureDiagramResult = {
 /** Layer assignment based on module path conventions. */
 export function assignLayer(path: string): LayerName {
   const lower = path.toLowerCase();
-  if (/\\b(api|controller|endpoint)\\b/.test(lower)) return 'api';
-  if (/\\b(service|business|usecase)\\b/.test(lower)) return 'service';
-  if (/\\b(view|component|page|ui|presentation)\\b/.test(lower)) return 'presentation';
-  if (/\\b(infra|db|database|storage|file|path)\\b/.test(lower)) return 'infrastructure';
-  if (/\\b(cache|logging|security|auth|config)\\b/.test(lower)) return 'cross-cutting';
+  if (/\b(api|controller|endpoint)\b/.test(lower)) return 'api';
+  if (/\b(services?|business(?:es)?|usecases?)\b/.test(lower)) return 'service';
+  if (/\b(view|component|page|ui|presentation)\b/.test(lower)) return 'presentation';
+  if (/\b(infra|db|database|storage|file|path)\b/.test(lower)) return 'infrastructure';
+  if (/\b(cache|logging|security|auth|config)\b/.test(lower)) return 'cross-cutting';
   return 'core';
 }
 
@@ -174,9 +176,14 @@ export function exportArchitectureDiagramForTool(
   args: ExportArchitectureDiagramArgs,
 ): ExportArchitectureDiagramResult {
   const report = deps.scale.getScaleReport();
-  const format = args.format ?? 'svg';
-  const filtered = filterReport(report, args.module, args.depth);
+  return renderArchitectureDiagram(filterReport(report, args.module, args.depth), args.format);
+}
 
+function renderArchitectureDiagram(
+  filtered: ScaleReport,
+  requestedFormat: ArchitectureDiagramFormat | undefined,
+): ExportArchitectureDiagramResult {
+  const format = requestedFormat ?? 'svg';
   switch (format) {
     case 'svg':
       return { format, content: renderModuleSvg(filtered) };
@@ -187,6 +194,116 @@ export function exportArchitectureDiagramForTool(
     case 'mermaid':
       return { format, content: buildMermaid(filtered) };
   }
+}
+
+function normalizeModulePath(value: string): string {
+  return value.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/$/, '');
+}
+
+function moduleImportCandidates(source: string, ownerRelativePath: string): string[] {
+  const normalizedSource = source.replace(/\\/g, '/').trim();
+  const base = normalizedSource.startsWith('.')
+    ? posix.normalize(
+        posix.join(posix.dirname(normalizeModulePath(ownerRelativePath)), normalizedSource),
+      )
+    : normalizedSource;
+  const candidates = [base];
+  const extensionMap: Readonly<Record<string, string>> = {
+    '.js': '.ts',
+    '.jsx': '.tsx',
+    '.mjs': '.mts',
+    '.cjs': '.cts',
+  };
+  for (const [from, to] of Object.entries(extensionMap)) {
+    if (base.endsWith(from)) {
+      candidates.push(base.slice(0, -from.length) + to);
+      break;
+    }
+  }
+  const extensions = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'];
+  for (const candidate of [...candidates]) {
+    for (const extension of extensions) candidates.push(candidate + extension);
+    for (const extension of extensions) candidates.push(`${candidate}/index${extension}`);
+  }
+  return [...new Set(candidates)];
+}
+
+/**
+ * Build the module-level graph without resolving every import through the
+ * path resolver. The persisted `resolved_path` column is the scan-time source
+ * of truth; only legacy/unresolved rows use a bounded in-memory extension
+ * probe. This keeps a large repository within an MCP request budget while
+ * retaining the same JS/TS resolution order.
+ */
+function buildModuleAdjacency(
+  deps: McpDependencies,
+  report: ScaleReport,
+  filtered: ScaleReport,
+): Map<string, string[]> {
+  const adjacency = new Map<string, string[]>();
+  const moduleByFile = new Map<string, string>();
+  for (const mod of filtered.modules) {
+    adjacency.set(mod.path, []);
+    for (const file of mod.files ?? []) {
+      moduleByFile.set(normalizeModulePath(file.relativePath), mod.path);
+      moduleByFile.set(normalizeModulePath(file.path), mod.path);
+    }
+  }
+
+  const addEdge = (ownerPath: string, targetPath: string | undefined): void => {
+    if (!targetPath) return;
+    const targetModule = moduleByFile.get(normalizeModulePath(targetPath));
+    if (!targetModule || targetModule === ownerPath) return;
+    const edges = adjacency.get(ownerPath) ?? [];
+    if (!edges.includes(targetModule)) edges.push(targetModule);
+    adjacency.set(ownerPath, edges);
+  };
+
+  if (deps.kg.db && typeof deps.kg.getCurrentProjectId === 'function') {
+    const projectId = deps.kg.getCurrentProjectId();
+    const rows = deps.kg.db
+      .prepare(
+        `SELECT i.source, i.resolved_path, owner.relative_path AS owner_relative_path
+         FROM imports i
+         JOIN files owner ON owner.id = i.file_id AND owner.project_id = ?
+         WHERE owner.project_id = ?`,
+      )
+      .all(projectId, projectId) as Array<{
+      source: string;
+      resolved_path: string | null;
+      owner_relative_path: string;
+    }>;
+    const projectFiles = new Set(
+      report.modules.flatMap((mod) =>
+        (mod.files ?? []).map((file) => normalizeModulePath(file.relativePath)),
+      ),
+    );
+    for (const row of rows) {
+      const ownerModule = moduleByFile.get(normalizeModulePath(row.owner_relative_path));
+      if (!ownerModule) continue;
+      if (row.resolved_path) {
+        addEdge(ownerModule, row.resolved_path);
+        continue;
+      }
+      const targetPath = moduleImportCandidates(row.source, row.owner_relative_path).find(
+        (candidate) => projectFiles.has(normalizeModulePath(candidate)),
+      );
+      addEdge(ownerModule, targetPath);
+    }
+    return adjacency;
+  }
+
+  // Lightweight test doubles and older integrations may not expose the DB.
+  // Retain their resolver-backed behavior rather than assuming a schema.
+  for (const mod of filtered.modules) {
+    for (const file of mod.files ?? []) {
+      for (const imp of deps.kg.getImports(file.id)) {
+        const target = deps.kg.getFileByImport(imp.source, file.relativePath);
+        addEdge(mod.path, target?.relativePath);
+      }
+    }
+  }
+  return adjacency;
 }
 
 /**
@@ -210,11 +327,10 @@ export function exportEnhancedArchitectureDiagramForTool(
   const format = args.format ?? 'mermaid';
   const filtered = filterReport(report, args.module, args.depth);
 
-  const rendered = exportArchitectureDiagramForTool(deps, {
-    format,
-    module: args.module,
-    depth: args.depth,
-  });
+  // Render the already filtered snapshot. Calling the public wrapper here
+  // would recalculate the full scale report a second time, which is needlessly
+  // expensive for large repositories and can exceed MCP request timeouts.
+  const rendered = renderArchitectureDiagram(filtered, format);
   const content = rendered.content;
 
   // Compute layer distribution from filtered modules
@@ -232,32 +348,9 @@ export function exportEnhancedArchitectureDiagramForTool(
   }
 
   // Detect circular dependencies from the live resolved import graph. The
-  // The module graph is backed by knowledge-graph import edges, so reported
+  // module graph is backed by knowledge-graph import edges, so reported
   // cycles represent actual project relationships rather than placeholders.
-  const adjacency = new Map<string, string[]>();
-  const moduleByFile = new Map<string, string>();
-  for (const mod of report.modules) {
-    adjacency.set(mod.path, []);
-    for (const file of mod.files ?? []) {
-      moduleByFile.set(file.relativePath.replace(/\\/g, '/'), mod.path);
-    }
-  }
-  for (const mod of report.modules) {
-    for (const file of mod.files ?? []) {
-      for (const imp of deps.kg.getImports(file.id)) {
-        const target = deps.kg.getFileByImport(imp.source, file.relativePath);
-        const targetModule = target
-          ? moduleByFile.get(target.relativePath.replace(/\\/g, '/'))
-          : undefined;
-        if (targetModule && targetModule !== mod.path) {
-          const edges = adjacency.get(mod.path) ?? [];
-          if (!edges.includes(targetModule)) edges.push(targetModule);
-          adjacency.set(mod.path, edges);
-        }
-      }
-    }
-  }
-  const circularDeps = detectCircularDeps(adjacency);
+  const circularDeps = detectCircularDeps(buildModuleAdjacency(deps, report, filtered));
 
   return {
     format,
@@ -370,7 +463,19 @@ export function registerExportArchitectureDiagramTool(
             notes.push(`[${severityLabel} dep] ${cycleStr}`);
           }
         }
-        const responseContent = [{ type: 'text' as const, text: result.content }];
+        const responseContent: Array<{
+          type: 'text';
+          text: string;
+          _meta?: Record<string, unknown>;
+        }> = [
+          {
+            type: 'text' as const,
+            text: result.content,
+            _meta: {
+              untrustedContent: asUntrustedContent(result.content, 'tool'),
+            },
+          },
+        ];
         if (notes.length > 0) {
           responseContent.push({
             type: 'text' as const,

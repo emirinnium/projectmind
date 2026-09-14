@@ -4,6 +4,8 @@ import type { McpDependencies } from './types.js';
 import { createProgressReporter } from './progress.js';
 import { confineToProject } from './_shared.js';
 import { resolve } from 'node:path';
+import { EvidenceLedger, computeIndexedGraphHash } from '@/core/ledger/evidence-ledger.js';
+import { logger } from '@/utils/logger.js';
 
 export function registerScanProjectTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -14,7 +16,7 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
         'Build or refresh the knowledge graph for the current project root (parses files, indexes imports, extracts patterns, computes cognitive load).\n' +
         'Returns: file count, scan errors, import resolution stats, optional circular dependencies, top hotspots.\n' +
         'WHEN to call: at the start of a session, after adding/renaming many files, or before running debt_report / genome_score / get_context.\n' +
-        'It is INCREMENTAL: bounded source files are re-hashed and only files whose content hash changed since the last scan are re-parsed, so this is usually cheap and remains correct across restored or preserved mtimes.\n' +
+        'It is INCREMENTAL: bounded source files are re-hashed and only files whose content hash changed since the last scan are re-parsed; direct callers of changed modules are also refreshed at a bounded depth so function/call edges do not remain stale.\n' +
         'WHEN NOT to call: between every single edit (use get_context + check_coherence instead). Pass full=true only when you suspect cache corruption or need to rebuild every indexed file.',
       inputSchema: {
         root: z.string().default('.').describe('Root directory to scan'),
@@ -52,25 +54,8 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
         };
 
         if (args.analyzeImports) {
-          const allFiles = deps.kg.getAllFiles();
-          for (const [i, file] of allFiles.entries()) {
-            const imports = deps.kg.getImportsWithDetails(file.id);
-            importStats.totalImports += imports.length;
-            importStats.resolvedImports += imports.filter((i) => i.resolvedFile).length;
-            importStats.unresolvedImports += imports.filter((i) => !i.resolvedFile).length;
-            importStats.externalDependencies += imports.filter(
-              (i) => !i.resolvedFile && isExternalImport(i.source),
-            ).length;
-            // Progress during the per-file import analysis pass (throttled
-            // internally; cheap no-op when client did not request progress).
-            if (i % 250 === 0 && allFiles.length > 0) {
-              await progress(
-                40 + Math.round((i / allFiles.length) * 40),
-                100,
-                `import analysis ${i}/${allFiles.length}`,
-              );
-            }
-          }
+          Object.assign(importStats, deps.kg.getImportStats());
+          await progress(75, 100, 'import analysis complete');
         }
         await progress(85, 100, 'import analysis complete');
 
@@ -78,6 +63,39 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
           circularDeps = deps.kg.findCircularDependencies?.() || [];
         }
         await progress(100, 100, `done: ${result.scannedFiles} files`);
+
+        let ledger: { recordId: number; recordHash: string } | undefined;
+        if (deps.db) {
+          try {
+            const record = new EvidenceLedger(deps.db, deps.kg.getCurrentProjectId()).append({
+              eventType: 'scan',
+              toolName: 'scan_project',
+              input: args,
+              result: {
+                scanned: result.scannedFiles,
+                errors: result.errorFiles,
+                totalFiles: report.totalFiles,
+                importAnalysis: importStats,
+                circularDependencyCount: circularDeps.length,
+              },
+              graphHash: computeIndexedGraphHash(deps.kg),
+              summary: {
+                success: true,
+                scanned: result.scannedFiles,
+                errors: result.errorFiles,
+                totalFiles: report.totalFiles,
+              },
+            });
+            ledger = { recordId: record.id, recordHash: record.recordHash };
+          } catch (error) {
+            // Audit persistence must never turn a completed scan into a false
+            // failure. Keep the limitation visible in logs and omit the
+            // optional audit reference from the compatibility payload.
+            logger.warn('Evidence ledger append failed after scan completion.', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
 
         return {
           content: [
@@ -88,6 +106,10 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
                   success: true,
                   scanned: result.scannedFiles,
                   errors: result.errorFiles,
+                  skippedFiles: result.skippedFiles,
+                  skippedPaths: result.skippedPaths,
+                  dependencyFiles: result.dependencyFiles ?? 0,
+                  dependencyDepth: result.dependencyDepth ?? 0,
                   totalFiles: report.totalFiles,
                   agentCoverage: `${(report.agentCoverage * 100).toFixed(1)}%`,
                   avgCognitiveLoad: report.avgCognitiveLoad,
@@ -115,6 +137,7 @@ export function registerScanProjectTool(server: McpServer, deps: McpDependencies
                     filesPerSecond: result.filesPerSecond,
                     memoryUsedMB: result.memoryUsedMB,
                   },
+                  ...(ledger ? { evidenceLedger: ledger } : {}),
                 },
                 null,
                 2,
@@ -288,10 +311,6 @@ export function registerGetAgentSessionsTool(server: McpServer, deps: McpDepende
       }
     },
   );
-}
-
-function isExternalImport(source: string): boolean {
-  return !source.startsWith('.') && !source.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(source);
 }
 
 function resolveProjectRoot(root: string, activeRoot: string): string {

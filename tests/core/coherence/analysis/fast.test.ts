@@ -103,6 +103,7 @@ console.log(result);
 }
 
 const result = hello();
+console.log(result);
 `;
       const result = analyzer.analyze(makeOptions(code, 'src/minimal.js'), 'minimal-key');
 
@@ -353,6 +354,15 @@ console.log(usedVar, alsoUsed);
         const result = analyzer.analyze(makeOptions(code, 'src/vars.ts'), 'vars-key');
 
         expect(result.reasoningTrace.some((r: string) => r.includes('unused'))).toBe(false);
+      });
+
+      it('flags a genuinely unused declaration even without a marker comment', () => {
+        const code = withTypes(`const unusedValue = 100;
+console.log('independent output');
+`);
+        const result = analyzer.analyze(makeOptions(code, 'src/vars-unreferenced.ts'), 'vars-unreferenced-key');
+
+        expect(result.reasoningTrace.some((r: string) => r.includes('1 unused variables'))).toBe(true);
       });
     });
 

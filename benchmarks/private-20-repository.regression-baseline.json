@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "manifestName": "projectmind-private-js-ts-twenty-repository",
+  "policy": {
+    "maxMetricDrop": 0.01,
+    "requireInputHash": true,
+    "requireEvaluatedCaseParity": true,
+    "maxScanErrors": 0
+  },
+  "baselines": {
+    "offline-lexical": {
+      "inputHash": "d1b9b6d9c429668fa4088c7173c67192cffa7dbf69c1b3eb67af3586ea391ac8",
+      "evaluatedCases": 20,
+      "aggregate": {
+        "precisionAtK": 0.20964285714285716,
+        "recallAtK": 0.75,
+        "f1": 0.3180952380952381,
+        "mrr": 0.425,
+        "ndcg": 0.5077
+      }
+    },
+    "projectmind-hybrid-search": {
+      "inputHash": "a1e38aa96590e10e5f881f8acb7ee7eace0e4117db50a287885dc1fae2e26ecb",
+      "evaluatedCases": 20,
+      "aggregate": {
+        "precisionAtK": 0.19880952380952382,
+        "recallAtK": 0.75,
+        "f1": 0.30643939393939396,
+        "mrr": 0.28630952380952385,
+        "ndcg": 0.40183626767574765
+      }
+    }
+  }
+}

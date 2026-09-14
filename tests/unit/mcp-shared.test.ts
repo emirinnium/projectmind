@@ -51,6 +51,16 @@ describe('K4: confinePathValueFlags (CLI -o / --output / --config escapes)', () 
     );
   });
 
+  it('confines --root as a scope path instead of treating it as trusted metadata', () => {
+    expect(() => confinePathValueFlags(['context-budget', '--root', '../other'], ROOT)).toThrow(
+      /outside-project|Path escapes project root/,
+    );
+    expect(() => confinePathValueFlags(['context-budget', '--root', ROOT], ROOT)).not.toThrow();
+    expect(() => confinePathValueFlags(['context-budget', '--root=../other'], ROOT)).toThrow(
+      /outside-project|Path escapes project root/,
+    );
+  });
+
   it('rejects the --output= form', () => {
     expect(() =>
       confinePathValueFlags(
@@ -73,6 +83,11 @@ describe('K4: confinePathValueFlags (CLI -o / --output / --config escapes)', () 
     expect(safe).toEqual(copy);
   });
 
+  it('rejects a missing or empty value for a path flag', () => {
+    expect(() => confinePathValueFlags(['report', '--output'], ROOT)).toThrow(/empty-path/);
+    expect(() => confinePathValueFlags(['report', '--output='], ROOT)).toThrow(/empty-path/);
+  });
+
   it('ignores non-path flags', () => {
     expect(() => confinePathValueFlags(['churn', '--since', '30'], ROOT)).not.toThrow();
   });
@@ -82,6 +97,13 @@ describe('K3: isBlockedCliInvocation destructive subcommand coverage', () => {
   it('blocks doctor clean-debt (mutation hole closed)', () => {
     expect(isBlockedCliInvocation(['doctor', 'clean-debt'])).toBe(true);
     expect(isBlockedCliInvocation(['doctor', 'scan-health'])).toBe(false);
+  });
+
+  it('blocks destructive tokens regardless of flag ordering', () => {
+    expect(isBlockedCliInvocation(['debt', '--format', 'json', 'clear'])).toBe(true);
+    expect(isBlockedCliInvocation(['project', '--format', 'json', 'delete'])).toBe(true);
+    expect(isBlockedCliInvocation(['layers', '--format', 'json', '--auto-fix'])).toBe(true);
+    expect(isBlockedCliInvocation(['layers', '--format', 'json', '--auto-fix=true'])).toBe(true);
   });
 
   it('still blocks every pre-existing destructive vector', () => {

@@ -5,19 +5,26 @@ import { registerAllTools } from '@/mcp/tools/registry/index.js';
 import { registerResourceSubscriptionTool } from '@/mcp/resources.js';
 import { exportRegisteredToolSchemas } from '@/mcp/tools/schema-export.js';
 import { stopPeriodicCleanup } from '@/mcp/tools/locks.js';
+import { MCP_PROFILE_NAMES, normalizeMcpProfile } from '@/mcp/tools/guard.js';
+import { currentModuleDir, resolvePackageVersion } from '@/utils/version.js';
+
+const profileHelp = `${MCP_PROFILE_NAMES.join('|')} (all is an alias for full)`;
+
+function parseProfile(value: string): ReturnType<typeof normalizeMcpProfile> {
+  const profile = normalizeMcpProfile(value);
+  if (!profile) throw new Error(`--profile must be ${profileHelp}.`);
+  return profile;
+}
 
 export function createMcpCommand(): Command {
   const command = new Command('mcp')
     .description('Start ProjectMind as an MCP server (stdio mode)')
-    .option('--profile <profile>', 'Tool profile: core|review|security|maintenance|full', 'core')
+    .option('--profile <profile>', `Tool profile: ${profileHelp}`, 'core')
     // Deliberately NOT wrapped in asyncHandler: the long-running stdio
     // server must keep the process alive after initialization.
     .action(async (opts: { profile: string }) => {
       try {
-        if (!['core', 'review', 'security', 'maintenance', 'full'].includes(opts.profile)) {
-          throw new Error('--profile must be core, review, security, maintenance, or full.');
-        }
-        process.env.PROJECTMIND_TOOLS = opts.profile;
+        process.env.PROJECTMIND_TOOLS = parseProfile(opts.profile) ?? 'core';
         logger.setMcpMode(true);
         const { initMcpServer } = await import('../../mcp-server.js');
         await initMcpServer();
@@ -30,10 +37,10 @@ export function createMcpCommand(): Command {
     });
   command
     .command('schemas')
+    .alias('schema')
     .description('Export the registered runtime Zod schemas as JSON Schema')
-    .option('--profile <profile>', 'Tool profile: core|review|security|maintenance|full', 'core')
+    .option('--profile <profile>', `Tool profile: ${profileHelp}`, 'core')
     .action(async (opts: { profile: string }) => {
-      const profiles = ['core', 'review', 'security', 'maintenance', 'full'];
       // Commander may bind an option placed after the subcommand to the
       // parent command when both levels expose --profile. Prefer an explicit
       // child value, otherwise honor the parent value so `mcp --profile full
@@ -43,13 +50,15 @@ export function createMcpCommand(): Command {
         opts.profile === 'core' && inheritedProfile && inheritedProfile !== 'core'
           ? inheritedProfile
           : opts.profile;
-      if (!profiles.includes(selectedProfile))
-        throw new Error('--profile must be core, review, security, maintenance, or full.');
+      const normalizedSelectedProfile = parseProfile(selectedProfile);
       const previousProfile = process.env.PROJECTMIND_TOOLS;
-      process.env.PROJECTMIND_TOOLS = selectedProfile;
+      process.env.PROJECTMIND_TOOLS = normalizedSelectedProfile ?? 'core';
       logger.setMachineMode(true);
       try {
-        const server = new McpServer({ name: 'projectmind-schema-export', version: '1.0.0' });
+        const server = new McpServer({
+          name: 'projectmind-schema-export',
+          version: resolvePackageVersion(currentModuleDir(import.meta.url)),
+        });
         await registerAllTools(server, {} as never);
         registerResourceSubscriptionTool(server);
         process.stdout.write(`${JSON.stringify(exportRegisteredToolSchemas(server), null, 2)}\n`);

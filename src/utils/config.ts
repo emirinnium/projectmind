@@ -25,6 +25,19 @@ export interface ProjectMindConfig {
     deepModel: string;
     confidenceThreshold: number;
     maxCacheSize: number;
+    reasoning?: {
+      effort?: 'xhigh' | 'high' | 'medium' | 'low' | 'minimal' | 'none';
+      maxTokens?: number;
+      exclude?: boolean;
+    };
+    pricing?: {
+      inputPricePer1k: number;
+      outputPricePer1k?: number;
+      currency: 'USD';
+      source?: string;
+      effectiveAt?: string;
+      expiresAt?: string;
+    };
   };
   embeddings: {
     provider: 'simple' | 'openai' | 'transformers' | 'unixcoder' | 'codebert';
@@ -93,8 +106,8 @@ function getGlobalConfigPath(): string {
 /**
  * Get the project config file path
  */
-function getProjectConfigPath(): string {
-  let directory = resolve(process.cwd());
+function getProjectConfigPath(startDirectory = process.cwd()): string {
+  let directory = resolve(startDirectory);
   while (true) {
     const candidate = join(directory, '.projectmindrc.json');
     if (existsSync(candidate)) return candidate;
@@ -102,7 +115,10 @@ function getProjectConfigPath(): string {
     if (parent === directory) break;
     directory = parent;
   }
-  return join(resolve(process.cwd()), '.projectmindrc.json');
+  // A --root-style caller must never fall back to the invoking cwd's project
+  // config. That would leak unrelated project settings into the selected
+  // root when the selected project has no local config yet.
+  return join(resolve(startDirectory), '.projectmindrc.json');
 }
 
 /**
@@ -173,8 +189,10 @@ function loadGlobalConfig(): ProjectMindRc | null {
 /**
  * Load raw project config without validation
  */
-function loadProjectConfigRaw(): { parsed: unknown; path: string } | null {
-  const projectPath = getProjectConfigPath();
+function loadProjectConfigRaw(
+  startDirectory = process.cwd(),
+): { parsed: unknown; path: string } | null {
+  const projectPath = getProjectConfigPath(startDirectory);
   if (!existsSync(projectPath)) return null;
 
   try {
@@ -252,10 +270,13 @@ function applyCliOverrides(
  * Precedence fix (B1): merge RAW JSON sparsely, then validate the merged result once
  * so Zod defaults do not densify layers and incorrectly override globals.
  */
-function loadEffectiveConfig(cliOverrides?: Partial<ProjectMindRc>): ProjectMindConfig {
+function loadEffectiveConfig(
+  cliOverrides?: Partial<ProjectMindRc>,
+  workingDirectory = process.cwd(),
+): ProjectMindConfig {
   // 1. Load raw global + project configs (no Zod defaults applied yet)
   const globalRaw = loadGlobalConfigRaw();
-  const projectRaw = loadProjectConfigRaw();
+  const projectRaw = loadProjectConfigRaw(workingDirectory);
 
   // 2. Check secret hygiene for project file (raw)
   if (projectRaw) {
@@ -298,7 +319,7 @@ function loadEffectiveConfig(cliOverrides?: Partial<ProjectMindRc>): ProjectMind
   const mergedRc = (validated ?? getDefaults()) as ProjectMindRc;
 
   // 5. Apply existing mergeWithDefaults logic (handles env vars via resolveApiKey, path normalization, etc.)
-  const config = mergeWithDefaults(mergedRc);
+  const config = mergeWithDefaults(mergedRc, workingDirectory);
 
   // 6. Apply CLI overrides (if any)
   if (cliOverrides) {
@@ -314,8 +335,8 @@ function loadEffectiveConfig(cliOverrides?: Partial<ProjectMindRc>): ProjectMind
  *
  * @deprecated Use loadEffectiveConfig() for full precedence support
  */
-export function loadConfig(): ProjectMindConfig {
-  return loadEffectiveConfig();
+export function loadConfig(workingDirectory = process.cwd()): ProjectMindConfig {
+  return loadEffectiveConfig(undefined, workingDirectory);
 }
 
 /**
@@ -363,7 +384,10 @@ function normalizeStatePath(
 /**
  * Merge validated ProjectMindRc with defaults to produce ProjectMindConfig
  */
-export function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
+export function mergeWithDefaults(
+  validated: ProjectMindRc,
+  defaultProjectRoot = process.cwd(),
+): ProjectMindConfig {
   const provider = validated.llm?.provider ?? DEFAULT_CONFIG.llm.provider;
   const llmConfig: ProjectMindConfig['llm'] = {
     provider,
@@ -373,6 +397,8 @@ export function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
     confidenceThreshold:
       validated.llm?.confidenceThreshold ?? DEFAULT_CONFIG.llm.confidenceThreshold,
     maxCacheSize: validated.llm?.maxCacheSize ?? DEFAULT_CONFIG.llm.maxCacheSize,
+    reasoning: validated.llm?.reasoning,
+    pricing: validated.llm?.pricing,
   };
   // Include endpoint only if defined (it's optional)
   if (validated.llm?.endpoint) {
@@ -399,11 +425,13 @@ export function mergeWithDefaults(validated: ProjectMindRc): ProjectMindConfig {
     memoryBridge: validated.features?.memoryBridge ?? DEFAULT_CONFIG.features.memoryBridge,
   };
 
-  // Fix B1 projectRoot '.' vs cwd: Zod default '.' would otherwise override DEFAULT_CONFIG cwd
+  // Fix B1 projectRoot '.' vs cwd: Zod default '.' would otherwise override
+  // the caller's working directory. This is important for commands such as
+  // `context-budget --root`, which must not read config from the invoking cwd.
   const effectiveProjectRoot = resolve(
     validated.projectRoot && validated.projectRoot !== '.'
       ? validated.projectRoot
-      : DEFAULT_CONFIG.projectRoot,
+      : defaultProjectRoot,
   );
   return {
     projectRoot: effectiveProjectRoot,
@@ -437,6 +465,8 @@ function resolveApiKey(configApiKey?: string, provider?: string): string | undef
       return process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
     case 'openai':
       return process.env.OPENAI_API_KEY;
+    case 'openrouter':
+      return process.env.OPENROUTER_API_KEY;
     case 'gemini':
       return process.env.GEMINI_API_KEY;
     case 'groq':

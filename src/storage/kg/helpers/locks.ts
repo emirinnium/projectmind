@@ -20,6 +20,16 @@ export interface FileLock {
   expiresAt: string;
 }
 
+/**
+ * Canonical lock keys make advisory coordination work across Windows and
+ * POSIX clients. The database stores the canonical key so acquire/release/
+ * check and the arbiter cannot disagree about `src\\foo.ts` vs `src/foo.ts`.
+ */
+function normalizeLockPath(filePath: string): string {
+  const normalized = filePath.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  return process.platform === 'win32' ? normalized.toLocaleLowerCase('en-US') : normalized;
+}
+
 /** Delete expired locks; returns how many were purged. */
 export function purgeExpiredLocks(ctx: KgContext): number {
   const result = ctx.db
@@ -58,12 +68,15 @@ export function acquireFileLock(
 ): AcquireResult {
   purgeExpiredLocks(ctx);
 
+  const canonicalPath = normalizeLockPath(filePath);
+  if (!canonicalPath) throw new Error('filePath must be a non-empty path.');
+
   const ttlMinutes = Math.max(1, Math.min(24 * 60, Math.floor(options.ttlMinutes ?? 30)));
   const existing = ctx.db
     .prepare(
       'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?',
     )
-    .get(filePath) as Record<string, SQLOutputValue> | undefined;
+    .get(canonicalPath) as Record<string, SQLOutputValue> | undefined;
 
   if (existing) {
     const lock = rowToLock(existing);
@@ -74,7 +87,12 @@ export function acquireFileLock(
           "UPDATE agent_file_locks SET expires_at = datetime('now', '+' || ? || ' minutes'), reason = COALESCE(?, reason) WHERE id = ?",
         )
         .run(String(ttlMinutes), options.reason ?? null, lock.id);
-      return { status: 'acquired', lock: { ...lock, expiresAt: lock.expiresAt } };
+      const refreshed = ctx.db
+        .prepare(
+          'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE id = ?',
+        )
+        .get(lock.id) as Record<string, SQLOutputValue> | undefined;
+      return { status: 'acquired', lock: refreshed ? rowToLock(refreshed) : lock };
     }
     return { status: 'held', heldBy: lock };
   }
@@ -83,7 +101,7 @@ export function acquireFileLock(
     .prepare(
       "INSERT INTO agent_file_locks (file_path, agent_name, reason, expires_at) VALUES (?, ?, ?, datetime('now', '+' || ? || ' minutes'))",
     )
-    .run(filePath, agentName, options.reason ?? null, String(ttlMinutes));
+    .run(canonicalPath, agentName, options.reason ?? null, String(ttlMinutes));
 
   const created = ctx.db
     .prepare(
@@ -107,11 +125,14 @@ export function releaseFileLock(
 ): ReleaseResult {
   purgeExpiredLocks(ctx);
 
+  const canonicalPath = normalizeLockPath(filePath);
+  if (!canonicalPath) return { status: 'not-found' };
+
   const row = ctx.db
     .prepare(
       'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?',
     )
-    .get(filePath) as Record<string, SQLOutputValue> | undefined;
+    .get(canonicalPath) as Record<string, SQLOutputValue> | undefined;
 
   if (!row) return { status: 'not-found' };
   const lock = rowToLock(row);
@@ -156,17 +177,19 @@ export function checkFileConflicts(
   const report: ConflictReport = { free: [], conflicts: [] };
 
   for (const filePath of filePaths) {
+    const canonicalPath = normalizeLockPath(filePath);
+    if (!canonicalPath) continue;
     const row = ctx.db
       .prepare(
         'SELECT id, file_path, agent_name, reason, acquired_at, expires_at FROM agent_file_locks WHERE file_path = ?',
       )
-      .get(filePath) as Record<string, SQLOutputValue> | undefined;
+      .get(canonicalPath) as Record<string, SQLOutputValue> | undefined;
 
     if (!row || row.agent_name === agentName) {
-      report.free.push(filePath);
+      report.free.push(canonicalPath);
     } else {
       report.conflicts.push({
-        filePath,
+        filePath: canonicalPath,
         heldBy: String(row.agent_name),
         reason: row.reason === null || row.reason === undefined ? null : String(row.reason),
         expiresAt: String(row.expires_at),

@@ -9,6 +9,7 @@ import type {
   SemanticEvidence,
 } from './types.js';
 import type { KGGraphLike } from './graph-adapter.js';
+import type { HybridRankingWeights } from './hybrid-ranking.js';
 import { safeScore } from './scoring.js';
 import { logger } from '../../utils/logger.js';
 import { rankHybrid } from './hybrid-ranking.js';
@@ -48,6 +49,8 @@ export interface IntentSearchContext {
   resolveFilePath(filePath: string): string | undefined;
   getMarkers(intent: IntentType, content: string): number;
   getHistoryScore(filePath: string): number | undefined;
+  getFreshnessScore?(filePath: string, kgGraph: KGGraphLike | undefined): number | undefined;
+  rankingWeights?: Partial<HybridRankingWeights>;
 }
 
 const RANK_DECAY_FACTOR = 0.15;
@@ -131,15 +134,19 @@ export async function executeIntentSearch(
     );
     const snippet = readSnippet(context, candidate.path, intent);
     const content = readContent(context, candidate.path);
-    const ranked = rankHybrid({
-      query: queryText,
-      filePath: candidate.path,
-      content,
-      vectorScore: score.semantic,
-      graphScore: score.structural,
-      historyScore:
-        kgGraph?.getHistoryScore?.(candidate.path) ?? context.getHistoryScore(candidate.path),
-    });
+    const ranked = rankHybrid(
+      {
+        query: queryText,
+        filePath: candidate.path,
+        content,
+        vectorScore: score.semantic,
+        graphScore: score.structural,
+        historyScore:
+          kgGraph?.getHistoryScore?.(candidate.path) ?? context.getHistoryScore(candidate.path),
+        freshnessScore: context.getFreshnessScore?.(candidate.path, kgGraph),
+      },
+      context.rankingWeights,
+    );
     results.push({
       filePath: candidate.path,
       score: {
@@ -193,14 +200,18 @@ function addStructuralNeighbors(
       seen.add(seed);
       const score = context.computeHybridScore(query, seed, kgGraph, 0.4, 'embedding');
       const content = readContent(context, seed);
-      const ranked = rankHybrid({
-        query: context.resolveQueryText(query),
-        filePath: seed,
-        content,
-        vectorScore: score.semantic,
-        graphScore: score.structural,
-        historyScore: kgGraph.getHistoryScore?.(seed) ?? context.getHistoryScore(seed),
-      });
+      const ranked = rankHybrid(
+        {
+          query: context.resolveQueryText(query),
+          filePath: seed,
+          content,
+          vectorScore: score.semantic,
+          graphScore: score.structural,
+          historyScore: kgGraph.getHistoryScore?.(seed) ?? context.getHistoryScore(seed),
+          freshnessScore: context.getFreshnessScore?.(seed, kgGraph),
+        },
+        context.rankingWeights,
+      );
       results.push({
         filePath: seed,
         score: {

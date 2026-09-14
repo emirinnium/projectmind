@@ -35,8 +35,6 @@ export const ALLOWLISTED_CLI_COMMANDS = new Set([
   'coupling',
   'def',
   'refs',
-  'export_architecture_diagram',
-  'find_symbol_references',
   'onboard',
   'migrate',
   'graph',

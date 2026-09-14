@@ -8,9 +8,10 @@ import {
   TASK_KEYWORDS,
 } from '../../../src/core/search/intent-engine.js';
 import type { IntentQuery } from '../../../src/core/search/types.js';
-import { writeFileSync, mkdirSync, rmSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, mkdirSync, rmSync, mkdtempSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { stableHash } from '../../../src/utils/hash.js';
 
 describe('IntentEngine WP1', () => {
   const engine = new IntentEngine();
@@ -133,13 +134,14 @@ describe('IntentEngine WP1', () => {
 
     it('adapter computes measured similarity from persisted vectors when available', () => {
       const adapter = createKgGraphAdapter({
-        getFileByPath: (path) => ({ id: 7, path }),
+        getFileByPath: (path) => ({ id: 7, path, hash: 'indexed-hash' }),
         findSimilarFiles: () => [{ id: 7, relativePath: 'src/measured.ts' }],
         getFileEmbedding: () => [1, 0],
       });
 
       const results = adapter.findSimilarFiles?.([1, 0], 0.5, 5);
       expect(results).toEqual([{ path: 'src/measured.ts', score: 1 }]);
+      expect(adapter.getFileByPath('src/measured.ts')).toMatchObject({ hash: 'indexed-hash' });
     });
   });
 
@@ -232,6 +234,19 @@ describe('IntentEngine WP1', () => {
       for (const r of results) {
         expect(r.snippet ?? '').not.toContain('readFileSync(secret)');
       }
+    });
+
+    it('penalizes a stale indexed hash and accepts a current indexed hash', () => {
+      const rooted = new IntentEngine({ projectRoot: root });
+      const content = readFileSync(join(root, 'inside.ts'), 'utf8');
+      const freshGraph = {
+        getFileByPath: () => ({ id: 1, path: 'inside.ts', hash: stableHash(content) }),
+      };
+      const staleGraph = {
+        getFileByPath: () => ({ id: 1, path: 'inside.ts', hash: stableHash('old content') }),
+      };
+      expect(rooted.getFreshnessScore('inside.ts', freshGraph)).toBe(1);
+      expect(rooted.getFreshnessScore('inside.ts', staleGraph)).toBe(0);
     });
   });
 });

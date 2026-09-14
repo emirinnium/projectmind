@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { assertProjectPath, validateProjectPath } from '../../src/core/security/path-security.js';
 import { readSourceRange } from '../../src/core/retrieval/byte-range.js';
 import { makeSurgicalEditPlan, applySurgicalEdit } from '../../src/core/refactor/surgical-edit.js';
-import { parseBenchmarkManifest } from '../../src/core/benchmark/manifest.js';
-import { runBenchmark } from '../../src/core/benchmark/runner.js';
+import { parseBenchmarkManifest } from '../../scripts/benchmark/manifest.mjs';
+import { runBenchmark } from '../../scripts/benchmark/runner.mjs';
 import { verifyMcpConfig } from '../../src/cli/commands/init-mcp-config.js';
 
 function tempProject(prefix: string): string {
@@ -16,6 +16,18 @@ function tempProject(prefix: string): string {
 }
 
 describe('roadmap regression corpus', () => {
+  it('keeps the core package install free of native optional dependency pulls', () => {
+    const packageJson = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')) as {
+      scripts?: Record<string, unknown>;
+      optionalDependencies?: Record<string, unknown>;
+      peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+    };
+    expect(packageJson.scripts?.prepare).toBeUndefined();
+    expect(packageJson.optionalDependencies).toBeUndefined();
+    expect(packageJson.peerDependenciesMeta?.['@huggingface/transformers']?.optional).toBe(true);
+    expect(packageJson.peerDependenciesMeta?.['onnxruntime-node']?.optional).toBe(true);
+  });
+
   it.each(['../outside.ts', '/etc/passwd', 'C:\\Windows\\System32\\drivers\\etc\\hosts'])(
     'keeps foreign and escaping path conventions outside the trusted root: %s',
     (input) => {
@@ -49,7 +61,7 @@ describe('roadmap regression corpus', () => {
     expect(result.filePath).toBe(file);
   });
 
-  it('marks non-search benchmark cases unknown instead of scoring a false lexical result', () => {
+  it('evaluates non-search benchmark cases with an explicit static limitation', () => {
     const root = tempProject('projectmind-regression-benchmark-');
     writeFileSync(join(root, 'src', 'auth.ts'), 'export const auth = true;\n', 'utf8');
     const manifest = parseBenchmarkManifest({
@@ -67,8 +79,9 @@ describe('roadmap regression corpus', () => {
       ],
     });
     const result = runBenchmark(manifest, root);
-    expect(result.aggregate.evaluatedCases).toBe(0);
-    expect(result.limitations[0]).toContain('impact evaluator');
+    expect(result.aggregate.evaluatedCases).toBe(1);
+    expect(result.scores[0]?.recallAtK).toBe(0);
+    expect(result.limitations.join(' ')).toContain('statically parsed relative imports');
   });
 
   it('detects duplicate ProjectMind config keys before JSON parsing hides them', () => {
@@ -79,7 +92,7 @@ describe('roadmap regression corpus', () => {
       '{"mcpServers":{"projectmind":{"command":"npx","args":["mcp"]},"projectmind":{"command":"npx","args":["mcp"]}}}',
       'utf8',
     );
-    const result = verifyMcpConfig(config, root, 'claude');
+    const result = verifyMcpConfig(config, root, 'json-mcp');
     expect(result.duplicateProjectMindEntries).toBe(1);
     expect(result.checks.find((check) => check.name === 'duplicate-entry')?.status).toBe('warn');
   });

@@ -83,12 +83,23 @@ export class DebtTracker {
     // surface. Stale graph rows for retired languages must not re-enter the
     // report after a scan has narrowed the project to JavaScript/TypeScript.
     const files = this.kg.getAllFiles().filter((file) => getParserDefinition(file.relativePath));
-    const projectRoot = loadConfig().projectRoot;
-    // Redundancy semantics changed from unreliable embedding candidates to
-    // AST-confirmed clone evidence. Remove unresolved findings from the old
-    // detector before writing the new snapshot; otherwise a corrected run
-    // would continue displaying stale false positives forever.
-    this.persistence.clearUnresolvedType('redundancy');
+    // MCP request-local scopes replace the graph façade's active project
+    // without mutating the process-wide config. Prefer that scoped root so
+    // clone detection and git churn never read a different project's disk.
+    const projectRoot = this.kg.getCurrentProject()?.rootPath ?? loadConfig().projectRoot;
+    // Detector output is a current snapshot. Remove unresolved findings for
+    // every snapshot-based detector before writing fresh evidence; otherwise
+    // a corrected run would continue displaying stale findings forever (for
+    // example an old high-severity pattern row after its classification was
+    // corrected to an advisory warning).
+    for (const type of [
+      'pattern_drift',
+      'architectural_drift',
+      'redundancy',
+      'change_frequency',
+    ] as const) {
+      this.persistence.clearUnresolvedType(type);
+    }
 
     // Batch read all file contents
     const fileContents = new Map<string, string>();

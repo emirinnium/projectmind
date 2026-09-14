@@ -8,9 +8,21 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/mcp/tools/kg-stats.test.ts', 'tests/**/*.test.ts', 'src/**/__tests__/**/*.test.ts'],
+    include: [
+      'src/mcp/tools/kg-stats.test.ts',
+      'tests/**/*.test.ts',
+      'src/**/__tests__/**/*.test.ts',
+    ],
     exclude: ['tests/integration.test.ts'],
-    testTimeout: 60000,
+    // TypeScript checker-heavy fixer tests exceed one minute only while V8
+    // coverage instrumentation is active. Keep the normal suite strict and
+    // give the coverage job a bounded, explicit budget instead of letting
+    // valid tests fail due to instrumentation overhead.
+    testTimeout: process.argv.includes('--coverage') ? 120000 : 60000,
+    // The post-edit TypeScript gate and SQLite fixture migrations are
+    // deliberately CPU/IO-heavy. Capping file workers keeps the suite
+    // deterministic on Windows/OneDrive and on small CI runners.
+    maxWorkers: 4,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'lcov'],
@@ -23,10 +35,13 @@ export default defineConfig({
         '**/*.d.ts',
       ],
       thresholds: {
-        statements: 34,
-        branches: 30,
-        functions: 35,
-        lines: 35,
+        // Keep the gate above the historical bootstrap floor. CLI and MCP
+        // registration modules remain excluded because they are exercised by
+        // contract/smoke suites, while core logic must retain this minimum.
+        statements: 50,
+        branches: 50,
+        functions: 50,
+        lines: 50,
       },
     },
   },

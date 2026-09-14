@@ -4,7 +4,8 @@ import type { CacheStats } from './types.js';
 /**
  * Minimal non-generic interface that captures the operations the registry
  * needs from any AdvancedCache<K,V> instance.  This avoids storing
- * AdvancedCache<any,any> in the map while keeping type-safety for callers.
+ * AdvancedCache with an erased value parameter in the map while keeping
+ * type-safety for callers.
  */
 interface CacheLike {
   getStats(): CacheStats;

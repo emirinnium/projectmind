@@ -176,7 +176,10 @@ export function createChurnCommand(): Command {
             );
 
             if (opts.output) {
-              writeFileSync(opts.output, JSON.stringify({ churnData, highRisk }, null, 2));
+              // Preserve the selected output contract: text output is a
+              // human-readable report, while JSON remains machine-readable.
+              const textReport = renderTextChurn(churnData, highRisk, riskThreshold, opts.by);
+              writeFileSync(opts.output, textReport, 'utf8');
               output.success(`Data written to ${opts.output}`);
             }
           });
@@ -185,6 +188,29 @@ export function createChurnCommand(): Command {
     );
 
   return churnCmd;
+}
+
+export function renderTextChurn(
+  churnData: ChurnResult[],
+  highRisk: ChurnResult[],
+  riskThreshold: number,
+  by: string,
+): string {
+  const lines = [
+    'Code Churn & Risk Analysis',
+    `Risk threshold: ${riskThreshold}`,
+    `Group by: ${by}`,
+    `Total files analyzed: ${churnData.length}`,
+    `High-risk files: ${highRisk.length}`,
+    `Max risk score: ${(Math.max(0, ...churnData.map((c) => c.riskScore)) * 100).toFixed(1)}%`,
+    '',
+  ];
+  for (const item of [...churnData].sort((a, b) => b.riskScore - a.riskScore).slice(0, 30)) {
+    lines.push(
+      `${item.path} | risk=${(item.riskScore * 100).toFixed(1)}% | churn=${item.churnCount} | load=${item.cognitiveLoad.toFixed(3)} | authors=${item.authors.join(', ')}`,
+    );
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 function calculateChurnFromSessions(

@@ -122,6 +122,38 @@ function readJson(path: string): JsonObject {
   }
 }
 
+function normalizedPathForComparison(value: string): string {
+  const normalized = resolve(value).replace(/\\/g, '/');
+  return process.platform === 'win32' ? normalized.toLocaleLowerCase('en-US') : normalized;
+}
+
+function isPinnedProjectRootValue(value: string, root: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.includes('${')) return false;
+  try {
+    // A project-local `.` is an intentional pin to the config's active root;
+    // absolute and relative paths are compared after platform normalization.
+    return (
+      normalizedPathForComparison(resolve(root, trimmed)) === normalizedPathForComparison(root)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function hasPinnedProjectRoot(entry: JsonObject, root: string): boolean {
+  const candidates: string[] = [];
+  if (typeof entry.cwd === 'string') candidates.push(entry.cwd);
+  for (const environmentKey of ['env', 'environment']) {
+    const environment = entry[environmentKey];
+    if (environment && typeof environment === 'object' && !Array.isArray(environment)) {
+      const projectRoot = (environment as JsonObject).PROJECTMIND_ROOT;
+      if (typeof projectRoot === 'string') candidates.push(projectRoot);
+    }
+  }
+  return candidates.some((candidate) => isPinnedProjectRootValue(candidate, root));
+}
+
 function mergeConfig(config: JsonObject, root: string, kind: AgentKind): JsonObject {
   const entry = serverEntry(root);
   if (kind === 'opencode') {
@@ -333,7 +365,7 @@ export function verifyMcpConfig(
     const content = readFileSync(path, 'utf8');
     const occurrences = (content.match(/\[mcp_servers\.projectmind\]/g) ?? []).length;
     const entry =
-      occurrences === 1 && content.includes('command = "npx"') && content.includes(' mcp"');
+      occurrences === 1 && content.includes('command = "npx"') && content.includes('"mcp"');
     add(
       'config-syntax',
       content.includes('[mcp_servers.projectmind]') ? 'pass' : 'fail',
@@ -413,7 +445,6 @@ export function verifyMcpConfig(
   const rawConfig = readFileSync(path, 'utf8');
   const structuralEntries = rawConfig.match(/["']projectmind["']\s*:/g) ?? [];
   duplicateCount = Math.max(0, structuralEntries.length - 1);
-  const serialized = JSON.stringify(config);
   const entryRecord =
     entry && typeof entry === 'object' && !Array.isArray(entry) ? (entry as JsonObject) : undefined;
   const command = entryRecord?.command;
@@ -424,7 +455,7 @@ export function verifyMcpConfig(
     commandParts.some(
       (arg) => typeof arg === 'string' && arg.includes('@emirhanturker/projectmind'),
     ) && commandParts.some((arg) => arg === 'mcp');
-  const projectRootOk = serialized.includes(resolve(root));
+  const projectRootOk = entryRecord ? hasPinnedProjectRoot(entryRecord, root) : false;
   add(
     'projectmind-entry',
     entryRecord ? 'pass' : 'fail',

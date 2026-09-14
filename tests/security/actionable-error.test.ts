@@ -35,4 +35,55 @@ describe('actionable public error contract', () => {
     expect(JSON.stringify(problem)).not.toContain('C:/private/project');
     expect(problem.nextActions[0]).toContain('PROJECTMIND_ROOT');
   });
+
+  it('classifies legacy stale-index errors with a concrete recovery action', () => {
+    expect(toActionableError(new Error('Indexed source is stale; rescan required.'))).toMatchObject(
+      {
+        cause: 'stale-index',
+        retryable: true,
+        nextActions: ['Run pm scan --incremental, then retry the command.'],
+      },
+    );
+  });
+
+  it('classifies provider/network failures without treating them as generic runtime errors', () => {
+    expect(toActionableError(new Error('Provider request timed out after 30000ms.'))).toMatchObject(
+      {
+        cause: 'network',
+        networkRequired: true,
+        retryable: true,
+      },
+    );
+  });
+
+  it('explains how to recover from a locked SQLite/file target', () => {
+    expect(toActionableError(new Error('EBUSY: resource busy or locked'))).toMatchObject({
+      cause: 'filesystem',
+      retryable: true,
+      nextActions: [
+        'Close other ProjectMind/MCP processes using this project, then retry the operation.',
+      ],
+    });
+  });
+
+  it('classifies malformed tool arguments as validation failures', () => {
+    expect(toActionableError(new Error('limit must be between 1 and 50.'))).toMatchObject({
+      cause: 'validation',
+      retryable: true,
+      nextActions: ['Correct the reported input and retry.'],
+    });
+  });
+
+  it('preserves actionable advisory URLs while sanitizing local paths', () => {
+    const problem = toActionableError(
+      actionableError(
+        'dependency.audit',
+        'See https://github.com/advisories/GHSA-test and C:\\Users\\secret\\repo\\file.ts:12.',
+        ['Open https://github.com/advisories/GHSA-test for the remediation.'],
+      ),
+    );
+    expect(problem.summary).toContain('https://github.com/advisories/GHSA-test');
+    expect(problem.summary).toContain('[path]');
+    expect(problem.nextActions[0]).toContain('https://github.com/advisories/GHSA-test');
+  });
 });

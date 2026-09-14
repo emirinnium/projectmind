@@ -30,6 +30,7 @@ import {
   getDependents,
   getDirectDependents,
   getImportsWithDetails,
+  getImportStats,
   traceImports,
   findCircularDependencies,
   ingestDynamicCalls,
@@ -120,6 +121,15 @@ export class KnowledgeGraphIntelligence extends KnowledgeGraphFiles {
     fileId: number,
   ): { source: string; kind: string; resolvedFile: FileInfo | null }[] {
     return getImportsWithDetails(this.ctx, fileId);
+  }
+
+  getImportStats(): {
+    totalImports: number;
+    resolvedImports: number;
+    unresolvedImports: number;
+    externalDependencies: number;
+  } {
+    return getImportStats(this.ctx);
   }
 
   traceImports(fileId: number, maxDepth = 10): { file: FileInfo; depth: number; path: string[] }[] {

@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { MCP_CORE_TOOL_NAMES, TOOL_ANNOTATIONS } from '../../../src/mcp/tools/guard.js';
+import {
+  MCP_CORE_TOOL_NAMES,
+  TOOL_ANNOTATIONS,
+  annotateToolRegistration,
+} from '../../../src/mcp/tools/guard.js';
 import { registerAllTools } from '../../../src/mcp/tools/registry/index.js';
 import { registerResourceSubscriptionTool } from '../../../src/mcp/resources.js';
 import { stopPeriodicCleanup } from '../../../src/mcp/tools/locks.js';
@@ -9,7 +13,12 @@ import type { McpDependencies } from '../../../src/mcp/tools/types.js';
 interface RegisteredTool {
   inputSchema?: { safeParse: (value: unknown) => { success: boolean } };
   annotations?: Record<string, unknown>;
-  handler: (...args: never[]) => unknown;
+  handler: (args: unknown) => unknown;
+}
+
+interface RegisteredCallResult {
+  content?: Array<{ text?: string }>;
+  [key: string]: unknown;
 }
 
 const matrix = new Set([...MCP_CORE_TOOL_NAMES]);
@@ -128,5 +137,73 @@ describe('MCP security contract matrix', () => {
     const cli = await readPayload('run_cli', { args: ['mcp'] });
     expect(cli.ok).toBe(false);
     expect(cli.error).toContain('not allowed');
+  });
+
+  it('adds actionable details to legacy JSON and plain-text errors without rewriting the message', async () => {
+    process.env.PROJECTMIND_TOOLS = 'full';
+    const server = new McpServer({ name: 'legacy-error-contract', version: '1.0.0' });
+    annotateToolRegistration(server);
+    const target = server as unknown as {
+      registerTool: (
+        name: string,
+        config: Record<string, unknown>,
+        handler: (...a: never[]) => unknown,
+      ) => void;
+    };
+    target.registerTool(
+      'legacy_error_json',
+      {
+        inputSchema: {},
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async () => ({
+        isError: true,
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({ success: false, error: 'limit must be between 1 and 5' }),
+          },
+        ],
+      }),
+    );
+    target.registerTool(
+      'legacy_error_text',
+      {
+        inputSchema: {},
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async () => ({
+        isError: true,
+        content: [{ type: 'text', text: 'Provider request timed out.' }],
+      }),
+    );
+
+    const tools = (server as unknown as { _registeredTools: Record<string, RegisteredTool> })
+      ._registeredTools;
+    const json = (await tools.legacy_error_json.handler({})) as RegisteredCallResult;
+    const jsonPayload = JSON.parse(json.content?.[0]?.text ?? '{}') as Record<string, unknown>;
+    expect(jsonPayload.error).toBe('limit must be between 1 and 5');
+    expect(jsonPayload.errorDetails).toMatchObject({ cause: 'validation', retryable: true });
+    expect(json.errorDetails).toMatchObject({ code: 'projectmind.error' });
+    expect(json.nextAction as string).toBe('Correct the reported input and retry.');
+
+    const text = (await tools.legacy_error_text.handler({})) as RegisteredCallResult;
+    expect(text.content?.[0]?.text).toBe('Provider request timed out.');
+    expect(text.errorDetails).toMatchObject({
+      cause: 'network',
+      networkRequired: true,
+      retryable: true,
+    });
+    expect(text.nextAction).toBe('Check network access and provider credentials, then retry.');
   });
 });

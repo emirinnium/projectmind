@@ -15,7 +15,26 @@ describe('MCP invocation telemetry', () => {
     await measureInvocation('demo', {}, async () => 'second');
     const summary = summarizeInvocationMetrics('demo').demo;
     expect(summary.count).toBe(2);
+    expect(summary.coldCount).toBe(1);
+    expect(summary.warmCount).toBe(1);
+    expect(summary.avgInputBytes).toBeGreaterThan(0);
+    expect(summary.avgInputTokens).toBeGreaterThan(0);
     expect(summary.p50Ms).toBeGreaterThanOrEqual(0);
     expect(summary.avgOutputTokens).toBeGreaterThan(0);
+    expect(summary.errorRate).toBe(0);
+  });
+
+  it('records failures in the error rate while preserving measurable input cost', async () => {
+    await expect(
+      measureInvocation('failure', { query: 'x' }, async () => {
+        throw new Error('expected failure');
+      }),
+    ).rejects.toThrow('expected failure');
+    expect(summarizeInvocationMetrics('failure').failure).toMatchObject({
+      count: 1,
+      errors: 1,
+      errorRate: 1,
+      avgInputTokens: 4,
+    });
   });
 });

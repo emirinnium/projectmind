@@ -91,7 +91,7 @@ describe('CrossProjectPatternEngine', () => {
     expect(defaultSuccessMetrics()).toEqual({ usedInProjects: 1, testCoverage: 0, bugRate: 0 });
   });
 
-  // (b) sync twice -> no duplicate rows (UNIQUE(code_hash, name) works)
+  // (b) sync twice -> no duplicate rows (project-scoped uniqueness works)
   it('syncing the same pattern twice creates no duplicate rows', () => {
     const patterns = engine.extractPatterns('proj-b', fixtureDir);
     const widget = patterns.find((p) => p.name === 'WidgetFactory')!;
@@ -99,7 +99,7 @@ describe('CrossProjectPatternEngine', () => {
     const first = engine.syncPatternToProject(widget, 'proj-target');
     const second = engine.syncPatternToProject(widget, 'proj-target');
     expect(first).toBe(true);
-    expect(second).toBe(false); // ignored by UNIQUE(code_hash, name)
+    expect(second).toBe(false); // ignored by UNIQUE(code_hash, name, project_id)
 
     const row = db
       .prepare("SELECT COUNT(*) AS n FROM patterns WHERE project_id = 'proj-target'")
@@ -110,8 +110,8 @@ describe('CrossProjectPatternEngine', () => {
   // (c) findSimilar returns stored template + computed confidence in (0,1]
   it('finds similar patterns with real template and computed confidence', () => {
     // Sync a pattern into a string (non-numeric) project id — F37: no parseInt.
-    // NOTE: UNIQUE(code_hash, name) is global, so use a pattern (SimpleFactory)
-    // that was not synced by the duplicate-rows test above.
+    // NOTE: use a different pattern for this comparison so the target row is
+    // independent from the duplicate-rows test above.
     const patterns = engine.extractPatterns('proj-c', fixtureDir);
     const simple = patterns.find((p) => p.name === 'SimpleFactory')!;
     expect(engine.syncPatternToProject(simple, 'proj-target-2')).toBe(true);

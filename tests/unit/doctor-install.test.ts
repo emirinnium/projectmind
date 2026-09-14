@@ -34,9 +34,9 @@ describe('doctor install checks', () => {
       },
     } satisfies ProjectMindConfig);
     expect(report.checks.length).toBeGreaterThan(5);
-    expect(report.checks.find((check) => check.name === 'dependency:@modelcontextprotocol/sdk')?.status).toBe(
-      'pass',
-    );
+    expect(
+      report.checks.find((check) => check.name === 'dependency:@modelcontextprotocol/sdk')?.status,
+    ).toBe('pass');
     expect(report.checks.every((check) => ['pass', 'warn', 'fail'].includes(check.status))).toBe(
       true,
     );

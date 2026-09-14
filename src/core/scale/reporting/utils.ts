@@ -1,6 +1,6 @@
 /** Utility functions for scale reporting. */
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { assertProjectPath } from '../../security/path-security.js';
 
 /** Round a value to 2 decimal places. */
 export function round2(value: number): number {
@@ -112,7 +112,11 @@ export function computeFingerprint(
     if (read >= FINGERPRINT_MAX_FILES) break;
     let content: string;
     try {
-      const buf = readFileSync(join(root, rel));
+      const safePath = assertProjectPath(rel, root, {
+        mustExist: true,
+        rejectIgnored: true,
+      });
+      const buf = readFileSync(safePath);
       if (buf.length > FINGERPRINT_MAX_BYTES) continue;
       content = buf.toString('utf-8');
     } catch {

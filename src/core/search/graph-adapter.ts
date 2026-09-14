@@ -1,7 +1,7 @@
 import { cosineSimilarity, safeScore } from './scoring.js';
 
 export interface KGGraphLike {
-  getFileByPath(path: string): { id?: number; path: string } | null;
+  getFileByPath(path: string): { id?: number; path: string; hash?: string } | null;
   getImports?(fileId: number): Array<{ source: string; named: string[]; kind: string }>;
   getDependents?(fileId: number): Array<{ source: string; named: string[]; kind: string }>;
   findSimilarFiles?(
@@ -13,7 +13,12 @@ export interface KGGraphLike {
 }
 
 export interface KgAdapterSource {
-  getFileByPath(path: string): { id?: number; path?: string; relativePath?: string } | null;
+  getFileByPath(path: string): {
+    id?: number;
+    path?: string;
+    relativePath?: string;
+    hash?: string;
+  } | null;
   getImports?(fileId: number): Array<{ source: string; named?: string[]; kind?: string }>;
   getDependents?(fileId: number): Array<{ path?: string; relativePath?: string }>;
   findSimilarFiles?(
@@ -37,7 +42,7 @@ export function createKgGraphAdapter(kg: KgAdapterSource): KGGraphLike {
     getFileByPath: (path) => {
       const file = kg.getFileByPath(path);
       if (!file) return null;
-      return { id: file.id, path: file.relativePath ?? file.path ?? path };
+      return { id: file.id, path: file.relativePath ?? file.path ?? path, hash: file.hash };
     },
     getImports: kg.getImports
       ? (fileId) =>

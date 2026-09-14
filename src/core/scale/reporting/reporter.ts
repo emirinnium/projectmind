@@ -2,7 +2,6 @@ import { reportSuppressedError } from '../../../utils/errors.js';
 import { dirname, join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import type { SQLOutputValue } from 'node:sqlite';
-import { getStatement } from '../../../storage/database.js';
 import { KnowledgeGraph, FileInfo } from '../../../storage/knowledge-graph.js';
 import { loadConfig } from '../../../utils/config.js';
 import { computeFingerprint } from './utils.js';
@@ -18,9 +17,16 @@ export class ScaleReporter {
     this.kg = kg;
   }
 
+  private getProjectRoot(): string {
+    // Request-local MCP scopes carry their own graph project/root. The config
+    // fallback keeps lightweight integrations and historical test doubles
+    // compatible without allowing a real scoped graph to leak to global root.
+    return this.kg.getCurrentProject()?.rootPath ?? loadConfig().projectRoot;
+  }
+
   getScaleReport(): ScaleReport {
     const allFiles = this.kg.getAllFiles();
-    const projectRoot = loadConfig().projectRoot;
+    const projectRoot = this.getProjectRoot();
 
     const languages: Record<string, { files: number; bytes: number }> = {};
     const modules = new Map<string, ModuleInfo>();
@@ -105,24 +111,29 @@ export class ScaleReporter {
   }
 
   storeScanProfile(profile: ScanProfile): void {
-    getStatement(
-      `INSERT INTO scan_profiles (total_files, scanned_files, error_files, duration_ms, files_per_second, memory_used_mb, errors)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      profile.totalFiles,
-      profile.scannedFiles,
-      profile.errorFiles,
-      profile.durationMs,
-      profile.filesPerSecond,
-      profile.memoryUsedMB,
-      profile.errors.length > 0 ? JSON.stringify(profile.errors) : null,
-    );
+    this.kg.db
+      .prepare(
+        `INSERT INTO scan_profiles (project_id, total_files, scanned_files, error_files, skipped_files, skipped_paths, duration_ms, files_per_second, memory_used_mb, errors)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        this.kg.getCurrentProjectId(),
+        profile.totalFiles,
+        profile.scannedFiles,
+        profile.errorFiles,
+        profile.skippedFiles,
+        profile.skippedPaths.length > 0 ? JSON.stringify(profile.skippedPaths) : null,
+        profile.durationMs,
+        profile.filesPerSecond,
+        profile.memoryUsedMB,
+        profile.errors.length > 0 ? JSON.stringify(profile.errors) : null,
+      );
   }
 
   getLastScanProfile(): ScanProfile | null {
-    const row = getStatement(
-      `SELECT * FROM scan_profiles ORDER BY created_at DESC LIMIT 1`,
-    ).get() as Record<string, SQLOutputValue> | undefined;
+    const row = this.kg.db
+      .prepare('SELECT * FROM scan_profiles WHERE project_id = ? ORDER BY created_at DESC LIMIT 1')
+      .get(this.kg.getCurrentProjectId()) as Record<string, SQLOutputValue> | undefined;
 
     if (!row) return null;
 
@@ -130,6 +141,8 @@ export class ScaleReporter {
       totalFiles: row.total_files as number,
       scannedFiles: row.scanned_files as number,
       errorFiles: row.error_files as number,
+      skippedFiles: (row.skipped_files as number | null) ?? 0,
+      skippedPaths: row.skipped_paths ? JSON.parse(row.skipped_paths as string) : [],
       durationMs: row.duration_ms as number,
       filesPerSecond: row.files_per_second as number,
       memoryUsedMB: row.memory_used_mb as number,
@@ -177,9 +190,12 @@ export class ScaleReporter {
       profile.sessions++;
     }
 
-    const agentFiles = getStatement(
-      'SELECT agent_touched_by, COUNT(*) as cnt FROM files WHERE agent_touched_by IS NOT NULL GROUP BY agent_touched_by',
-    ).all() as { agent_touched_by: string; cnt: number }[];
+    const projectId = this.kg.getCurrentProjectId();
+    const agentFiles = this.kg.db
+      .prepare(
+        'SELECT agent_touched_by, COUNT(*) as cnt FROM files WHERE project_id = ? AND agent_touched_by IS NOT NULL GROUP BY agent_touched_by',
+      )
+      .all(projectId) as { agent_touched_by: string; cnt: number }[];
 
     for (const row of agentFiles) {
       const profile = profiles.get(row.agent_touched_by);
@@ -190,9 +206,11 @@ export class ScaleReporter {
 
     // Real fingerprints are computed from the actual content of agent-touched
     // files (capped). Agents without readable touched files keep -1/'unknown'.
-    const touchedRows = getStatement(
-      'SELECT agent_touched_by, relative_path FROM files WHERE agent_touched_by IS NOT NULL LIMIT 500',
-    ).all() as { agent_touched_by: string; relative_path: string }[];
+    const touchedRows = this.kg.db
+      .prepare(
+        'SELECT agent_touched_by, relative_path FROM files WHERE project_id = ? AND agent_touched_by IS NOT NULL LIMIT 500',
+      )
+      .all(projectId) as { agent_touched_by: string; relative_path: string }[];
 
     const pathsByAgent = new Map<string, string[]>();
     for (const row of touchedRows) {
@@ -204,7 +222,7 @@ export class ScaleReporter {
     for (const [agentName, paths] of pathsByAgent) {
       const profile = profiles.get(agentName);
       if (profile) {
-        profile.fingerprint = computeFingerprint(paths, loadConfig().projectRoot);
+        profile.fingerprint = computeFingerprint(paths, this.getProjectRoot());
       }
     }
 

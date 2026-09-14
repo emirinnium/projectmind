@@ -55,7 +55,9 @@ export async function initializeDependencies(): Promise<McpDependencies> {
     provider: config.llm.provider,
     model: config.llm.model,
     apiKey: config.llm.apiKey,
+    apiUrl: config.llm.endpoint,
     deepModel: config.llm.deepModel,
+    reasoning: config.llm.reasoning,
   };
   const llmProvider = createLLMProvider(llmConfig);
   if (llmProvider) {

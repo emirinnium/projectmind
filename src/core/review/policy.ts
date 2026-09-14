@@ -36,6 +36,8 @@ export const ReviewPolicySchema = z
     maxBundleBytes: z.number().int().min(1024).max(50_000_000).default(500_000),
     maxBundleTokens: z.number().int().min(256).max(10_000_000).default(100_000),
     concurrency: z.number().int().min(1).max(32).default(2),
+    bundleTimeoutMs: z.number().int().min(1).max(300_000).default(30_000),
+    bundleRetries: z.number().int().min(0).max(5).default(1),
     requiredChecks: z
       .array(z.enum(['typecheck', 'lint', 'test', 'security']))
       .max(10)

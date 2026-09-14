@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "evaluatorName": "projectmind-monorepo-boundary",
+  "fixture": {
+    "fileCount": 240,
+    "packageCount": 12,
+    "inputHash": "7395644272c8f4a527ad7cc7c08fae440bd24c3b3bbab6064bb83645438ee887"
+  },
+  "full": {
+    "totalFiles": 240,
+    "scannedFiles": 240,
+    "errorFiles": 0
+  },
+  "incremental": {
+    "totalFiles": 240,
+    "scannedFiles": 0,
+    "errorFiles": 0
+  },
+  "requirePassed": true
+}

@@ -2,15 +2,22 @@ import { Command } from 'commander';
 import { withService, asyncHandler, formatDebtReport, output } from '@/cli/utils/shared.js';
 
 export function createDebtCommand(): Command {
-  const cmd = new Command('debt').description('Show cognitive debt report').action(
-    asyncHandler(async () => {
-      await withService(['debt'], async (_ctx, services) => {
-        const debt = services.debt!;
-        const report = debt.getReport();
-        output.info(formatDebtReport(report));
-      });
-    }),
-  );
+  const cmd = new Command('debt')
+    .description('Show cognitive debt report')
+    .option('-j, --json', 'Output machine-readable JSON')
+    .action(
+      asyncHandler(async (opts: { json?: boolean }) => {
+        await withService(['debt'], async (_ctx, services) => {
+          const debt = services.debt!;
+          const report = debt.getReport();
+          if (opts.json) {
+            output.json({ protocolVersion: 1, report });
+            return;
+          }
+          output.info(formatDebtReport(report));
+        });
+      }),
+    );
 
   cmd
     .command('clear')

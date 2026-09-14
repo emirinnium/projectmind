@@ -4,6 +4,7 @@ import { CoherenceCache } from '../../cache/index.js';
 import { FileInfo } from '../../../storage/knowledge-graph.js';
 import { ContractEngine } from '../../contracts/engine.js';
 import { stableHash } from '../../../utils/hash.js';
+import { calculateCyclomaticComplexity } from '../../../parser/ast/parser.js';
 
 // Thresholds for fast-tier coherence analysis
 const MAX_FILE_LINES = 400;
@@ -11,6 +12,10 @@ const MAX_IMPORT_COUNT = 20;
 const MAX_ANY_USAGE = 5;
 const MAX_CONSOLE_COUNT = 3;
 const MAX_DECISION_POINTS = 10;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 export interface LLMProvider {
   name: string;
@@ -25,6 +30,8 @@ export interface LLMResponse {
   confidence: number;
   usage?: { inputTokens: number; outputTokens: number };
   responseTimeMs: number;
+  responseMode?: 'content' | 'reasoning-only' | 'empty';
+  finishReason?: string;
 }
 
 export interface CoherenceResult {
@@ -34,6 +41,8 @@ export interface CoherenceResult {
   suggestions: string[];
   llmProvider: string;
   responseTimeMs: number;
+  responseMode?: 'content' | 'reasoning-only' | 'empty';
+  finishReason?: string;
 }
 
 export interface CoherenceCheckOptions {
@@ -73,7 +82,7 @@ export class FastCoherenceAnalyzer {
     const suggestions: string[] = [];
 
     // Semantic Analysis
-    const semanticIssues = this.semanticAnalysis(options.code);
+    const semanticIssues = this.semanticAnalysis(options.code, options.filePath);
     issues += semanticIssues.issues;
     reasoningTrace.push(...semanticIssues.reasoningTrace);
     suggestions.push(...semanticIssues.suggestions);
@@ -212,7 +221,10 @@ export class FastCoherenceAnalyzer {
   /**
    * Perform semantic analysis on the code.
    */
-  private semanticAnalysis(code: string): {
+  private semanticAnalysis(
+    code: string,
+    filePath: string,
+  ): {
     issues: number;
     reasoningTrace: string[];
     suggestions: string[];
@@ -254,9 +266,16 @@ export class FastCoherenceAnalyzer {
     const letMatches = code.match(/let\s+([a-zA-Z0-9_]+)\s*=/g) || [];
     const allVariables = [...variableMatches, ...letMatches];
 
-    const usedVariables = allVariables.filter((v) => {
-      const varName = v.split(/\s+/)[1];
-      return code.includes(varName) && !code.includes(`// ${varName} unused`);
+    const usedVariables = allVariables.filter((declaration) => {
+      const match = /^(?:const|let)\s+([A-Za-z0-9_$]+)\s*=/.exec(declaration);
+      if (!match) return true;
+      const varName = match[1]!;
+      const declarationPattern = new RegExp(
+        `\\b(?:const|let)\\s+${escapeRegExp(varName)}\\s*=`,
+        'g',
+      );
+      const codeWithoutDeclarations = code.replace(declarationPattern, '');
+      return codeWithoutDeclarations.includes(varName) && !code.includes(`// ${varName} unused`);
     });
 
     const unusedVariables = allVariables.length - usedVariables.length;
@@ -267,11 +286,21 @@ export class FastCoherenceAnalyzer {
     }
 
     // Check for complex functions (cyclomatic complexity)
-    const functionBodies = code.match(/function\s*[^{]*{([\s\S]*?)}/g) || [];
-    const complexFunctions = functionBodies.filter((body) => {
-      const decisionPoints = body.match(/\b(if|for|while|case|catch|\?|&&|\|\|)\b/g) || [];
-      return decisionPoints.length > MAX_DECISION_POINTS;
-    });
+    const sourceFile = ts.createSourceFile(
+      filePath,
+      code,
+      ts.ScriptTarget.Latest,
+      true,
+      scriptKindFor(filePath),
+    );
+    const complexFunctions: ts.Node[] = [];
+    const collectComplexFunctions = (node: ts.Node): void => {
+      if (ts.isFunctionLike(node) && calculateCyclomaticComplexity(node) > MAX_DECISION_POINTS) {
+        complexFunctions.push(node);
+      }
+      ts.forEachChild(node, collectComplexFunctions);
+    };
+    collectComplexFunctions(sourceFile);
 
     if (complexFunctions.length > 0) {
       reasoningTrace.push(
@@ -314,4 +343,14 @@ function countExplicitAnyTypes(code: string, filePath: string): number {
   };
   visit(sourceFile);
   return count;
+}
+
+function scriptKindFor(filePath: string): ts.ScriptKind {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith('.tsx')) return ts.ScriptKind.TSX;
+  if (lower.endsWith('.jsx')) return ts.ScriptKind.JSX;
+  if (lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) {
+    return ts.ScriptKind.JS;
+  }
+  return ts.ScriptKind.TS;
 }

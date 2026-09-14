@@ -189,5 +189,82 @@ describe('KnowledgeGraph — dynamic calls, deletion, and path lookup hardening'
         kind: 'relative',
       });
     });
+
+    it('resolves extensionless imports inside dotted directories', async () => {
+      const target = await kg.upsertFile(
+        makeStruct('/proj/src/feature.v2/utils.ts'),
+        'src/feature.v2/utils.ts',
+      );
+      const importer = await kg.upsertFile(
+        makeStruct('/proj/src/feature.v2/importer.ts'),
+        'src/feature.v2/importer.ts',
+      );
+      const resolved = kg.resolveImportSource('./utils', 'src/feature.v2');
+
+      expect(resolved?.id).toBe(target);
+      expect(importer).toBeGreaterThan(0);
+    });
+
+    it('refreshes extensionless imports inside dotted directories', async () => {
+      const importerStruct: FileStructure = {
+        ...makeStruct('/proj/src/feature.v2/importer.ts'),
+        imports: [{ source: './utils', named: [], kind: 'relative' }],
+      };
+      const importer = await kg.upsertFile(importerStruct, 'src/feature.v2/importer.ts');
+      await kg.storeFileDetails(importer, importerStruct);
+      await kg.upsertFile(makeStruct('/proj/src/feature.v2/utils.ts'), 'src/feature.v2/utils.ts');
+      db.prepare('UPDATE imports SET resolved = 0, resolved_path = NULL WHERE file_id = ?').run(
+        importer,
+      );
+
+      expect(kg.refreshImportResolution()).toBe(1);
+      expect(
+        db.prepare('SELECT resolved, resolved_path FROM imports WHERE file_id = ?').get(importer),
+      ).toEqual({ resolved: 1, resolved_path: 'src/feature.v2/utils.ts' });
+    });
+
+    it('persists only resolvable static AST call edges', async () => {
+      const targetStruct: FileStructure = {
+        ...makeStruct('/proj/src/target.ts'),
+        functions: [
+          {
+            ...makeStruct('/proj/src/target.ts').functions[0]!,
+            name: 'callee',
+            signature: 'callee(): void',
+          },
+        ],
+      };
+      const target = await kg.upsertFile(targetStruct, 'src/target.ts');
+      await kg.storeFileDetails(target, targetStruct);
+      const callerStruct: FileStructure = {
+        ...makeStruct('/proj/src/caller.ts'),
+        functions: [
+          {
+            ...makeStruct('/proj/src/caller.ts').functions[0]!,
+            name: 'caller',
+            signature: 'caller(): void',
+          },
+        ],
+        imports: [{ source: './target', named: ['callee'], kind: 'import' }],
+        staticCalls: [
+          { fromFunctionName: 'caller', toFunctionName: 'callee', line: 2 },
+          { fromFunctionName: 'caller', toFunctionName: 'unknown', line: 3 },
+        ],
+      };
+      const caller = await kg.upsertFile(callerStruct, 'src/caller.ts');
+      await kg.storeFileDetails(caller, callerStruct);
+
+      expect(
+        db
+          .prepare(
+            `SELECT c.dynamic, from_f.name AS fromName, to_f.name AS toName
+             FROM calls c
+             JOIN functions from_f ON from_f.id = c.from_function_id
+             JOIN functions to_f ON to_f.id = c.to_function_id
+             WHERE from_f.file_id = ?`,
+          )
+          .all(caller),
+      ).toEqual([{ dynamic: 0, fromName: 'caller', toName: 'callee' }]);
+    });
   });
 });

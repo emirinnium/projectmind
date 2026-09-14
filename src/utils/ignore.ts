@@ -46,6 +46,9 @@ coverage/
 .cache/
 tmp/
 temp/
+.next/
+.turbo/
+.idea/
 build/
 out/
 target/

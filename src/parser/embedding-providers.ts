@@ -1,11 +1,23 @@
 import { MAX_EMBEDDING_TOKENS } from './embedding-settings.js';
 
 export type InferenceSession = {
-  run(feeds: Record<string, { data: Float32Array | Int32Array; dims: number[] }>): Promise<{
+  run(
+    feeds: Record<string, { data: Float32Array | Int32Array | BigInt64Array; dims: number[] }>,
+  ): Promise<{
     last_hidden_state?: { data: Float32Array };
     pooler_output?: { data: Float32Array };
   }>;
 };
+
+export interface OnnxTokenizerOutput {
+  input_ids?: { data: ArrayLike<number | bigint> };
+  attention_mask?: { data: ArrayLike<number | bigint> };
+}
+
+export type OnnxTokenizer = (
+  text: string,
+  options?: { padding?: 'max_length'; truncation?: boolean; max_length?: number },
+) => Promise<OnnxTokenizerOutput> | OnnxTokenizerOutput;
 
 export type TransformerPipeline = (
   text: string,
@@ -16,17 +28,9 @@ export async function generateUnixcoderEmbedding(
   text: string,
   dim: number,
   session: InferenceSession,
+  tokenizer: OnnxTokenizer,
 ): Promise<number[]> {
-  const tokens = text.toLowerCase().split(/\s+/).slice(0, MAX_EMBEDDING_TOKENS);
-  const inputIds = new Int32Array(MAX_EMBEDDING_TOKENS);
-  const attentionMask = new Int32Array(MAX_EMBEDDING_TOKENS);
-
-  for (let i = 0; i < MAX_EMBEDDING_TOKENS; i++) {
-    if (i < tokens.length) {
-      inputIds[i] = hashToken(tokens[i]!) % 50000;
-      attentionMask[i] = 1;
-    }
-  }
+  const { inputIds, attentionMask } = await tokenizeForOnnx(text, tokenizer);
 
   const results = await session.run({
     input_ids: { data: inputIds, dims: [1, MAX_EMBEDDING_TOKENS] },
@@ -34,10 +38,16 @@ export async function generateUnixcoderEmbedding(
   });
   const output = results.last_hidden_state;
   if (!output) throw new Error('UniXcoder output missing last_hidden_state');
+  const nativeDimension = output.data.length / MAX_EMBEDDING_TOKENS;
+  if (!Number.isSafeInteger(nativeDimension) || nativeDimension !== dim) {
+    throw new Error(
+      `UniXcoder output dimension ${nativeDimension} does not match configured dimension ${dim}. Configure embeddings.dimension to the model dimension.`,
+    );
+  }
 
   const embedding = new Array<number>(dim).fill(0);
   for (let i = 0; i < MAX_EMBEDDING_TOKENS; i++) {
-    if (attentionMask[i] === 1) {
+    if (attentionMask[i] === 1n) {
       for (let j = 0; j < dim; j++) embedding[j] += output.data[i * dim + j]!;
     }
   }
@@ -49,17 +59,9 @@ export async function generateCodebertEmbedding(
   text: string,
   dim: number,
   session: InferenceSession,
+  tokenizer: OnnxTokenizer,
 ): Promise<number[]> {
-  const tokens = text.toLowerCase().split(/\s+/).slice(0, MAX_EMBEDDING_TOKENS);
-  const inputIds = new Int32Array(MAX_EMBEDDING_TOKENS);
-  const attentionMask = new Int32Array(MAX_EMBEDDING_TOKENS);
-
-  for (let i = 0; i < MAX_EMBEDDING_TOKENS; i++) {
-    if (i < tokens.length) {
-      inputIds[i] = hashToken(tokens[i]!) % 30000;
-      attentionMask[i] = 1;
-    }
-  }
+  const { inputIds, attentionMask } = await tokenizeForOnnx(text, tokenizer);
 
   const results = await session.run({
     input_ids: { data: inputIds, dims: [1, MAX_EMBEDDING_TOKENS] },
@@ -67,8 +69,13 @@ export async function generateCodebertEmbedding(
   });
   const output = results.pooler_output;
   if (!output) throw new Error('CodeBERT output missing pooler_output');
+  if (output.data.length !== dim) {
+    throw new Error(
+      `CodeBERT output dimension ${output.data.length} does not match configured dimension ${dim}. Configure embeddings.dimension to the model dimension.`,
+    );
+  }
 
-  return normalizeEmbedding(Array.from(output.data).slice(0, dim));
+  return normalizeEmbedding(Array.from(output.data));
 }
 
 export async function generateTransformersEmbedding(
@@ -77,9 +84,12 @@ export async function generateTransformersEmbedding(
   pipeline: TransformerPipeline,
 ): Promise<number[]> {
   const result = await pipeline(text, { pooling: 'mean', normalize: true });
-  const embedding = Array.from(result.data).slice(0, dim);
-  while (embedding.length < dim) embedding.push(0);
-  return embedding;
+  if (result.data.length !== dim) {
+    throw new Error(
+      `Transformers output dimension ${result.data.length} does not match configured dimension ${dim}. Configure embeddings.dimension to the model dimension.`,
+    );
+  }
+  return Array.from(result.data);
 }
 
 export async function generateOpenaiEmbedding(
@@ -120,8 +130,35 @@ function normalizeEmbedding(embedding: number[]): number[] {
   return norm > 0 ? embedding.map((value) => value / norm) : embedding;
 }
 
-function hashToken(token: string): number {
-  let hash = 0;
-  for (let i = 0; i < token.length; i++) hash = ((hash << 5) - hash + token.charCodeAt(i)) | 0;
-  return Math.abs(hash);
+async function tokenizeForOnnx(
+  text: string,
+  tokenizer: OnnxTokenizer,
+): Promise<{ inputIds: BigInt64Array; attentionMask: BigInt64Array }> {
+  const output = await tokenizer(text, {
+    padding: 'max_length',
+    truncation: true,
+    max_length: MAX_EMBEDDING_TOKENS,
+  });
+  const inputIds = toPaddedInt64(output.input_ids?.data, 'input_ids');
+  const attentionMask = toPaddedInt64(output.attention_mask?.data, 'attention_mask');
+  return { inputIds, attentionMask };
+}
+
+function toPaddedInt64(
+  values: ArrayLike<number | bigint> | undefined,
+  name: 'input_ids' | 'attention_mask',
+): BigInt64Array {
+  if (!values || values.length === 0 || values.length > MAX_EMBEDDING_TOKENS) {
+    throw new Error(`ONNX tokenizer returned invalid ${name} length.`);
+  }
+  const result = new BigInt64Array(MAX_EMBEDDING_TOKENS);
+  for (let index = 0; index < values.length; index++) {
+    const value = values[index];
+    try {
+      result[index] = typeof value === 'bigint' ? value : BigInt(value);
+    } catch {
+      throw new Error(`ONNX tokenizer returned a non-integer ${name} value at index ${index}.`);
+    }
+  }
+  return result;
 }

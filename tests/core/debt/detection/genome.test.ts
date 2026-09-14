@@ -23,9 +23,11 @@ function createMockKg(opts: {
   files?: Array<{ path: string }>;
   sessions?: unknown[];
   cycles?: string[][];
+  projectId?: number;
 }) {
   return {
     getAllFiles: () => opts.files ?? [],
+    getCurrentProjectId: () => opts.projectId ?? 1,
     getAgentSessions: () => opts.sessions ?? [],
     findCircularDependencies: () => opts.cycles ?? [],
   } as unknown as KnowledgeGraph;
@@ -201,6 +203,16 @@ describe('GenomeComputer', () => {
   });
 
   describe('violation counting logic', () => {
+    it('does not import high debt from another project namespace', () => {
+      db.prepare(
+        `INSERT INTO debt_items (type, description, severity, suggestion, reasoning_trace, resolved, project_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).run('complexity', 'Other project debt', 'high', 'Refactor', '[]', 0, 2);
+
+      const result = new GenomeComputer(createMockKg({ projectId: 1 }), db).compute();
+      expect(result.breakdown.violationPenalty).toBe(0);
+    });
+
     it('counts high severity unresolved debt items', () => {
       db.prepare(
         `INSERT INTO debt_items (type, description, severity, suggestion, reasoning_trace, resolved)
@@ -293,6 +305,14 @@ describe('GenomeComputer', () => {
       expect(result.breakdown.markerCount).toBe(1);
     });
 
+    it('counts HACK with the same marker contract', () => {
+      const file1 = join(tmpDir, 'hack.ts');
+      writeFileSync(file1, '// HACK: temporary compatibility path');
+      const kg = createMockKg({ files: [{ path: file1 }] });
+      const result = new GenomeComputer(kg, db).compute();
+      expect(result.breakdown.markerCount).toBe(1);
+    });
+
     it('does not count words containing TODO as substring', () => {
       const file1 = join(tmpDir, 'file1.ts');
       writeFileSync(file1, '// This is a TODOlist item\n// TODO: real item');
@@ -303,6 +323,39 @@ describe('GenomeComputer', () => {
 
       // Only "TODO:" should match, not "TODOlist"
       expect(result.breakdown.markerCount).toBe(1);
+    });
+
+    it('ignores marker words inside strings and descriptive comments', () => {
+      const file1 = join(tmpDir, 'file1.ts');
+      writeFileSync(
+        file1,
+        `
+        const fixture = '// TODO: fixture data';
+        const pattern = /FIXME: not a marker/;
+        const template = ` + "`" + `
+          // HACK: generated fixture text
+        ` + "`" + `;
+        // Documentation mentions TODO/FIXME/HACK but is not an action item.
+        // TODO: real item
+      `,
+      );
+
+      const kg = createMockKg({ files: [{ path: file1 }] });
+      const computer = new GenomeComputer(kg, db);
+      const result = computer.compute();
+
+      expect(result.breakdown.markerCount).toBe(1);
+    });
+
+    it('invalidates marker counts when a file changes after the graph scan', () => {
+      const file1 = join(tmpDir, 'mutable.ts');
+      writeFileSync(file1, '// no debt marker');
+      const kg = createMockKg({ files: [{ path: file1 }] });
+      const computer = new GenomeComputer(kg, db);
+
+      expect(computer.compute().breakdown.markerCount).toBe(0);
+      writeFileSync(file1, '// TODO: follow up');
+      expect(computer.compute().breakdown.markerCount).toBe(1);
     });
   });
 

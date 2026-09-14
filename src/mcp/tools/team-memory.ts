@@ -162,7 +162,7 @@ export function registerTeamMemoryTools(server: McpServer, deps: McpDependencies
         maxTokens: z
           .number()
           .optional()
-          .describe('Soft budget hint (~chars/4); caps returned hits when set'),
+          .describe('Soft budget hint (~UTF-8 bytes/4); caps returned hits when set'),
       },
     },
     async (args) => {

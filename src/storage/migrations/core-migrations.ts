@@ -70,7 +70,7 @@ export const coreMigrations: Migration[] = [
         CREATE TABLE IF NOT EXISTS resources (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           qualified_name TEXT UNIQUE NOT NULL,
-          kind TEXT NOT NULL CHECK(kind IN ('FILE', 'NETWORK', 'DATABASE', 'ENV', 'STDIN', 'STDOUT', 'STDERR', 'SOCKET')),
+          kind TEXT NOT NULL CHECK(kind IN ('FILE', 'NETWORK', 'DATABASE', 'ENV', 'STDIN', 'STDOUT', 'STDERR', 'SOCKET', 'PROCESS', 'CODE')),
           identity TEXT NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -370,5 +370,53 @@ export const coreMigrations: Migration[] = [
     // SQLite cannot drop a column without rebuilding the table. Leaving the
     // additive column in place is safe and keeps rollback non-destructive.
     down: () => undefined,
+  },
+  {
+    version: 108,
+    name: 'oauth-registration-identity-index',
+    up: (db: DatabaseSync) => {
+      const tableExists = db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'oauth_clients'")
+        .get();
+      if (!tableExists) return;
+      const columns = db.prepare('PRAGMA table_info(oauth_clients)').all() as Array<{
+        name: string;
+      }>;
+      if (!columns.some((column) => column.name === 'registration_key')) {
+        db.exec('ALTER TABLE oauth_clients ADD COLUMN registration_key TEXT');
+      }
+      const rows = db
+        .prepare('SELECT client_id, metadata FROM oauth_clients ORDER BY created_at, client_id')
+        .all() as Array<{ client_id: string; metadata: string }>;
+      const update = db.prepare(
+        'UPDATE oauth_clients SET registration_key = ? WHERE client_id = ?',
+      );
+      const remove = db.prepare('DELETE FROM oauth_clients WHERE client_id = ?');
+      const seen = new Set<string>();
+      for (const row of rows) {
+        let metadata: { client_name?: string; redirect_uris?: string[] };
+        try {
+          metadata = JSON.parse(row.metadata) as { client_name?: string; redirect_uris?: string[] };
+        } catch {
+          continue;
+        }
+        const key = JSON.stringify({
+          clientName: metadata.client_name ?? '',
+          redirectUris: [...(metadata.redirect_uris ?? [])].sort(),
+        });
+        if (seen.has(key)) {
+          remove.run(row.client_id);
+          continue;
+        }
+        seen.add(key);
+        update.run(key, row.client_id);
+      }
+      db.exec(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_clients_registration_key ON oauth_clients(registration_key) WHERE registration_key IS NOT NULL;',
+      );
+    },
+    down: (db: DatabaseSync) => {
+      db.exec('DROP INDEX IF EXISTS idx_oauth_clients_registration_key;');
+    },
   },
 ];

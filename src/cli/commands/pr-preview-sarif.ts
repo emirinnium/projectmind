@@ -1,4 +1,7 @@
 import type { PrImpact } from './pr-preview-engine.js';
+import { currentModuleDir, resolvePackageVersion } from '@/cli/utils/version.js';
+
+const packageVersion = resolvePackageVersion(currentModuleDir(import.meta.url));
 
 type SarifLevel = 'error' | 'warning' | 'note';
 
@@ -75,7 +78,7 @@ export function generateSarifPrPreview(impact: PrImpact): string {
           tool: {
             driver: {
               name: 'ProjectMind',
-              version: '1.0.2',
+              version: packageVersion,
               informationUri: 'https://github.com/emirinnium/projectmind',
               rules: ruleIds.map((id) => ({ id })),
             },

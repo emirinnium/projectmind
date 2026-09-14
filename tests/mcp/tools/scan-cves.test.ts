@@ -7,6 +7,44 @@ import { registerScanCvesTool } from '../../../src/mcp/tools/scan-cves.js';
 
 const TEST_PROJECT_ROOT = resolve(process.cwd(), 'fixtures-proj') || '/tmp/test-project';
 
+interface ZodDefinitionShape {
+  defaultValue?: unknown;
+  innerType?: { type?: unknown; options?: unknown[] };
+}
+
+interface RegisteredSchemaField {
+  _def?: ZodDefinitionShape;
+}
+
+interface RegisteredConfig {
+  inputSchema?: {
+    fix?: RegisteredSchemaField;
+    level?: RegisteredSchemaField;
+  };
+}
+
+function createTestServer() {
+  const registerTool = vi.fn();
+  return {
+    server: { registerTool } as unknown as McpServer,
+    registerTool,
+  };
+}
+
+function createTestDependencies(): McpDependencies {
+  return {
+    kg: {} as McpDependencies['kg'],
+    coherence: {} as McpDependencies['coherence'],
+    debt: {} as McpDependencies['debt'],
+    scale: {} as McpDependencies['scale'],
+    projectRoot: TEST_PROJECT_ROOT,
+  };
+}
+
+function firstRegisteredConfig(registerTool: ReturnType<typeof vi.fn>): RegisteredConfig {
+  return registerTool.mock.calls[0]?.[1] as RegisteredConfig;
+}
+
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual('node:child_process');
   return {
@@ -46,22 +84,11 @@ describe('scan_cves tool', () => {
       signal: null,
     });
 
-    const server = { registerTool: vi.fn() } as unknown as McpServer;
-    const deps: McpDependencies = {
-      kg: {} as any,
-      coherence: {} as any,
-      debt: {} as any,
-      scale: {} as any,
-      projectRoot: TEST_PROJECT_ROOT,
-    } as McpDependencies;
-
-    // @ts-expect-error - testing tool registration
-    registerScanCvesTool(server, deps);
+    const { server, registerTool } = createTestServer();
+    registerScanCvesTool(server, createTestDependencies());
 
     // The tool is registered; test the inputSchema directly
-    const inputSchema = (
-      server.registerTool as unknown as (name: string, cfg: any, cb: any) => void
-    ).mock.calls[0]?.[1]?.inputSchema;
+    const inputSchema = firstRegisteredConfig(registerTool).inputSchema;
     expect(inputSchema).toBeDefined();
 
     // Verify the schema has fix and level fields
@@ -95,20 +122,11 @@ describe('scan_cves tool', () => {
       stderr: Buffer.from(''),
     });
 
-    const server = { registerTool: vi.fn() } as unknown as McpServer;
-    const deps: McpDependencies = {
-      kg: {} as any,
-      coherence: {} as any,
-      debt: {} as any,
-      scale: {} as any,
-      projectRoot: TEST_PROJECT_ROOT,
-    } as McpDependencies;
-
-    // @ts-expect-error - testing tool registration
-    registerScanCvesTool(server, deps);
+    const { server, registerTool } = createTestServer();
+    registerScanCvesTool(server, createTestDependencies());
 
     // Verify the tool's input schema
-    const registeredCfg = (server.registerTool as unknown).mock.calls[0]?.[1];
+    const registeredCfg = firstRegisteredConfig(registerTool);
     expect(registeredCfg?.inputSchema?.fix).toBeDefined();
     expect(registeredCfg?.inputSchema?.level).toBeDefined();
     // Zod schema: default value is exposed via _def.defaultValue getter
@@ -153,20 +171,11 @@ describe('scan_cves tool', () => {
       stderr: Buffer.from(''),
     });
 
-    const server = { registerTool: vi.fn() } as unknown as McpServer;
-    const deps: McpDependencies = {
-      kg: {} as any,
-      coherence: {} as any,
-      debt: {} as any,
-      scale: {} as any,
-      projectRoot: TEST_PROJECT_ROOT,
-    } as McpDependencies;
-
-    // @ts-expect-error - testing tool registration
-    registerScanCvesTool(server, deps);
+    const { server, registerTool } = createTestServer();
+    registerScanCvesTool(server, createTestDependencies());
 
     // Test with level: 'high' - should only return critical and high
-    const registeredCfg = (server.registerTool as unknown).mock.calls[0]?.[1];
+    const registeredCfg = firstRegisteredConfig(registerTool);
     expect(registeredCfg?.inputSchema?.level).toBeDefined();
   });
 
@@ -181,37 +190,19 @@ describe('scan_cves tool', () => {
       signal: null,
     });
 
-    const server = { registerTool: vi.fn() } as unknown as McpServer;
-    const deps: McpDependencies = {
-      kg: {} as any,
-      coherence: {} as any,
-      debt: {} as any,
-      scale: {} as any,
-      projectRoot: TEST_PROJECT_ROOT,
-    } as McpDependencies;
+    const { server, registerTool } = createTestServer();
+    registerScanCvesTool(server, createTestDependencies());
 
-    // @ts-expect-error - testing tool registration
-    registerScanCvesTool(server, deps);
-
-    const registeredCfg = (server.registerTool as unknown).mock.calls[0]?.[1];
+    const registeredCfg = firstRegisteredConfig(registerTool);
     expect(registeredCfg?.inputSchema?.fix).toBeDefined();
     expect(registeredCfg?.inputSchema?.level).toBeDefined();
   });
 
   it('has input schema with fix and level options', () => {
-    const server = { registerTool: vi.fn() } as unknown as McpServer;
-    const deps: McpDependencies = {
-      kg: {} as any,
-      coherence: {} as any,
-      debt: {} as any,
-      scale: {} as any,
-      projectRoot: TEST_PROJECT_ROOT,
-    } as McpDependencies;
+    const { server, registerTool } = createTestServer();
+    registerScanCvesTool(server, createTestDependencies());
 
-    // @ts-expect-error - testing tool registration
-    registerScanCvesTool(server, deps);
-
-    const registeredCfg = (server.registerTool as unknown).mock.calls[0]?.[1];
+    const registeredCfg = firstRegisteredConfig(registerTool);
     // Schema should have fix (boolean, default false) and level (enum, default moderate)
     expect(registeredCfg?.inputSchema?.fix).toBeDefined();
     expect(registeredCfg?.inputSchema?.fix?._def?.innerType?.type).toBe('boolean');

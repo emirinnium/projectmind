@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "name": "projectmind-private-js-ts-five-repository",
+  "access": "private",
+  "repositories": [
+    {
+      "id": "zod",
+      "url": "https://github.com/colinhacks/zod.git",
+      "commitSha": "62311eb2c4a93c7348a8b1c5abbde1ec77c66b67",
+      "license": "MIT",
+      "languages": ["typescript", "javascript"]
+    },
+    {
+      "id": "chalk",
+      "url": "https://github.com/chalk/chalk.git",
+      "commitSha": "661317e6f91fe7c90306c2c48ea9354562ee9146",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "p-map",
+      "url": "https://github.com/sindresorhus/p-map.git",
+      "commitSha": "22dda61ea29037ba85af25e84bc5efba77e62f44",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "execa",
+      "url": "https://github.com/sindresorhus/execa.git",
+      "commitSha": "8017b279e19347efaf2587711c2d57dbd4330740",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "esbuild",
+      "url": "https://github.com/evanw/esbuild.git",
+      "commitSha": "f6058f8364fe7ab91ca57a83e02577ed74c9cae4",
+      "license": "MIT",
+      "languages": ["typescript", "javascript"]
+    }
+  ],
+  "cases": [
+    {
+      "repositoryId": "zod",
+      "case": {
+        "id": "package-entrypoint-schema-api",
+        "query": "public schema validation package entrypoint API",
+        "expectedPaths": ["packages/zod/src/index.ts"],
+        "aliases": ["zod schema", "validation entrypoint"],
+        "kind": "search",
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": [
+            "The package entrypoint exports the public v4 classic API."
+          ]
+        }
+      }
+    },
+    {
+      "repositoryId": "zod",
+      "case": {
+        "id": "core-parse-safe-parse",
+        "query": "core parse safeParse async parse validation errors",
+        "expectedPaths": ["packages/zod/src/v4/core/parse.ts"],
+        "aliases": ["parser", "safe parse", "parse async"],
+        "kind": "search",
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": [
+            "The file exports parse, parseAsync and safeParse implementations."
+          ]
+        }
+      }
+    },
+    {
+      "repositoryId": "chalk",
+      "case": {
+        "id": "terminal-ansi-styling",
+        "query": "terminal colors ANSI styling Chalk template strings",
+        "expectedPaths": ["source/index.js"],
+        "aliases": ["color styling", "terminal output"],
+        "kind": "search",
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["The source entrypoint defines the Chalk styling API."]
+        }
+      }
+    },
+    {
+      "repositoryId": "p-map",
+      "case": {
+        "id": "promise-concurrency-map",
+        "query": "map promises with bounded concurrency and skip values",
+        "expectedPaths": ["index.js"],
+        "aliases": ["concurrent promise mapping", "pMap"],
+        "kind": "search",
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": [
+            "The package implementation exports the pMap concurrency API."
+          ]
+        }
+      }
+    },
+    {
+      "repositoryId": "execa",
+      "case": {
+        "id": "subprocess-command-execution",
+        "query": "execute subprocess commands with execa and synchronous variants",
+        "expectedPaths": ["index.js"],
+        "aliases": ["child process", "command execution"],
+        "kind": "search",
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["The package entrypoint exports execa and execaSync."]
+        }
+      }
+    },
+    {
+      "repositoryId": "esbuild",
+      "case": {
+        "id": "npm-platform-binary-resolution",
+        "query": "npm package platform binary path resolution",
+        "expectedPaths": ["lib/npm/node.ts"],
+        "aliases": ["esbuild npm entry", "platform binary"],
+        "kind": "search",
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": [
+            "The npm integration resolves platform-specific esbuild binaries."
+          ]
+        }
+      }
+    }
+  ]
+}

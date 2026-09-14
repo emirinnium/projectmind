@@ -122,7 +122,7 @@ describe('Embeddings - provider initialization', () => {
   it('sends requested dimensions only to OpenAI v3 embedding models', async () => {
     const originalFetch = globalThis.fetch;
     const requestBodies: Array<Record<string, unknown>> = [];
-    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
       requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       return new Response(JSON.stringify({ data: [{ embedding: [1, 0, 0] }] }), {
         status: 200,

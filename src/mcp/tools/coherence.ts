@@ -105,6 +105,8 @@ export function registerCheckCoherenceTool(server: McpServer, deps: McpDependenc
                   suggestions: result.suggestions,
                   llmProvider: result.llmProvider,
                   responseTimeMs: result.responseTimeMs,
+                  responseMode: result.responseMode,
+                  finishReason: result.finishReason,
                   importContext,
                   dependentContext,
                 },

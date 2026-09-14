@@ -6,6 +6,11 @@ import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
 import { DEFAULT_PREDICTOR_CONFIG } from '../../core/predictive/config.js';
 import type { CodeChange, PredictedFailure } from '../../core/predictive/types.js';
 import { getOverallRiskLevel } from '../../core/predictive/risk-levels.js';
+import {
+  calculateCalibratedRisk,
+  collectRiskSignals,
+  type CalibratedRiskAssessment,
+} from '../../core/predictive/calibrated-risk.js';
 import { confineToProject } from './_shared.js';
 import {
   attachEvidence,
@@ -38,6 +43,7 @@ export function predictImpactForTool(
   riskLevel: 'low' | 'medium' | 'high' | 'critical';
   failures: PredictedFailure[];
   failureCount: number;
+  riskAssessment?: CalibratedRiskAssessment;
   error?: string;
 } {
   const confinedPath = confineToProject(args.filePath, deps.projectRoot);
@@ -50,12 +56,27 @@ export function predictImpactForTool(
     previousContent: args.previousContent,
   };
   const failures = predictor.predictTestBreaks(change).slice(0, args.limit ?? 10);
+  let riskAssessment: CalibratedRiskAssessment | undefined;
+  if (deps.db) {
+    const diff = predictor.simulateDiff(change);
+    const signals = collectRiskSignals({
+      db: deps.db,
+      graph: deps.kg,
+      projectId: deps.kg.getCurrentProjectId(),
+      projectRoot: deps.projectRoot,
+      filePath: confinedPath,
+      changedFunctions: diff.changedFunctions.length,
+      changedTypes: diff.changedTypes.length,
+    });
+    riskAssessment = calculateCalibratedRisk(signals);
+  }
   return {
     success: true,
     filePath: confinedPath,
     riskLevel: getOverallRiskLevel(failures.map((f) => f.riskLevel ?? 'low')),
     failures,
     failureCount: failures.length,
+    ...(riskAssessment ? { riskAssessment } : {}),
   };
 }
 
@@ -65,9 +86,9 @@ export function registerPredictImpactRiskTool(server: McpServer, deps: McpDepend
     {
       title: 'Predict Impact Risk',
       description:
-        'Predict change impact with risk levels (low/medium/high/critical) for each predicted failure.\n' +
+        'Predict change impact with risk levels (low/medium/high/critical) for each predicted failure and a transparent probability/uncertainty assessment.\n' +
         'WHEN to call: BEFORE committing a change, to evaluate the risk level of a planned edit.\n' +
-        'Returns predicted failures with riskLevel and an overall risk assessment.',
+        'Returns predicted failures with riskLevel, an overall risk assessment, evidence signals, calibration status, and a confidence interval. An insufficient-data result is intentionally not a calibrated claim.',
       inputSchema: {
         filePath: z.string().describe('File being changed'),
         changeType: z

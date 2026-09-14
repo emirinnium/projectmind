@@ -5,10 +5,15 @@ dist/
 dist-tests/
 .git/
 .projectmind/
+benchmarks/
+scripts/benchmark/
 coverage/
 .cache/
 tmp/
 temp/
+.next/
+.turbo/
+.idea/
 build/
 out/
 target/

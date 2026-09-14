@@ -237,7 +237,7 @@ function escapeXml(str: string): string {
 export function signWithCosign(filePath: string): void {
   // SECURITY: execFileSync with an argument array and NO shell. filePath comes
   // from the CLI --output option and COSIGN_KEY from the environment; with
-  // shell:true either could inject shell commands (self-injection class).
+  // Shell-enabled execution here could inject commands (self-injection class).
   // With shell:false they are discrete argv entries never parsed by a shell.
   try {
     execFileSync('cosign', ['version'], { encoding: 'utf-8' });

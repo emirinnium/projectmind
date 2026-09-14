@@ -23,7 +23,12 @@ export function collectGitChurn(
     const out = execFileSync(
       'git',
       ['log', `--since=${sinceDays} days ago`, '--pretty=format:@@%an', '--name-only'],
-      { cwd: projectRoot, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 },
+      {
+        cwd: projectRoot,
+        encoding: 'utf-8',
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
     );
     let currentAuthor = 'unknown';
     for (const rawLine of out.split(/\r?\n/)) {
@@ -34,7 +39,9 @@ export function collectGitChurn(
         continue;
       }
       const normalized = line.replace(/\\/g, '/');
-      if (!normalized.includes('/')) continue; // skip stray non-path lines
+      // Root-level repository files are valid `--name-only` output too.
+      // Only the explicit author sentinel is metadata, so keep package.json
+      // and other files without a directory separator in the signal.
       const entry = churn.get(normalized) ?? { count: 0, authors: new Set<string>() };
       entry.count += 1;
       entry.authors.add(currentAuthor);

@@ -1,143 +1,99 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { registerKgStatsTool } from '../../../src/mcp/tools/kg-stats.js';
+import type { McpDependencies } from '../../../src/mcp/tools/types.js';
 
-const TEST_PROJECT_ROOT = '/tmp/test-project';
+interface RegisteredTool {
+  inputSchema: Record<string, never>;
+  handler: () => Promise<{ content: Array<{ text: string }> }>;
+}
 
-vi.mock('../../../src/mcp/tools/kg-stats.js', () => {
-  return {
-    registerKgStatsTool: vi.fn((server: any, _deps: any) => {
-      server.registerTool(
-        'kg_stats',
-        {
-          title: 'Knowledge Graph Stats',
-          description: 'test',
-          inputSchema: {},
-        },
-        () => undefined,
-      );
-    }),
+function registerFixture() {
+  const traversal = {
+    getStats: vi.fn(() => ({
+      totalNodes: 150,
+      totalEdges: 450,
+      avgDegree: 6,
+      maxDegree: 25,
+      density: 0.04,
+      connectedComponents: 3,
+    })),
+    pageRank: vi.fn(() => [
+      { path: '/src/core/index.ts', score: 0.15, rank: 1 },
+      { path: '/src/core/utils.ts', score: 0.12, rank: 2 },
+    ]),
   };
-});
+  const server = { registerTool: vi.fn() };
+  const deps = {
+    kg: {
+      getGraphTraversal: vi.fn(() => traversal),
+      getFileByPath: vi.fn(() => null),
+    },
+    projectRoot: '/tmp/test-project',
+  } as unknown as McpDependencies;
 
-describe('kg_stats tool', () => {
-  beforeEach(() => {
-    (registerKgStatsTool as unknown as ReturnType<typeof vi.fn>).mockClear();
+  registerKgStatsTool(server as never, deps);
+  const call = server.registerTool.mock.calls[0] as unknown as [
+    string,
+    RegisteredTool,
+    () => Promise<unknown>,
+  ];
+  return {
+    traversal,
+    server,
+    name: call[0],
+    config: call[1],
+    handler: call[2],
+  };
+}
+
+describe('kg_stats MCP tool', () => {
+  it('registers a no-input schema under the canonical name', () => {
+    const fixture = registerFixture();
+    expect(fixture.name).toBe('kg_stats');
+    expect(fixture.config.inputSchema).toBeDefined();
   });
 
-  it('returns graph stats with nodes and edges count', () => {
-    const server = { registerTool: vi.fn() } as any;
+  it('builds one fresh graph snapshot and uses it for every metric', async () => {
+    const fixture = registerFixture();
+    const result = (await fixture.handler()) as { content: Array<{ text: string }> };
+    const payload = JSON.parse(result.content[0].text) as {
+      success: boolean;
+      nodes: number;
+      edges: number;
+      topPagerank: Array<{ path: string; score: number; rank: number }>;
+    };
+
+    expect(payload).toMatchObject({ success: true, nodes: 150, edges: 450 });
+    expect(payload.topPagerank[0]).toEqual({
+      path: '/src/core/index.ts',
+      score: 0.15,
+      rank: 1,
+    });
+    expect(fixture.traversal.getStats).toHaveBeenCalledTimes(1);
+    expect(fixture.traversal.pageRank).toHaveBeenCalledTimes(1);
+    expect(
+      (fixture.server.registerTool.mock.calls[0] as unknown as [string, object, unknown])[0],
+    ).toBe('kg_stats');
+  });
+
+  it('returns a structured failure when graph construction fails', async () => {
+    const server = { registerTool: vi.fn() };
     const deps = {
       kg: {
-        getGraphTraversal: vi.fn().mockResolvedValueOnce({
-          getStats: vi.fn().mockReturnValueOnce({
-            totalNodes: 150,
-            totalEdges: 450,
-            avgDegree: 6,
-            maxDegree: 25,
-            density: 0.04,
-            connectedComponents: 3,
-          }),
-          pageRank: vi.fn().mockResolvedValueOnce([
-            { path: '/src/core/index.ts', score: 0.15, rank: 1 },
-            { path: '/src/core/utils.ts', score: 0.12, rank: 2 },
-            { path: '/src/api/routes.ts', score: 0.1, rank: 3 },
-          ]),
+        getGraphTraversal: vi.fn(() => {
+          throw new Error('KG not available');
         }),
       },
-      coherence: {} as any,
-      debt: {} as any,
-      scale: {} as any,
-      projectRoot: TEST_PROJECT_ROOT,
-    } as any;
-
-    registerKgStatsTool(server, deps);
-
-    // Verify the tool was registered with the correct name
-    const registered = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[0];
-    expect(registered).toBe('kg_stats');
-  });
-
-  it('returns top pagerank files in the response', async () => {
-    const server = { registerTool: vi.fn() } as any;
-    const deps = {
-      kg: {
-        getGraphTraversal: vi.fn().mockResolvedValueOnce({
-          getStats: vi.fn().mockReturnValueOnce({
-            totalNodes: 100,
-            totalEdges: 300,
-            avgDegree: 6,
-            maxDegree: 20,
-            density: 0.06,
-            connectedComponents: 2,
-          }),
-          pageRank: vi.fn().mockResolvedValueOnce([
-            { path: '/src/core/types.ts', score: 0.25, rank: 1 },
-            { path: '/src/core/models.ts', score: 0.2, rank: 2 },
-            { path: '/src/core/services.ts', score: 0.18, rank: 3 },
-            { path: '/src/api/controllers.ts', score: 0.15, rank: 4 },
-          ]),
-        }),
-      },
-      coherence: {} as any,
-      debt: {} as any,
-      scale: {} as any,
-      projectRoot: TEST_PROJECT_ROOT,
-    } as any;
-
-    registerKgStatsTool(server, deps);
-
-    const registeredCfg = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[1];
-    expect(registeredCfg?.inputSchema).toBeDefined();
-  });
-
-  it('handles errors when KG is not available', async () => {
-    const server = { registerTool: vi.fn() } as any;
-    const deps = {
-      kg: {
-        getGraphTraversal: vi.fn().mockRejectedValueOnce(new Error('KG not available')),
-      },
-      coherence: {} as any,
-      debt: {} as any,
-      scale: {} as any,
-      projectRoot: TEST_PROJECT_ROOT,
-    } as any;
-
-    registerKgStatsTool(server, deps);
-
-    const registeredCfg = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[1];
-    expect(registeredCfg?.inputSchema).toBeDefined();
-  });
-
-  it('returns stats with correct structure', () => {
-    const server = { registerTool: vi.fn() } as any;
-    const deps = {
-      kg: {
-        getGraphTraversal: vi.fn().mockResolvedValueOnce({
-          getStats: vi.fn().mockReturnValueOnce({
-            totalNodes: 200,
-            totalEdges: 800,
-            avgDegree: 8,
-            maxDegree: 30,
-            density: 0.04,
-            connectedComponents: 5,
-          }),
-          pageRank: vi.fn().mockResolvedValueOnce([{ path: '/src/index.ts', score: 0.3, rank: 1 }]),
-        }),
-      },
-      coherence: {} as any,
-      debt: {} as any,
-      scale: {} as any,
-      projectRoot: TEST_PROJECT_ROOT,
-    } as any;
-
-    registerKgStatsTool(server, deps);
-
-    const registeredCfg = (server.registerTool as unknown as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[1];
-    // Schema should be defined (no inputs needed)
-    expect(registeredCfg?.inputSchema).toBeDefined();
+      projectRoot: '/tmp/test-project',
+    } as unknown as McpDependencies;
+    registerKgStatsTool(server as never, deps);
+    const handler = (
+      server.registerTool.mock.calls[0] as unknown as [string, object, () => Promise<unknown>]
+    )[2];
+    const result = (await handler()) as { content: Array<{ text: string }> };
+    expect(JSON.parse(result.content[0].text)).toEqual({
+      success: false,
+      error: 'KG not available',
+    });
   });
 });

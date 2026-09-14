@@ -135,4 +135,22 @@ describe('ImpactPredictor WP2', () => {
       expect(failure.suggestedFix).toBeDefined();
     });
   });
+
+  it('counts zero/default/destructured parameters and safely matches special names', () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'arity-'));
+    const srcFile = join(tmpDir, 'special.ts');
+    writeFileSync(srcFile, 'export function $foo(a = { nested: 1 }, { value, other }) {}');
+    const predictor = new ImpactPredictor(config);
+    const failures = predictor.predictTestBreaks({
+      filePath: srcFile,
+      moduleName: 'special',
+      changeType: 'modify',
+      crossModule: false,
+      previousContent: 'export function $foo() {}',
+    });
+
+    expect(failures).toHaveLength(1);
+    expect(failures[0]!.reason).toContain('argument count mismatch detected');
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
 });

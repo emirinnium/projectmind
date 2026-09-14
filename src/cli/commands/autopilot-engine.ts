@@ -96,6 +96,7 @@ export async function runGates(
         encoding: 'utf8',
         timeout: 5000,
         cwd: projectRoot,
+        stdio: ['ignore', 'pipe', 'ignore'],
       })
         .trim()
         .split('\n')
@@ -217,6 +218,7 @@ export async function runGates(
         encoding: 'utf8',
         timeout: 5000,
         cwd: projectRoot,
+        stdio: ['ignore', 'pipe', 'ignore'],
       })
         .trim()
         .split('\n')

@@ -30,6 +30,81 @@ export { OllamaProvider } from './llm/ollama.js';
 export { GeminiProvider } from './llm/gemini.js';
 export { GroqProvider } from './llm/groq.js';
 
+// Optional remote backends. These adapters are never constructed by default;
+// SQLite/SQLite-vec remains the offline installation path.
+export { QdrantVectorStore, QdrantOptionsSchema, RemoteBackendError } from './backends/qdrant.js';
+export type {
+  QdrantOptions,
+  QdrantVectorStoreOptions,
+  RemoteFetch,
+  RemoteFetchInit,
+  RemoteHttpResponse,
+} from './backends/qdrant.js';
+export { MemgraphGraphStore, MemgraphOptionsSchema } from './backends/memgraph.js';
+export type {
+  CypherDriverLike,
+  CypherRecordLike,
+  CypherResultLike,
+  CypherSessionLike,
+  MemgraphGraphStoreOptions,
+} from './backends/memgraph.js';
+export type { AsyncGraphStore, AsyncVectorStore } from './backends/contracts.js';
+
+// Calibrated impact risk
+export { calculateCalibratedRisk, collectRiskSignals } from './predictive/calibrated-risk.js';
+export type {
+  RiskSignals,
+  RiskEvidence,
+  CalibratedRiskAssessment,
+  RiskSignalCollectionInput,
+} from './predictive/calibrated-risk.js';
+export {
+  calculateRiskCalibration,
+  riskCalibrationObservationSchema,
+} from './predictive/calibration-metrics.js';
+export type {
+  RiskCalibrationObservation,
+  RiskCalibrationBin,
+  RiskCalibrationReport,
+} from './predictive/calibration-metrics.js';
+export { buildExploitPathReport } from './predictive/exploit-path.js';
+export type {
+  ExploitPathLocation,
+  ExploitPathStep,
+  ExploitPathCandidate,
+  ExploitPathReport,
+} from './predictive/exploit-path.js';
+export { buildBugSurfaceReport } from './predictive/bug-surface.js';
+export type {
+  BugSurfaceSignals,
+  BugSurfaceItem,
+  BugSurfaceReport,
+  BugSurfaceOptions,
+} from './predictive/bug-surface.js';
+export {
+  AgentReplayStore,
+  compareReplayEvent,
+  summarizeReplayTimeline,
+} from './replay/agent-replay.js';
+export { reconstructContext } from './replay/context-reconstruction.js';
+export type {
+  ContextReconstruction,
+  ContextReconstructionStatus,
+  ReconstructedContextFile,
+} from './replay/context-reconstruction.js';
+export { recordEditDecision } from './refactor/audit.js';
+export type { EditDecisionAuditInput, EditDecisionAuditReceipt } from './refactor/audit.js';
+export { recordContextDecision } from './context/audit.js';
+export type { ContextDecisionAuditInput, ContextDecisionAuditReceipt } from './context/audit.js';
+export type {
+  ReplayEventType,
+  ReplayStatus,
+  ReplayEventInput,
+  ReplayEvent,
+  ReplayComparison,
+  ReplayTimelineSummary,
+} from './replay/agent-replay.js';
+
 // Cache
 export {
   AdvancedCache,
@@ -43,6 +118,7 @@ export type { CacheEntry, CacheStats, CacheOptions } from './cache/types.js';
 // Context Window Budget Optimizer
 export {
   ContextBudgetOptimizer,
+  createFullFilePlan,
   applyTaskTypeBoosts,
   taskTypeMultiplier,
   deriveInclusionReason,
@@ -55,6 +131,20 @@ export type {
   ExcludedFileEntry,
   ContextTaskType,
 } from './context/types.js';
+export { calculateContextRoi, compareContextPlans } from './context/roi.js';
+export type {
+  ContextPlanComparison,
+  ContextPlanVariant,
+  ContextPlanVariantInput,
+  ContextRoi,
+  ContextRoiOptions,
+} from './context/roi.js';
+export { assessContextPricing } from './context/pricing.js';
+export type {
+  ContextPricingRecord,
+  ContextPricingAssessment,
+  ContextPricingStatus,
+} from './context/pricing.js';
 export {
   greedySelector,
   dpSelector,
@@ -94,6 +184,28 @@ export {
 // Memory
 export { searchTeamMemoriesSemantic } from './memory/semantic-memory.js';
 export type { SemanticMemoryHit, SemanticMemoryOptions } from './memory/semantic-memory.js';
+export {
+  recordSessionEvent,
+  getSessionInsights,
+  SESSION_EVENT_TYPES,
+} from './intelligence/session-learner.js';
+export { answerCodebaseQuestion } from './intelligence/qa-engine.js';
+export type {
+  CodebaseQuestionType,
+  CodebaseQuestionEvidence,
+  CodebaseAnswer,
+  CodebaseQuestionOptions,
+} from './intelligence/qa-engine.js';
+export type {
+  SessionEventType,
+  SessionEventInput,
+  SessionEventReceipt,
+  SessionFileInsight,
+  SessionToolInsight,
+  SessionOutcomeInsight,
+  SessionInsights,
+  SessionInsightsOptions,
+} from './intelligence/session-learner.js';
 
 // Team Memory
 export { threeWayMerge, diffHunks } from './team-memory/merge.js';
@@ -108,6 +220,17 @@ export type {
   MergeContentAnalysis,
   MergeContentConflict,
 } from './coordination/risk.js';
+export { arbitrateAgents } from './coordination/arbiter.js';
+export type {
+  ArbitrateAgentsInput,
+  ArbitrateAgentsReport,
+  ArbiterAgentPlan,
+  ArbiterAgentRisk,
+  ArbiterConflictGroup,
+  ArbiterDependencyEdge,
+  ArbiterPairRisk,
+  ArbiterShardSuggestion,
+} from './coordination/arbiter.js';
 
 // Embeddings
 export { VectorIndex, VecIndex } from './embeddings/vector-index.js';
@@ -119,6 +242,33 @@ export type { CloneDetectionOptions, CloneDetectionResult } from './dedup/clone-
 // Refactor
 export { AutoFixEngine } from './refactor/auto-fix.js';
 export type { AutoFixResult, FixerMeta } from './refactor/auto-fix.js';
+export { AutoFixFeedbackStore, sourceHashForContent } from './refactor/autofix-feedback.js';
+export type {
+  AutoFixFeedbackValue,
+  AutoFixFeedbackInput,
+  AutoFixFeedbackRecord,
+  AutoFixRecommendation,
+  AutoFixRecommendationStatus,
+  AutoFixFeedbackReset,
+} from './refactor/autofix-feedback.js';
+
+// Evidence ledger
+export {
+  EvidenceLedger,
+  computeIndexedGraphHash,
+  summarizeLedgerInvocation,
+  ledgerEventSchema,
+  verifyLedgerExport,
+} from './ledger/evidence-ledger.js';
+export type {
+  EvidenceLedgerExport,
+  EvidenceLedgerRecord,
+  LedgerEventInput,
+  LedgerEventType,
+  LedgerIssue,
+  LedgerListOptions,
+  LedgerVerification,
+} from './ledger/evidence-ledger.js';
 
 // Predictive Impact Analysis
 export { ImpactPredictor } from './predictive/impact-predictor.js';
@@ -133,6 +283,8 @@ export type {
 // Watcher
 export { ProjectWatcher } from './watcher.js';
 export type { ProjectWatcherOptions, WatcherStats, WatcherBatchResult } from './watcher.js';
+export { ArchitectureGuardian } from './architecture/guardian.js';
+export type { ArchitectureGuardianDecision } from './architecture/guardian.js';
 
 // Knowledge Graph Integrity Guard
 export {
@@ -161,10 +313,33 @@ export type {
 } from './search/types.js';
 export { classifyTask, TASK_KEYWORDS, createKgGraphAdapter } from './search/intent-engine.js';
 export type { KGGraphLike, KgAdapterSource } from './search/intent-engine.js';
-export { rankHybrid, lexicalRelevance } from './search/hybrid-ranking.js';
-export type { HybridRankingInput, HybridRankingOutput } from './search/hybrid-ranking.js';
+export {
+  rankHybrid,
+  lexicalRelevance,
+  normalizeHybridRankingWeights,
+  DEFAULT_HYBRID_RANKING_WEIGHTS,
+} from './search/hybrid-ranking.js';
+export type {
+  HybridRankingInput,
+  HybridRankingOutput,
+  HybridRankingWeights,
+} from './search/hybrid-ranking.js';
 export { HistoryRanker } from './search/history-ranking.js';
 export type { HistoryScoreOptions } from './search/history-ranking.js';
+export {
+  LearnedSearchReranker,
+  featuresFromSearchResult,
+  SEARCH_RANKING_FEATURE_NAMES,
+} from './search/learned-reranker.js';
+export type {
+  SearchRankingFeatures,
+  SearchFeedback,
+  RecordSearchFeedbackInput,
+  SearchRerankCandidate,
+  SearchRerankResult,
+  SearchRankerStatus,
+  LearnedRerankerOptions,
+} from './search/learned-reranker.js';
 export { selectCanonicalExample, sourceHash } from './search/canonical-example.js';
 export type {
   CanonicalExampleCandidate,
@@ -174,37 +349,29 @@ export { resolveProjectRoot } from './project/roots.js';
 export { getWorktreeIdentity } from './project/worktree-identity.js';
 export {
   recordWorktreeIdentity,
+  getWorktreeNamespaceStatus,
   listWorktreeIdentities,
   pruneWorktreeIdentities,
 } from './project/index-identity.js';
 export type { StoredWorktreeIdentity } from './project/index-identity.js';
 
-// Roadmap measurement and safe source/review primitives.
-export { parseBenchmarkCorpusManifest, parseBenchmarkManifest } from './benchmark/manifest.js';
+export { buildReviewGraphClosure } from './review/graph-closure.js';
 export type {
-  BenchmarkCase,
-  BenchmarkCorpusCase,
-  BenchmarkCorpusManifest,
-  BenchmarkManifest,
-  BenchmarkRepository,
-} from './benchmark/manifest.js';
-export {
-  aggregateRankingScores,
-  scoreRankingObservation,
-  RankingObservationSchema,
-} from './benchmark/scoring.js';
+  ReviewGraphClosure,
+  ReviewGraphClosureNode,
+  ReviewGraphClosureOptions,
+  ReviewGraphFile,
+  ReviewGraphImport,
+  ReviewGraphSource,
+} from './review/graph-closure.js';
+export { executeReviewBundles } from './review/bundle-workers.js';
 export type {
-  RankingObservation,
-  RankingScore,
-  AggregateRankingScore,
-} from './benchmark/scoring.js';
-export {
-  parseBenchmarkRunResult,
-  renderBenchmarkMarkdown,
-  runLexicalSearch,
-  runBenchmark,
-} from './benchmark/runner.js';
-export type { BenchmarkRunResult, BenchmarkSearchResult } from './benchmark/runner.js';
+  ReviewBundleExecution,
+  ReviewBundleExecutionOptions,
+  ReviewBundleExecutionResult,
+  ReviewBundleWorker,
+  ReviewBundleWorkerContext,
+} from './review/bundle-workers.js';
 export {
   BackendDescriptorSchema,
   BackendKindSchema,
@@ -233,8 +400,25 @@ export type {
 } from './security/path-security.js';
 export { readSourceRange } from './retrieval/byte-range.js';
 export type { SourceRangeResult } from './retrieval/byte-range.js';
+export {
+  rebuildSourceRangeIndex,
+  listIndexedSourceRanges,
+  readSourceSymbolRange,
+} from './retrieval/source-index.js';
+export type {
+  IndexedSourceRange,
+  SourceRangeKind,
+  SourceSymbolRangeResult,
+} from './retrieval/source-index.js';
 export { applySurgicalEdit, makeSurgicalEditPlan } from './refactor/surgical-edit.js';
 export type { SurgicalEditPlan, SurgicalEditResult } from './refactor/surgical-edit.js';
+export { runPostEditGate } from './refactor/post-edit-gate.js';
+export type {
+  PostEditGateCheck,
+  PostEditGateOptions,
+  PostEditGateReport,
+  PostEditGateStatus,
+} from './refactor/post-edit-gate.js';
 
 // Cross-Project Pattern Learning (F4)
 export {

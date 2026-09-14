@@ -20,6 +20,7 @@ import {
 } from '../../../parser/embeddings.js';
 
 import { loadConfig } from '../../../utils/config.js';
+import { canonicalPath, pathsEqual } from '../../../utils/paths.js';
 import { runWithRetry } from '../../database.js';
 
 import type { FileInfo } from '../types.js';
@@ -27,6 +28,7 @@ import type { FileInfo } from '../types.js';
 import type { KgContext } from './context.js';
 
 import { getAllFiles, getFileByPath } from './file-queries.js';
+import { rebuildSourceRangeIndex } from '../../../core/retrieval/source-index.js';
 
 export {
   getAllFiles,
@@ -43,6 +45,41 @@ function clearFileRelations(ctx: KgContext, fileId: number): void {
   ctx.db.prepare('DELETE FROM functions WHERE file_id = ?').run(fileId);
   ctx.db.prepare('DELETE FROM classes WHERE file_id = ?').run(fileId);
   ctx.db.prepare('DELETE FROM imports WHERE file_id = ?').run(fileId);
+}
+
+function resolveStaticCallTarget(
+  ctx: KgContext,
+  fileId: number,
+  fileStruct: FileStructure,
+  fromDir: string,
+  targetName: string,
+): number | null {
+  const local = ctx.db
+    .prepare('SELECT id FROM functions WHERE file_id = ? AND name = ? LIMIT 1')
+    .get(fileId, targetName) as { id: number } | undefined;
+  if (local) return local.id;
+
+  const imported = fileStruct.imports.find((item) => item.named.includes(targetName));
+  if (imported) {
+    const targetFile = resolveImportSource(ctx, imported.source, fromDir);
+    if (targetFile) {
+      const target = ctx.db
+        .prepare('SELECT id FROM functions WHERE file_id = ? AND name = ? LIMIT 1')
+        .get(targetFile.id, targetName) as { id: number } | undefined;
+      if (target) return target.id;
+    }
+  }
+
+  // A unique project-local function is a useful fallback when import syntax
+  // is indirect (for example a CommonJS export). Ambiguous names remain
+  // unresolved instead of producing a false call edge.
+  const candidates = ctx.db
+    .prepare(
+      `SELECT fn.id FROM functions fn JOIN files f ON f.id = fn.file_id
+       WHERE f.project_id = ? AND fn.name = ? LIMIT 2`,
+    )
+    .all(ctx.currentProjectId, targetName) as Array<{ id: number }>;
+  return candidates.length === 1 ? candidates[0]!.id : null;
 }
 
 function calculateCognitiveLoad(fileStruct: FileStructure): number {
@@ -98,17 +135,12 @@ export function resolveImportSource(
     searchPath = normalizedSearchPath.slice(rootPrefix.length);
   }
 
-  const jsExtensions = ['.js', '.jsx', '.mjs', '.cjs'];
-  const tsExtensions = ['.ts', '.tsx', '.mts', '.cts'];
-  for (let i = 0; i < jsExtensions.length; i++) {
-    if (searchPath.endsWith(jsExtensions[i])) {
-      searchPath = searchPath.slice(0, -jsExtensions[i].length) + tsExtensions[i];
-      break;
-    }
-  }
+  const searchPaths = getImportPathCandidates(searchPath);
 
-  let file = getFileByPath(ctx, searchPath);
-  if (file) return file;
+  for (const candidate of searchPaths) {
+    const file = getFileByPath(ctx, candidate);
+    if (file) return file;
+  }
 
   const indexExtensions = [
     '/index.ts',
@@ -120,15 +152,20 @@ export function resolveImportSource(
     '/index.mjs',
     '/index.cjs',
   ];
-  for (const ext of indexExtensions) {
-    file = getFileByPath(ctx, searchPath + ext);
-    if (file) return file;
+  for (const candidate of searchPaths) {
+    for (const ext of indexExtensions) {
+      const file = getFileByPath(ctx, candidate + ext);
+      if (file) return file;
+    }
   }
 
   const extensions = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'];
-  for (const ext of extensions) {
-    if (!searchPath.includes('.') || searchPath.endsWith('/')) {
-      file = getFileByPath(ctx, searchPath + ext);
+  for (const candidate of searchPaths) {
+    for (const ext of extensions) {
+      // A dot may belong to a directory name (`feature.v2/utils`), not an
+      // extension. Exact candidates were checked above, so probing every
+      // candidate here is both safe and required for dotted directories.
+      const file = getFileByPath(ctx, candidate + ext);
       if (file) return file;
     }
   }
@@ -145,12 +182,37 @@ export function resolveImportSource(
     };
   }
   for (const f of _allFilesCache.files) {
-    if (f.relativePath === searchPath || f.relativePath === searchPath + '/index') {
-      return f;
+    for (const candidate of searchPaths) {
+      if (f.relativePath === candidate || f.relativePath === candidate + '/index') {
+        return f;
+      }
     }
   }
 
   return null;
+}
+
+/**
+ * Keep both the exact runtime path and the TypeScript source equivalent.
+ * Published ESM often imports `./file.js` while the source checkout contains
+ * `file.ts`; JavaScript projects, however, legitimately contain `file.js`.
+ * The exact path must win so the resolver never hides a real JS module.
+ */
+export function getImportPathCandidates(searchPath: string): string[] {
+  const candidates = [searchPath];
+  const extensionMap: Readonly<Record<string, string>> = {
+    '.js': '.ts',
+    '.jsx': '.tsx',
+    '.mjs': '.mts',
+    '.cjs': '.cts',
+  };
+  for (const [from, to] of Object.entries(extensionMap)) {
+    if (searchPath.endsWith(from)) {
+      candidates.push(searchPath.slice(0, -from.length) + to);
+      break;
+    }
+  }
+  return [...new Set(candidates)];
 }
 
 export async function upsertFile(
@@ -158,30 +220,74 @@ export async function upsertFile(
   fileStruct: FileStructure,
   relativePath: string,
 ): Promise<number> {
+  const normalizedFilePath = canonicalPath(fileStruct.filePath);
+  const normalizedRelativePath = canonicalPath(relativePath);
+  const normalizedFileStruct =
+    normalizedFilePath === fileStruct.filePath
+      ? fileStruct
+      : { ...fileStruct, filePath: normalizedFilePath };
+
   // Embed the actual source whenever it is available. Signature-only vectors
   // make unrelated files with no top-level functions identical and caused
   // false redundancy findings. The structural fallback keeps programmatic
   // callers that construct FileStructure objects working.
   const embeddingInput =
-    fileStruct.sourceText ??
+    normalizedFileStruct.sourceText ??
     [
-      fileStruct.filePath,
-      ...fileStruct.imports.map((item) => `import ${item.source}`),
-      ...fileStruct.classes.map((item) => item.signature),
-      ...fileStruct.functions.map((item) => item.signature),
-      ...fileStruct.exports.map((item) => `export ${item}`),
+      normalizedFileStruct.filePath,
+      ...normalizedFileStruct.imports.map((item) => `import ${item.source}`),
+      ...normalizedFileStruct.classes.map((item) => item.signature),
+      ...normalizedFileStruct.functions.map((item) => item.signature),
+      ...normalizedFileStruct.exports.map((item) => `export ${item}`),
     ].join('\n');
   const embedding = await generateConfiguredEmbedding(embeddingInput);
   // Compact Float32 BLOB (~4 bytes/dim) instead of JSON text (~7+/bytes/dim).
   // Readers accept BOTH formats, so pre-existing TEXT rows convert gradually
   // on rescan without a destructive migration.
   const embeddingBlob = encodeEmbedding(embedding);
-  const cognitiveLoad = calculateCognitiveLoad(fileStruct);
+  const cognitiveLoad = calculateCognitiveLoad(normalizedFileStruct);
 
   return runWithRetry(async () => {
-    const existing = ctx.db
-      .prepare('SELECT id FROM files WHERE path = ? AND project_id = ?')
-      .get(fileStruct.filePath, ctx.currentProjectId) as { id: number } | undefined;
+    const directCandidates = ctx.db
+      .prepare(
+        `SELECT id, path, relative_path FROM files
+         WHERE project_id = ? AND (path = ? OR relative_path = ?)
+         ORDER BY CASE WHEN path = ? THEN 0 WHEN relative_path = ? THEN 1 ELSE 2 END, id DESC`,
+      )
+      .all(
+        ctx.currentProjectId,
+        normalizedFilePath,
+        normalizedRelativePath,
+        normalizedFilePath,
+        normalizedRelativePath,
+      ) as Array<{ id: number; path: string; relative_path: string }>;
+    const candidates =
+      directCandidates.length > 0
+        ? directCandidates
+        : (
+            ctx.db
+              .prepare('SELECT id, path, relative_path FROM files WHERE project_id = ?')
+              .all(ctx.currentProjectId) as Array<{
+              id: number;
+              path: string;
+              relative_path: string;
+            }>
+          ).filter(
+            (row) =>
+              pathsEqual(row.path, normalizedFilePath) ||
+              pathsEqual(row.relative_path, normalizedRelativePath),
+          );
+    const existing = candidates[0];
+
+    // Older databases may contain the same file under both separator
+    // conventions. Keep one graph identity and remove only the redundant
+    // rows; foreign keys cascade their stale symbols/ranges/imports.
+    for (const duplicate of candidates.slice(1)) {
+      getVecIndex(ctx.db).remove(duplicate.id);
+      ctx.db
+        .prepare('DELETE FROM files WHERE id = ? AND project_id = ?')
+        .run(duplicate.id, ctx.currentProjectId);
+    }
 
     if (existing) {
       ctx.db
@@ -190,10 +296,10 @@ export async function upsertFile(
          last_scanned = CURRENT_TIMESTAMP, cognitive_load = ? WHERE id = ?`,
         )
         .run(
-          relativePath,
-          fileStruct.language,
-          fileStruct.sizeBytes,
-          fileStruct.hash,
+          normalizedRelativePath,
+          normalizedFileStruct.language,
+          normalizedFileStruct.sizeBytes,
+          normalizedFileStruct.hash,
           embeddingBlob,
           cognitiveLoad,
           existing.id,
@@ -213,11 +319,11 @@ export async function upsertFile(
         )
         .run(
           ctx.currentProjectId,
-          fileStruct.filePath,
-          relativePath,
-          fileStruct.language,
-          fileStruct.sizeBytes,
-          fileStruct.hash,
+          normalizedFileStruct.filePath,
+          normalizedRelativePath,
+          normalizedFileStruct.language,
+          normalizedFileStruct.sizeBytes,
+          normalizedFileStruct.hash,
           embeddingBlob,
           cognitiveLoad,
         );
@@ -345,6 +451,52 @@ export async function storeFileDetails(
             resolvedPath,
           );
         }
+
+        // F11: persist only AST-observed calls with a uniquely resolvable
+        // target. Runtime/dynamic calls continue to use the trace pathway.
+        ctx.db
+          .prepare(
+            `DELETE FROM calls WHERE dynamic = 0 AND from_function_id IN
+             (SELECT id FROM functions WHERE file_id = ?)`,
+          )
+          .run(fileId);
+        if (fileStruct.staticCalls && fileStruct.staticCalls.length > 0) {
+          const functionIds = new Map<string, number>();
+          const functionRows = ctx.db
+            .prepare('SELECT id, name FROM functions WHERE file_id = ?')
+            .all(fileId) as Array<{ id: number; name: string }>;
+          for (const row of functionRows) {
+            if (!functionIds.has(row.name)) functionIds.set(row.name, row.id);
+          }
+          const staticCallStmt = ctx.db.prepare(
+            `INSERT INTO calls
+             (from_function_id, to_function_id, dynamic, static_missed, call_count, workload_id)
+             VALUES (?, ?, 0, 0, 1, NULL)`,
+          );
+          for (const call of fileStruct.staticCalls) {
+            const fromId = functionIds.get(call.fromFunctionName);
+            if (!fromId) continue;
+            const toId = resolveStaticCallTarget(
+              ctx,
+              fileId,
+              fileStruct,
+              fromDir,
+              call.toFunctionName,
+            );
+            if (toId) staticCallStmt.run(fromId, toId);
+          }
+        }
+
+        // Persist coordinates from the same source snapshot that produced
+        // the graph rows. The index is hash-addressed and clears stale rows
+        // before inserting the current AST ranges.
+        rebuildSourceRangeIndex(
+          ctx.db,
+          fileId,
+          ctx.currentProjectId,
+          fileStruct.filePath,
+          fileStruct.sourceText,
+        );
 
         ctx.db.exec('RELEASE SAVEPOINT storeFileDetails');
       } catch (e) {

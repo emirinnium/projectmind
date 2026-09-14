@@ -1,4 +1,7 @@
 import type { ProjectMindConfig } from '@/utils/config.js';
+import { currentModuleDir, resolvePackageVersion } from '@/cli/utils/version.js';
+
+const packageVersion = resolvePackageVersion(currentModuleDir(import.meta.url));
 
 export interface SecretFinding {
   type:
@@ -248,7 +251,7 @@ export function generateSarif(findings: SecretFinding[]): SarifReport {
         tool: {
           driver: {
             name: 'ProjectMind Secrets Scanner',
-            version: '1.0.0',
+            version: packageVersion,
             rules: [...new Set(findings.map((f) => f.type))].map((t) => ({ id: t })),
           },
         },

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import { initDatabase, closeDatabase } from '../../../src/storage/database.js';
 import { semanticSearchForTool } from '../../../src/mcp/tools/semantic-search.js';
+import { loadEmbeddingIndex } from '../../../src/mcp/tools/semantic-search-index.js';
 import type { McpDependencies } from '../../../src/mcp/tools/types.js';
 
 /**
@@ -339,5 +340,27 @@ describe('semantic_search (semanticSearchForTool)', () => {
     expect(result.evidence.status).toBe('partial');
     expect(result.index.configuration).toBeNull();
     expect(result.limitations.some((item) => /provider manifest|re-scan/i.test(item))).toBe(true);
+  });
+
+  it('reuses decoded indexes and invalidates them when indexed rows change', () => {
+    const first = loadEmbeddingIndex(db, projectRoot, 'file');
+    const second = loadEmbeddingIndex(db, projectRoot, 'file');
+    expect(second).toBe(first);
+
+    db.prepare(
+      'INSERT INTO files (project_id, path, relative_path, language, size_bytes, hash, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      1,
+      '/test/src/cache-invalidation.ts',
+      'src/cache-invalidation.ts',
+      'typescript',
+      10,
+      'h-cache-invalidation',
+      encodeEmbedding([0, 0, 1]),
+    );
+
+    const refreshed = loadEmbeddingIndex(db, projectRoot, 'file');
+    expect(refreshed).not.toBe(first);
+    expect(refreshed.candidateItems).toBe(first.candidateItems + 1);
   });
 });

@@ -1,8 +1,13 @@
 import ts from 'typescript';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { assertProjectPath } from '../security/path-security.js';
 import { logger } from '../../utils/logger.js';
 import { writeFileAtomically } from '../../utils/atomic-write.js';
+import type { DatabaseSync } from 'node:sqlite';
+import { relative } from 'node:path';
+import { runPostEditGate, type PostEditGateReport } from './post-edit-gate.js';
+import { recordEditDecision, type EditDecisionAuditReceipt } from './audit.js';
 
 /**
  * Auto-Fix Engine v1 — AST-based mechanical fixes with diff preview.
@@ -35,6 +40,8 @@ export interface AutoFixResult {
   diff?: string;
   written: boolean;
   reason?: string;
+  gate?: PostEditGateReport;
+  evidenceAudit?: EditDecisionAuditReceipt;
 }
 
 const FIXERS: FixerMeta[] = [
@@ -159,7 +166,10 @@ export function makeLineDiff(oldText: string, newText: string, contextLines = 2)
 }
 
 export class AutoFixEngine {
-  constructor(private readonly projectRoot: string = process.cwd()) {}
+  constructor(
+    private readonly projectRoot: string = process.cwd(),
+    private readonly options: { db?: DatabaseSync; projectId?: number } = {},
+  ) {}
 
   listFixers(): FixerMeta[] {
     return [...FIXERS];
@@ -202,10 +212,50 @@ export class AutoFixEngine {
 
     const changed = current !== original;
     const diff = changed ? makeLineDiff(original, current) : undefined;
+    const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
+    const sourceHash = hash(original);
+    const resultHash = hash(current);
+
+    const gate = changed
+      ? runPostEditGate({
+          projectRoot: this.projectRoot,
+          filePath: relative(this.projectRoot, abs),
+          before: original,
+          after: current,
+          db: this.options.db,
+          projectId: this.options.projectId,
+        })
+      : undefined;
+    if (changed && gate && !gate.passed) {
+      return {
+        filePath: abs,
+        fixer: ids.length > 1 ? 'all' : ids[0],
+        changed: false,
+        written: false,
+        reason: `post-edit-gate-failed: ${gate.checks
+          .filter((check) => check.status === 'fail')
+          .map((check) => check.id)
+          .join(', ')}`,
+        gate,
+      };
+    }
 
     if (changed && opts.write) {
       writeFileAtomically(abs, current);
     }
+
+    const evidenceAudit = changed
+      ? recordEditDecision(this.options.db, this.options.projectId, {
+          filePath: relative(this.projectRoot, abs).replace(/\\/g, '/'),
+          fixer: ids.length > 1 ? 'all' : ids[0],
+          sourceHash,
+          resultHash,
+          changed: true,
+          written: changed && !!opts.write,
+          postEditGatePassed: gate?.passed ?? true,
+          reason: opts.write ? undefined : 'preview-only',
+        })
+      : undefined;
 
     return {
       filePath: abs,
@@ -217,6 +267,8 @@ export class AutoFixEngine {
       ...(changed && !opts.write
         ? { reason: 'preview-only: re-run with write:true / --apply to persist' }
         : {}),
+      ...(gate ? { gate } : {}),
+      ...(evidenceAudit ? { evidenceAudit } : {}),
     };
   }
 

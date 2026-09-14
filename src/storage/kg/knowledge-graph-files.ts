@@ -24,7 +24,7 @@ import {
   getFileEmbedding,
   resolveImportSource,
 } from './helpers/files.js';
-import { invalidateCircularDependencyCache } from './helpers/imports.js';
+import { invalidateCircularDependencyCache, refreshImportResolution } from './helpers/imports.js';
 
 /** File, embedding, and data-flow methods for the public graph façade. */
 export class KnowledgeGraphFiles extends KnowledgeGraphBase {
@@ -157,5 +157,11 @@ export class KnowledgeGraphFiles extends KnowledgeGraphBase {
 
   resolveImportSource(source: string, fromDir?: string): FileInfo | null {
     return resolveImportSource(this.ctx, source, fromDir);
+  }
+
+  refreshImportResolution(): number {
+    const updated = refreshImportResolution(this.ctx);
+    if (updated > 0) invalidateCircularDependencyCache();
+    return updated;
   }
 }

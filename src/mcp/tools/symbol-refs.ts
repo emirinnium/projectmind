@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import { existsSync } from 'node:fs';
+import { relative } from 'node:path';
 import ts from 'typescript';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { createProjectLanguageService } from '@/cli/utils/language-service.js';
 import { confineToProject } from './_shared.js';
+import { asUntrustedContent } from '@/mcp/security/untrusted-content.js';
 
 /**
  * find_symbol_references — locate every reference of a symbol in a file using
@@ -123,7 +125,15 @@ export function findSymbolReferencesForTool(
       for (const ref of [refSym.definition, ...refSym.references]) {
         total++;
         if (references.length >= max) continue;
-        const sfPath = ref.fileName.replace(/\\/g, '/');
+        let safePath: string;
+        try {
+          safePath = confineToProject(ref.fileName, deps.projectRoot);
+        } catch {
+          // A language-service result can point into an external declaration
+          // package. Never return source or paths outside the active project.
+          continue;
+        }
+        const sfPath = relative(deps.projectRoot, safePath).replace(/\\/g, '/');
         const sfText = ts.sys.readFile(ref.fileName) ?? '';
         const { line, column, snippet } = describeSpan(sfText, ref.textSpan.start);
         references.push({
@@ -182,7 +192,24 @@ export function registerFindSymbolReferencesTool(server: McpServer, deps: McpDep
           max: args.max,
         });
         return {
-          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  ...result,
+                  references: result.references.map((reference) => ({
+                    ...reference,
+                    untrustedContent: asUntrustedContent(reference.snippet, 'source', {
+                      relativePath: reference.file,
+                    }),
+                  })),
+                },
+                null,
+                2,
+              ),
+            },
+          ],
         };
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);

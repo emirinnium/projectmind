@@ -5,7 +5,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from '@/cli/utils/shared.js';
 
 export function createMigrateCommand(): Command {
-  const migrateCmd = new Command('migrate').description('Migration helpers for common upgrades');
+  const migrateCmd = new Command('migrate').description(
+    'Migration assessment helpers (advisory; never rewrites project files)',
+  );
 
   migrateCmd.action(() => {
     migrateCmd.outputHelp();
@@ -13,7 +15,7 @@ export function createMigrateCommand(): Command {
 
   migrateCmd
     .command('check-deps')
-    .description('Check for outdated dependencies')
+    .description('List dependencies and explain how to check for outdated versions')
     .option('--major', 'Include major version updates')
     .action(
       asyncHandler(async () => {
@@ -44,7 +46,7 @@ export function createMigrateCommand(): Command {
 
   migrateCmd
     .command('jest-to-vitest')
-    .description('Convert Jest config/tests to Vitest (basic)')
+    .description('Generate a Jest-to-Vitest migration checklist (advisory)')
     .option('--dry-run', 'Show changes without applying')
     .action(
       asyncHandler(async (opts: { dryRun: boolean }) => {
@@ -83,14 +85,16 @@ export function createMigrateCommand(): Command {
         }
 
         if (!opts.dryRun && hasJest && !hasVitest) {
-          output.info('Run with --dry-run to see proposed package.json changes');
+          output.info(
+            'No files were changed: this command is advisory. Apply the listed steps manually after reviewing them.',
+          );
         }
       }),
     );
 
   migrateCmd
     .command('typescript <version>')
-    .description('Check TypeScript version compatibility')
+    .description('Assess TypeScript version compatibility (advisory)')
     .action(
       asyncHandler(async (version: string) => {
         const config = loadConfig();

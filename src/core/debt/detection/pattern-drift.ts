@@ -40,16 +40,22 @@ export class PatternDriftDetector {
     });
 
     // Fast-tier warnings are advisory signals (file size, import count and
-    // other heuristics). They remain visible through `check`, but are not
-    // durable medium debt: one weak heuristic is not enough evidence for a
-    // medium-severity finding. Only a failed coherence check becomes debt.
+    // other heuristics). They remain visible through `check`, but they are
+    // not architectural pattern violations and must not become blockers just
+    // because several warnings occur in one file. A contract ERROR is the
+    // only fast-tier result that is strong enough for high-severity debt.
     if (result.verdict === 'fail') {
+      const hasContractError = result.reasoningTrace.some((trace) =>
+        trace.startsWith('[Contract ERROR]'),
+      );
       // Persist immediately so findings reach debt_items and every report.
       items.push(
         this.persistence.createDebtItem({
           type: 'pattern_drift',
-          description: `Pattern inconsistency in ${file.relativePath}`,
-          severity: 'high',
+          description: hasContractError
+            ? `Architectural pattern violation in ${file.relativePath}`
+            : `Coherence heuristics require review in ${file.relativePath}`,
+          severity: hasContractError ? 'high' : 'low',
           suggestion: result.suggestions.join('; '),
           reasoningTrace: result.reasoningTrace,
           filePath: file.path,

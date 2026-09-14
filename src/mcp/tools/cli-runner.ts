@@ -1,6 +1,7 @@
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { confinePathValueFlags } from './_shared.js';
+import { MCP_CLI_BRIDGE_ENV } from '@/cli/utils/startup-security.js';
 
 const TOOL_DIR = dirname(fileURLToPath(import.meta.url)); // dist/mcp/tools
 const CLI_JS = join(TOOL_DIR, '..', '..', 'cli.js'); // dist/cli.js
@@ -52,7 +53,7 @@ export function runCliCapture(
     const child = import('node:child_process').then(({ spawn }) =>
       spawn(process.execPath, [CLI_JS, ...argv], {
         cwd: projectRoot,
-        env: { ...process.env },
+        env: { ...process.env, [MCP_CLI_BRIDGE_ENV]: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: false,
       }),

@@ -37,6 +37,21 @@ export interface LoadedEmbeddingIndex {
   configuration: EmbeddingIndexConfiguration | null;
 }
 
+interface EmbeddingIndexCacheEntry {
+  revision: string;
+  index: LoadedEmbeddingIndex;
+}
+
+/**
+ * Keep decoded vectors out of the hot request path. The revision is derived
+ * from SQLite row counts, rowids, source timestamps, blob sizes and the
+ * provider manifest, so normal scans invalidate the cache without allowing a
+ * stale index to masquerade as current. The cache is per DB connection and
+ * bounded by project/scope entries.
+ */
+const INDEX_CACHE_LIMIT = 8;
+const indexCaches = new WeakMap<DatabaseSync, Map<string, EmbeddingIndexCacheEntry>>();
+
 interface LoadedEmbeddingRow {
   itemId: string;
   kind: 'file' | 'function' | 'class';
@@ -93,6 +108,47 @@ function loadIndexConfiguration(
     // reports compatibility as unknown rather than trusting the index.
     return null;
   }
+}
+
+function getIndexRevision(db: DatabaseSync, projectId: number, scope: SemanticSearchScope): string {
+  const fileStats = db
+    .prepare(
+      'SELECT COUNT(*) AS count, MAX(rowid) AS max_rowid, MAX(last_scanned) AS last_scanned, ' +
+        'COALESCE(SUM(LENGTH(CAST(embedding AS TEXT))), 0) AS embedding_bytes ' +
+        'FROM files WHERE project_id = ? AND embedding IS NOT NULL',
+    )
+    .get(projectId) as Record<string, string | number | bigint | null>;
+  const symbolStats =
+    scope === 'symbol'
+      ? (db
+          .prepare(
+            'SELECT COUNT(*) AS count, MAX(fn.id) AS max_rowid, ' +
+              'MAX(LENGTH(CAST(fn.embedding AS TEXT))) AS max_embedding_length, ' +
+              'COALESCE(SUM(LENGTH(CAST(fn.embedding AS TEXT))), 0) AS embedding_bytes ' +
+              'FROM functions fn JOIN files f ON f.id = fn.file_id ' +
+              'WHERE f.project_id = ? AND fn.embedding IS NOT NULL',
+          )
+          .get(projectId) as Record<string, string | number | bigint | null>)
+      : null;
+  const classStats =
+    scope === 'symbol'
+      ? (db
+          .prepare(
+            'SELECT COUNT(*) AS count, MAX(cls.id) AS max_rowid, ' +
+              'MAX(LENGTH(CAST(cls.embedding AS TEXT))) AS max_embedding_length, ' +
+              'COALESCE(SUM(LENGTH(CAST(cls.embedding AS TEXT))), 0) AS embedding_bytes ' +
+              'FROM classes cls JOIN files f ON f.id = cls.file_id ' +
+              'WHERE f.project_id = ? AND cls.embedding IS NOT NULL',
+          )
+          .get(projectId) as Record<string, string | number | bigint | null>)
+      : null;
+  const manifest = db
+    .prepare('SELECT value FROM settings WHERE key = ?')
+    .get(embeddingIndexConfigKey(projectId)) as { value?: string } | undefined;
+  return JSON.stringify(
+    { scope, fileStats, symbolStats, classStats, manifest: manifest?.value ?? null },
+    (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value),
+  );
 }
 
 function loadRows(
@@ -182,6 +238,17 @@ export function loadEmbeddingIndex(
     };
   }
 
+  const cacheKey = `${projectId}:${scope}`;
+  const revision = getIndexRevision(db, projectId, scope);
+  const cache = indexCaches.get(db);
+  const cached = cache?.get(cacheKey);
+  if (cached?.revision === revision) {
+    // LRU touch: recently-used project/scope combinations survive longer.
+    cache!.delete(cacheKey);
+    cache!.set(cacheKey, cached);
+    return cached.index;
+  }
+
   const rows = loadRows(db, projectId, scope);
   const map = new Map<string, number[]>();
   const metadata = new Map<string, IndexedSearchMetadata>();
@@ -223,7 +290,7 @@ export function loadEmbeddingIndex(
   );
   const indexedFiles = new Set([...metadata.values()].map((item) => item.filePath));
 
-  return {
+  const index: LoadedEmbeddingIndex = {
     projectId,
     scope,
     candidateFiles: candidateFiles.size,
@@ -239,4 +306,14 @@ export function loadEmbeddingIndex(
     source,
     configuration: loadIndexConfiguration(db, projectId),
   };
+  const nextCache = cache ?? new Map<string, EmbeddingIndexCacheEntry>();
+  nextCache.delete(cacheKey);
+  nextCache.set(cacheKey, { revision, index });
+  while (nextCache.size > INDEX_CACHE_LIMIT) {
+    const oldest = nextCache.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    nextCache.delete(oldest);
+  }
+  if (!cache) indexCaches.set(db, nextCache);
+  return index;
 }

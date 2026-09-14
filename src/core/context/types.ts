@@ -8,6 +8,8 @@ export type { TaskType as ContextTaskType } from '../search/types.js';
 export interface ContextItem {
   path: string;
   tokens: number;
+  /** Exact UTF-8 source bytes when measured; omitted when only a token estimate exists. */
+  bytes?: number;
   relevanceScore: number;
   /** F31 metadata: drives inclusion reasons and task-type boosts. */
   recentlyChanged?: boolean;
@@ -29,6 +31,7 @@ export interface ContextItem {
 export interface PlannedFile {
   path: string;
   tokens: number;
+  bytes?: number;
   relevanceScore: number;
   inclusionReason: string;
   /** F33: per-file compression hint (large files shrink to signatures). */

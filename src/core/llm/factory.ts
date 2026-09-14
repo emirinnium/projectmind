@@ -13,7 +13,7 @@ export function createLLMProvider(config: LLMConfig): LLMProvider | null {
       const provider = new AnthropicProvider(config);
       return provider.isAvailable() ? withProviderResilience(provider) : null;
     }
-    if (config.provider === 'openai') {
+    if (config.provider === 'openai' || config.provider === 'openrouter') {
       const provider = new OpenAIProvider(config);
       return provider.isAvailable() ? withProviderResilience(provider) : null;
     }

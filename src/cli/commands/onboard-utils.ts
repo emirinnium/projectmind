@@ -61,6 +61,29 @@ export function generateOnboardingPath(
     type: 'run',
   });
 
+  if (depth >= 2) {
+    const evidenceFiles = existingPaths(
+      [
+        '.pmignore',
+        '.projectmindrc.json',
+        'src/core/proof/',
+        'src/core/ledger/',
+        'src/mcp/security/',
+      ],
+      allFiles,
+    );
+    steps.push({
+      order: stepOrder++,
+      title: 'Evidence-First Agent Workflow',
+      description:
+        'Practice scan → context → proof → review: inspect bounded evidence, verify freshness, and keep unsupported claims explicitly unverified',
+      files: evidenceFiles,
+      estimatedTime: '25 min',
+      prerequisites: ['ProjectMind CLI installed', 'A completed project scan'],
+      type: 'run',
+    });
+  }
+
   steps.push({
     order: stepOrder++,
     title: 'Knowledge Graph & Coherence Engine',
@@ -378,6 +401,15 @@ function findModuleFiles(
   return allFiles
     .filter((f) => f.relativePath.toLowerCase().includes(moduleName.toLowerCase()))
     .map((f) => f.relativePath);
+}
+
+function existingPaths(paths: string[], allFiles: Array<{ relativePath: string }>): string[] {
+  return paths.filter((candidate) => {
+    const prefix = candidate.endsWith('/') ? candidate : `${candidate}/`;
+    return allFiles.some(
+      (file) => file.relativePath === candidate || file.relativePath.startsWith(prefix),
+    );
+  });
 }
 
 export function generateMarkdownOnboarding(path: OnboardingPath): string {

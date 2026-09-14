@@ -173,7 +173,8 @@ export function extractSince(doc?: string): string | undefined {
 export async function getApiAtRef(ref: string, projectRoot: string): Promise<ExportedSymbol[]> {
   const { execFileSync } = await import('node:child_process');
   // SECURITY: execFileSync with an argument array and NO shell. The previous
-  // spawnSync(..., { shell: true }) interpolated the CLI --base/--since ref
+  // The previous implementation used a shell-enabled spawn and interpolated
+  // the CLI --base/--since references.
   // AND repo-derived filenames into a shell string (`git show ${ref}:${rel}`),
   // so a repo file named `x&<cmd>.ts` executed arbitrary shell commands.
   // With shell:false, ref and rel are passed as discrete argv entries and are

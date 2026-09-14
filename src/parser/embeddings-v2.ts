@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { loadConfig } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 import { VectorIndex } from '../core/embeddings/vector-index.js';
@@ -9,6 +9,7 @@ import {
   generateTransformersEmbedding,
   generateUnixcoderEmbedding,
   type InferenceSession,
+  type OnnxTokenizer,
   type TransformerPipeline,
 } from './embedding-providers.js';
 
@@ -47,6 +48,8 @@ export interface EmbeddingInitResult {
 let currentProvider: EmbeddingProvider = 'simple';
 let unixcoderSession: InferenceSession | null = null;
 let codebertSession: InferenceSession | null = null;
+let unixcoderTokenizer: OnnxTokenizer | null = null;
+let codebertTokenizer: OnnxTokenizer | null = null;
 let openaiApiKey: string | undefined = undefined;
 let openaiModel: string = 'text-embedding-3-small';
 
@@ -64,13 +67,23 @@ let activeRuntimeConfig: RuntimeConfig | null = null;
 let activeLimitations: string[] = [];
 
 type OrtModule = { InferenceSession: new (path: string) => InferenceSession };
+type TransformersTokenizerModule = {
+  AutoTokenizer: {
+    from_pretrained(model: string): Promise<OnnxTokenizer>;
+  };
+};
 
 // Lazy-loaded ONNX module reference
 let ortModulePromise: Promise<OrtModule | null> | null = null;
 
 async function getOrtModule(): Promise<OrtModule | null> {
   if (!ortModulePromise) {
-    ortModulePromise = import('onnxruntime-node').catch(() => null) as Promise<OrtModule | null>;
+    ortModulePromise = import('onnxruntime-node').catch((error) => {
+      logger.debug('Optional onnxruntime-node provider is unavailable.', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }) as Promise<OrtModule | null>;
   }
   return ortModulePromise;
 }
@@ -85,7 +98,14 @@ function getDefaultModelPath(provider: 'unixcoder' | 'codebert'): string {
     return isAbsolute(configuredPath)
       ? configuredPath
       : resolve(config.projectRoot, configuredPath);
-  } catch {
+  } catch (error) {
+    logger.warn(
+      'Embedding configuration could not be loaded; using the process directory for the model path.',
+      {
+        provider,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
     return resolve(
       process.cwd(),
       provider === 'unixcoder' ? 'models/unixcoder-base.onnx' : 'models/codebert-base.onnx',
@@ -164,6 +184,8 @@ function resetProviderState(): void {
   currentProvider = 'simple';
   unixcoderSession = null;
   codebertSession = null;
+  unixcoderTokenizer = null;
+  codebertTokenizer = null;
   transformersPipeline = null;
   openaiApiKey = undefined;
   openaiModel = 'text-embedding-3-small';
@@ -216,11 +238,17 @@ export async function initEmbeddingProvider(
   if (provider === 'transformers') {
     try {
       const modelName = config.transformersModel || 'Xenova/all-MiniLM-L6-v2';
-      const { pipeline } = await import('@xenova/transformers');
+      const { pipeline } = await import('@huggingface/transformers');
       transformersPipeline = (await pipeline(
         'feature-extraction',
         modelName,
       )) as TransformerPipeline;
+      const probe = await transformersPipeline('', { pooling: 'mean', normalize: true });
+      if (probe.data.length !== (options.dimension ?? loadConfig().embeddings.dimension)) {
+        throw new Error(
+          `Transformers model dimension is ${probe.data.length}; configured dimension is ${options.dimension ?? loadConfig().embeddings.dimension}.`,
+        );
+      }
       currentProvider = 'transformers';
       activateRuntime(config);
       logger.info(`Transformers.js embedding provider initialized (model: ${modelName})`);
@@ -255,9 +283,17 @@ export async function initEmbeddingProvider(
         activateRuntime(config, limitations);
         return initResult(provider, reinitialized);
       }
+      const transformersModule =
+        (await import('@huggingface/transformers')) as TransformersTokenizerModule;
+      const tokenizer = await transformersModule.AutoTokenizer.from_pretrained(dirname(modelPath));
       const session = new ortModule.InferenceSession(modelPath);
-      if (provider === 'unixcoder') unixcoderSession = session;
-      else codebertSession = session;
+      if (provider === 'unixcoder') {
+        unixcoderSession = session;
+        unixcoderTokenizer = tokenizer;
+      } else {
+        codebertSession = session;
+        codebertTokenizer = tokenizer;
+      }
       currentProvider = provider;
       activateRuntime(config);
       logger.info(
@@ -324,9 +360,9 @@ export async function generateEmbedding(
   } else if (currentProvider === 'openai' && openaiApiKey) {
     embedding = await generateOpenaiEmbedding(text, openaiApiKey, openaiModel, dim);
   } else if (currentProvider === 'unixcoder' && unixcoderSession) {
-    embedding = await generateUnixcoderEmbedding(text, dim, unixcoderSession);
-  } else if (currentProvider === 'codebert' && codebertSession) {
-    embedding = await generateCodebertEmbedding(text, dim, codebertSession);
+    embedding = await generateUnixcoderEmbedding(text, dim, unixcoderSession, unixcoderTokenizer!);
+  } else if (currentProvider === 'codebert' && codebertSession && codebertTokenizer) {
+    embedding = await generateCodebertEmbedding(text, dim, codebertSession, codebertTokenizer);
   } else {
     // Fallback to simple embedding
     const { codeToEmbedding } = await import('./legacy-embeddings.js');

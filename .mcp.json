@@ -3,7 +3,7 @@
     "projectmind": {
       "type": "stdio",
       "command": "npx",
-      "args": ["--yes", "@emirhanturker/projectmind@1.0.2", "mcp"],
+      "args": ["--yes", "@emirhanturker/projectmind@1.0.4", "mcp"],
       "env": {
         "PROJECTMIND_ROOT": "."
       },

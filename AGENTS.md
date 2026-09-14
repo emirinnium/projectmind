@@ -87,12 +87,13 @@ returning to a file you haven't touched recently.
 | Debt report | `projectmind_debt_report { resolveAfter: false }` |
 | Health score | `projectmind_genome_score {}` |
 | Circular deps | `projectmind_find_circular_deps {}` |
+| Multi-agent coordination | `projectmind_arbitrate_agents { agents: [...] }` |
 | Find duplicates | `projectmind_run_cli { args: ["dedup"] }` |
 | Git churn | `projectmind_run_cli { args: ["churn","--since","30"] }` |
 | Security audit | `projectmind_run_cli { args: ["audit"] }` |
 | SBOM | `projectmind_run_cli { args: ["sbom"] }` |
-| Test scaffolding | `projectmind_run_cli { args: ["testgen","src/foo.ts"] }` |
-| Full CLI access | `projectmind_run_cli { args: [...] }` |
+| Test scaffolding | Use the trusted local CLI; the MCP bridge is intentionally read-only |
+| CLI bridge | `projectmind_run_cli` only accepts its read-only allowlisted roots/subcommands |
 
 ## SETUP
 

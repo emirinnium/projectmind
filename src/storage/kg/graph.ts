@@ -21,6 +21,20 @@ interface AgentAction {
  * reviewable. All methods from the historical façade are inherited unchanged.
  */
 export class KnowledgeGraph extends KnowledgeGraphIntelligence {
+  /**
+   * Create an isolated graph façade for one persisted project without
+   * changing the process-wide selected-project preference. MCP requests use
+   * this for explicit per-call project selection.
+   */
+  createProjectScope(projectId: number): KnowledgeGraph {
+    const project = this.getProject(projectId);
+    if (!project) throw new Error(`Project ${projectId} not found`);
+    const scoped = new KnowledgeGraph(this.db, this.deps);
+    scoped.currentProjectId = project.id;
+    scoped.projectRoot = project.rootPath;
+    return scoped;
+  }
+
   /** Replay persisted agent actions and synchronize the graph with disk. */
   async replayAgentActions(
     agentName: string,

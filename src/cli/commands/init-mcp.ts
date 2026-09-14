@@ -2,8 +2,8 @@ import { Command } from 'commander';
 import { asyncHandler, output, loadConfig } from '@/cli/utils/shared.js';
 import { existsSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
-import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { writeClaudeSkill } from '@/cli/generators/agent-configs.js';
 import {
   packageVersion,
@@ -36,6 +36,79 @@ interface HandshakeResult {
 
 type HandshakeUpdate = Omit<HandshakeResult, 'durationMs'>;
 
+const MCP_HANDSHAKE_PROTOCOL_VERSION = '2024-11-05';
+const MCP_HANDSHAKE_TIMEOUT_MS = 30_000;
+const MCP_HANDSHAKE_MAX_FRAME_BYTES = 8 * 1024 * 1024;
+
+export interface McpHandshakeInvocation {
+  executable: string;
+  args: string[];
+}
+
+/**
+ * Build the npx invocation used by --handshake. The `--` separator is
+ * required because npm's npx parser otherwise consumes package CLI options
+ * such as `--profile` on Windows and reports them as unknown options.
+ */
+export function buildMcpHandshakeInvocation(
+  windowsNpxCli: string | undefined,
+  packageVersionArg: string,
+): McpHandshakeInvocation {
+  const packageArgs = ['--yes', packageVersionArg, '--', 'mcp', '--profile', 'core'];
+  return windowsNpxCli
+    ? { executable: process.execPath, args: [windowsNpxCli, ...packageArgs] }
+    : { executable: 'npx', args: packageArgs };
+}
+
+interface McpHandshakeMessage {
+  id?: number;
+  result?: HandshakeResult['response'] & { tools?: unknown[] };
+  error?: { code?: number; message?: string };
+}
+
+export function consumeMcpJsonLines(
+  buffer: string,
+  chunk: string,
+): { buffer: string; messages: McpHandshakeMessage[]; oversized: boolean } {
+  const pending = buffer + chunk;
+  const messages: McpHandshakeMessage[] = [];
+  let cursor = 0;
+  let newline = pending.indexOf('\n', cursor);
+  while (newline >= 0) {
+    const line = pending.slice(cursor, newline).replace(/\r$/, '');
+    cursor = newline + 1;
+    newline = pending.indexOf('\n', cursor);
+    if (!line.trim()) continue;
+    try {
+      const parsed = JSON.parse(line) as unknown;
+      if (typeof parsed === 'object' && parsed !== null)
+        messages.push(parsed as McpHandshakeMessage);
+    } catch (error) {
+      // MCP logs belong on stderr; ignore non-JSON stdout until a response frame arrives.
+      void error;
+    }
+  }
+  const remaining = pending.slice(cursor);
+  return {
+    buffer: remaining,
+    messages,
+    oversized: remaining.length > MCP_HANDSHAKE_MAX_FRAME_BYTES,
+  };
+}
+
+function stopMcpProcessTree(child: ChildProcess): void {
+  if (platform() === 'win32' && child.pid) {
+    execFile(
+      'taskkill.exe',
+      ['/pid', String(child.pid), '/t', '/f'],
+      { windowsHide: true },
+      () => undefined,
+    );
+    return;
+  }
+  child.kill();
+}
+
 async function runMcpHandshake(root: string): Promise<HandshakeResult> {
   const started = Date.now();
   const version = packageVersion(root);
@@ -47,12 +120,19 @@ async function runMcpHandshake(root: string): Promise<HandshakeResult> {
     };
   }
   const packageVersionArg = `@emirhanturker/projectmind@${version}`;
-  const windows = platform() === 'win32';
-  const executable = windows ? (process.env.ComSpec ?? 'cmd.exe') : 'npx';
-  const spawnArgs = windows
-    ? ['/d', '/s', '/c', `npx -y ${packageVersionArg} mcp --profile core`]
-    : ['--yes', packageVersionArg, 'mcp', '--profile', 'core'];
-  const child = spawn(executable, spawnArgs, {
+  const windowsNpxCli =
+    platform() === 'win32'
+      ? join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js')
+      : undefined;
+  if (windowsNpxCli && !existsSync(windowsNpxCli)) {
+    return {
+      ok: false,
+      durationMs: Date.now() - started,
+      error: 'The npm npx CLI was not found next to Node.js on Windows.',
+    };
+  }
+  const invocation = buildMcpHandshakeInvocation(windowsNpxCli, packageVersionArg);
+  const child = spawn(invocation.executable, invocation.args, {
     cwd: root,
     env: { ...process.env, PROJECTMIND_ROOT: root, PROJECTMIND_TOOLS: 'core' },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -68,49 +148,61 @@ async function runMcpHandshake(root: string): Promise<HandshakeResult> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      child.kill();
+      stopMcpProcessTree(child);
       resolve({ ...result, durationMs: Date.now() - started, stderr: stderr.slice(-2000) });
     };
     const timer = setTimeout(
-      () => finish({ ok: false, error: 'MCP handshake timed out after 15000 ms.' }),
-      15000,
+      () =>
+        finish({
+          ok: false,
+          error: `MCP handshake timed out after ${MCP_HANDSHAKE_TIMEOUT_MS} ms.`,
+        }),
+      MCP_HANDSHAKE_TIMEOUT_MS,
     );
     child.stdout.on('data', (chunk: Buffer | string) => {
-      stdout += chunk.toString();
-      let newline = stdout.indexOf('\n');
-      while (newline >= 0) {
-        const line = stdout.slice(0, newline).replace(/\r$/, '');
-        stdout = stdout.slice(newline + 1);
-        newline = stdout.indexOf('\n');
-        if (!line.trim()) continue;
-        try {
-          const message = JSON.parse(line) as {
-            id?: number;
-            result?: HandshakeResult['response'] & { tools?: unknown[] };
-          };
-          if (message.id === 1 && message.result && !toolsListRequested) {
-            toolsListRequested = true;
-            child.stdin.write(
-              `${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })}\n`,
-            );
-          } else if (message.id === 2 && message.result) {
-            const tools = Array.isArray(message.result.tools) ? message.result.tools : [];
-            finish({
-              ok: true,
-              response: {
-                serverInfo: message.result.serverInfo,
-                capabilities: message.result.capabilities,
-              },
-              toolCount: tools.length,
-            });
-          }
-        } catch (error) {
-          // MCP logs belong on stderr; ignore non-JSON stdout until a response frame arrives.
-          void error;
-          continue;
+      const parsed = consumeMcpJsonLines(stdout, chunk.toString());
+      stdout = parsed.buffer;
+      if (parsed.oversized) {
+        finish({
+          ok: false,
+          error: `MCP handshake response exceeded ${MCP_HANDSHAKE_MAX_FRAME_BYTES} bytes.`,
+        });
+        return;
+      }
+      for (const message of parsed.messages) {
+        if (message.id === 1 && message.error) {
+          finish({
+            ok: false,
+            error: `MCP initialize failed${message.error.code !== undefined ? ` (${message.error.code})` : ''}: ${message.error.message ?? 'unknown error'}`,
+          });
+        } else if (message.id === 2 && message.error) {
+          finish({
+            ok: false,
+            error: `MCP tools/list failed${message.error.code !== undefined ? ` (${message.error.code})` : ''}: ${message.error.message ?? 'unknown error'}`,
+          });
+        } else if (message.id === 1 && message.result && !toolsListRequested) {
+          toolsListRequested = true;
+          // Complete the MCP lifecycle before requesting tools. A few
+          // stdio transports accept tools/list immediately, while
+          // npx-launched servers can wait for this mandatory notification.
+          child.stdin.write(
+            `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })}\n`,
+          );
+          child.stdin.write(
+            `${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })}\n`,
+          );
+        } else if (message.id === 2 && message.result) {
+          const tools = Array.isArray(message.result.tools) ? message.result.tools : [];
+          finish({
+            ok: true,
+            response: {
+              serverInfo: message.result.serverInfo,
+              capabilities: message.result.capabilities,
+            },
+            toolCount: tools.length,
+          });
         }
       }
-      stdout = stdout.slice(-16_000);
     });
     child.stderr.on('data', (chunk: Buffer | string) => {
       stderr += chunk.toString();
@@ -124,7 +216,7 @@ async function runMcpHandshake(root: string): Promise<HandshakeResult> {
         });
     });
     child.stdin.write(
-      `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'projectmind-mcp-verify', version: '1.0.0' } } })}\n`,
+      `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: MCP_HANDSHAKE_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'projectmind-mcp-verify', version } } })}\n`,
     );
   });
 }

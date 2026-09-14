@@ -44,7 +44,9 @@ export async function withService<T>(
         provider: ctx.config.llm.provider,
         model: ctx.config.llm.model,
         apiKey: ctx.config.llm.apiKey,
+        apiUrl: ctx.config.llm.endpoint,
         deepModel: ctx.config.llm.deepModel,
+        reasoning: ctx.config.llm.reasoning,
       };
       const llmProvider = createLLMProvider(llmConfig);
       if (llmProvider) {

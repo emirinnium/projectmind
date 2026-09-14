@@ -119,7 +119,8 @@ describe('autopilot pre-commit', () => {
 
   /**
    * Helper: run the pre-commit command with given options using commander's parseAsync.
-   * Returns the exit code (null if process.exit was not called).
+   * Returns the command exit code without allowing the action to terminate the
+   * test process. Production uses process.exitCode so service cleanup runs.
    */
   async function runPreCommitAction(opts: {
     minGenome?: string;
@@ -128,9 +129,11 @@ describe('autopilot pre-commit', () => {
     skipImpactCheck?: boolean;
     allowBreakingApi?: boolean;
   }): Promise<{ exitCode: number | null; outputMock: any }> {
-    // Spy on process.exit to capture gate failures without actually exiting.
+    const originalExitCode = process.exitCode;
+    process.exitCode = 0;
+    // Keep this spy as a regression guard: production must not call it.
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {
-      // Throw to stop execution flow (mimics process.exit behavior in tests).
+      // Throw if a future change reintroduces abrupt process termination.
       throw new Error('PROCESS_EXIT');
     }) as any);
 
@@ -151,15 +154,15 @@ describe('autopilot pre-commit', () => {
       await cmd.parseAsync(args, { from: 'user' });
     } catch (e: any) {
       if (e.message === 'PROCESS_EXIT') {
-        // Extract the exit code from the spy call.
-        const call = exitSpy.mock.calls[0];
-        exitCode = call ? Number(call[0]) : 1;
+        exitCode = 1;
       } else {
         throw e;
       }
     }
 
     exitSpy.mockRestore();
+    if (process.exitCode !== 0) exitCode = process.exitCode;
+    process.exitCode = originalExitCode;
     return { exitCode, outputMock: mockOutput };
   }
 

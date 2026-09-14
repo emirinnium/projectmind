@@ -87,6 +87,33 @@ CREATE TABLE IF NOT EXISTS classes (
   FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
 );
 
+-- Persistent source coordinates. The source hash makes every byte/symbol
+-- range content-addressed, so callers can reject a stale index instead of
+-- returning a coordinate from an older version of the file.
+CREATE TABLE IF NOT EXISTS source_ranges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_id INTEGER NOT NULL,
+  project_id INTEGER NOT NULL DEFAULT 1,
+  source_hash TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('file', 'function', 'class', 'method', 'property', 'import', 'export')),
+  name TEXT NOT NULL,
+  parent_name TEXT,
+  symbol_path TEXT NOT NULL,
+  start_byte INTEGER NOT NULL CHECK(start_byte >= 0),
+  end_byte INTEGER NOT NULL CHECK(end_byte >= start_byte),
+  start_line INTEGER NOT NULL CHECK(start_line >= 1),
+  end_line INTEGER NOT NULL CHECK(end_line >= start_line),
+  start_column INTEGER NOT NULL CHECK(start_column >= 1),
+  end_column INTEGER NOT NULL CHECK(end_column >= 1),
+  UNIQUE(file_id, source_hash, kind, name, start_byte, end_byte),
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_ranges_file_hash
+  ON source_ranges(file_id, source_hash);
+CREATE INDEX IF NOT EXISTS idx_source_ranges_project_symbol
+  ON source_ranges(project_id, symbol_path, kind);
+
 CREATE TABLE IF NOT EXISTS imports (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   file_id INTEGER NOT NULL,
@@ -136,8 +163,8 @@ CREATE TABLE IF NOT EXISTS patterns (
   last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   usage_count INTEGER DEFAULT 1,
   embedding TEXT,
-  project_id INTEGER,
-  UNIQUE(code_hash, name)
+  project_id INTEGER NOT NULL DEFAULT 1,
+  UNIQUE(code_hash, name, project_id)
 );
 
 CREATE TABLE IF NOT EXISTS pattern_violations (
@@ -155,6 +182,7 @@ CREATE TABLE IF NOT EXISTS pattern_violations (
 CREATE TABLE IF NOT EXISTS agent_sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_name TEXT NOT NULL,
+  project_id INTEGER NOT NULL DEFAULT 1,
   started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   ended_at TIMESTAMP,
   context_hash TEXT,
@@ -243,9 +271,12 @@ CREATE TABLE IF NOT EXISTS contracts (
 
 CREATE TABLE IF NOT EXISTS scan_profiles (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL DEFAULT 1,
   total_files INTEGER NOT NULL,
   scanned_files INTEGER NOT NULL,
   error_files INTEGER NOT NULL,
+  skipped_files INTEGER NOT NULL DEFAULT 0,
+  skipped_paths TEXT,
   duration_ms INTEGER NOT NULL,
   files_per_second INTEGER NOT NULL,
   memory_used_mb REAL NOT NULL,
@@ -256,7 +287,7 @@ CREATE TABLE IF NOT EXISTS scan_profiles (
 CREATE TABLE IF NOT EXISTS resources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   qualified_name TEXT UNIQUE NOT NULL,
-  kind TEXT NOT NULL CHECK(kind IN ('FILE', 'NETWORK', 'DATABASE', 'ENV', 'STDIN', 'STDOUT', 'STDERR', 'SOCKET')),
+  kind TEXT NOT NULL CHECK(kind IN ('FILE', 'NETWORK', 'DATABASE', 'ENV', 'STDIN', 'STDOUT', 'STDERR', 'SOCKET', 'PROCESS', 'CODE')),
   identity TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   project_id INTEGER NOT NULL DEFAULT 1
@@ -270,7 +301,10 @@ CREATE TABLE IF NOT EXISTS data_flows (
   via TEXT,
   source_function_id INTEGER,
   target_function_id INTEGER,
+  source_language TEXT,
+  target_language TEXT,
   detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  project_id INTEGER NOT NULL DEFAULT 1,
   FOREIGN KEY (from_resource_id) REFERENCES resources(id) ON DELETE CASCADE,
   FOREIGN KEY (to_resource_id) REFERENCES resources(id) ON DELETE CASCADE,
   FOREIGN KEY (source_function_id) REFERENCES functions(id) ON DELETE SET NULL,
@@ -281,6 +315,8 @@ CREATE INDEX IF NOT EXISTS idx_resources_qualified ON resources(qualified_name);
 CREATE INDEX IF NOT EXISTS idx_data_flows_from ON data_flows(from_resource_id);
 CREATE INDEX IF NOT EXISTS idx_data_flows_to ON data_flows(to_resource_id);
 CREATE INDEX IF NOT EXISTS idx_data_flows_kind ON data_flows(kind);
+CREATE INDEX IF NOT EXISTS idx_data_flows_project ON data_flows(project_id);
+CREATE INDEX IF NOT EXISTS idx_data_flows_languages ON data_flows(source_language, target_language);
 
 -- Multi-agent coordination: advisory file locks (soft, TTL-expiring).
 CREATE TABLE IF NOT EXISTS agent_file_locks (
@@ -339,6 +375,128 @@ CREATE INDEX IF NOT EXISTS idx_imports_resolved_path ON imports(resolved_path);
 CREATE INDEX IF NOT EXISTS idx_calls_workload_dynamic ON calls(workload_id, dynamic);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_session ON agent_memory(session_id);
 CREATE INDEX IF NOT EXISTS idx_agent_memory_scope ON agent_memory(scope, key);
+
+-- Hash-chained, payload-free audit trail for evidence-backed decisions.
+CREATE TABLE IF NOT EXISTS evidence_ledger (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL,
+  event_type TEXT NOT NULL CHECK(event_type IN ('mcp-invocation', 'scan', 'context', 'review', 'edit', 'custom')),
+  tool_name TEXT NOT NULL,
+  input_hash TEXT NOT NULL CHECK(length(input_hash) = 64),
+  graph_hash TEXT CHECK(graph_hash IS NULL OR length(graph_hash) = 64),
+  policy_version TEXT NOT NULL,
+  tool_version TEXT NOT NULL,
+  scope TEXT,
+  source_freshness TEXT NOT NULL,
+  result_hash TEXT NOT NULL CHECK(length(result_hash) = 64),
+  summary TEXT NOT NULL DEFAULT '{}',
+  previous_hash TEXT,
+  record_hash TEXT NOT NULL UNIQUE CHECK(length(record_hash) = 64),
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_evidence_ledger_project_id
+  ON evidence_ledger(project_id, id);
+CREATE TRIGGER IF NOT EXISTS evidence_ledger_no_update
+  BEFORE UPDATE ON evidence_ledger
+  BEGIN
+    SELECT RAISE(ABORT, 'evidence_ledger is append-only');
+  END;
+CREATE TRIGGER IF NOT EXISTS evidence_ledger_no_delete
+  BEFORE DELETE ON evidence_ledger
+  BEGIN
+    SELECT RAISE(ABORT, 'evidence_ledger is append-only');
+  END;
+
+-- Repo-scoped accept/reject signals for explainable Auto-Fix recommendations.
+CREATE TABLE IF NOT EXISTS autofix_feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL,
+  agent_name TEXT,
+  fixer TEXT NOT NULL,
+  feedback TEXT NOT NULL CHECK(feedback IN ('accepted', 'rejected', 'skipped')),
+  source_hash TEXT CHECK(source_hash IS NULL OR length(source_hash) = 64),
+  policy_version TEXT NOT NULL DEFAULT 'autofix-feedback-v1',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_autofix_feedback_project_fixer
+  ON autofix_feedback(project_id, fixer, agent_name, id);
+CREATE TRIGGER IF NOT EXISTS autofix_feedback_no_update
+  BEFORE UPDATE ON autofix_feedback
+  BEGIN
+    SELECT RAISE(ABORT, 'autofix_feedback is append-only');
+  END;
+CREATE TRIGGER IF NOT EXISTS autofix_feedback_no_delete
+  BEFORE DELETE ON autofix_feedback
+  BEGIN
+    SELECT RAISE(ABORT, 'autofix_feedback is append-only');
+  END;
+CREATE TABLE IF NOT EXISTS autofix_feedback_preferences (
+  project_id INTEGER NOT NULL,
+  agent_key TEXT NOT NULL,
+  opted_out INTEGER NOT NULL CHECK(opted_out IN (0, 1)),
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(project_id, agent_key)
+);
+CREATE TABLE IF NOT EXISTS autofix_feedback_resets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL,
+  agent_key TEXT NOT NULL,
+  feedback_boundary INTEGER NOT NULL DEFAULT 0,
+  reset_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_autofix_feedback_resets_scope
+  ON autofix_feedback_resets(project_id, agent_key, id);
+CREATE TRIGGER IF NOT EXISTS autofix_feedback_resets_no_update
+  BEFORE UPDATE ON autofix_feedback_resets
+  BEGIN
+    SELECT RAISE(ABORT, 'autofix_feedback_resets is append-only');
+  END;
+CREATE TRIGGER IF NOT EXISTS autofix_feedback_resets_no_delete
+  BEFORE DELETE ON autofix_feedback_resets
+  BEGIN
+    SELECT RAISE(ABORT, 'autofix_feedback_resets is append-only');
+  END;
 -- idx_coherence_decisions_hash removed: duplicated idx_coherence_hash (line above)
 CREATE INDEX IF NOT EXISTS idx_debt_items_type ON debt_items(type, severity);
+
+-- Privacy-preserving search preference observations. Query text and source
+-- contents are never stored; only a stable query digest, repository-relative
+-- result path, and bounded numeric ranking features are retained.
+CREATE TABLE IF NOT EXISTS search_interactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL,
+  agent_key TEXT NOT NULL,
+  query_hash TEXT NOT NULL CHECK(length(query_hash) = 64),
+  result_path TEXT NOT NULL,
+  position INTEGER NOT NULL CHECK(position >= 1 AND position <= 1000),
+  feedback TEXT NOT NULL CHECK(feedback IN ('selected', 'opened', 'included', 'skipped')),
+  features TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_search_interactions_project_query
+  ON search_interactions(project_id, query_hash, id);
+CREATE INDEX IF NOT EXISTS idx_search_interactions_agent
+  ON search_interactions(project_id, agent_key, id);
+
+-- Payload-free session learning events. The value is an identifier or a
+-- bounded scalar supplied by the caller, never source text.
+CREATE TABLE IF NOT EXISTS agent_session_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL,
+  session_id INTEGER NOT NULL,
+  agent_key TEXT NOT NULL,
+  event_type TEXT NOT NULL CHECK(event_type IN ('file_touched', 'tool_used', 'pattern', 'outcome')),
+  event_key TEXT NOT NULL,
+  event_value TEXT,
+  success INTEGER CHECK(success IS NULL OR success IN (0, 1)),
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_agent_session_events_project
+  ON agent_session_events(project_id, agent_key, event_type, id);
+CREATE INDEX IF NOT EXISTS idx_agent_session_events_session
+  ON agent_session_events(session_id, id);
 `;

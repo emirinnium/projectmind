@@ -4,6 +4,10 @@ import type { McpDependencies } from './types.js';
 import { AutoFixEngine } from '@/core/refactor/auto-fix.js';
 import { assertProjectPath } from '@/core/security/path-security.js';
 import { actionableMcpError } from '@/utils/actionable-error.js';
+import {
+  AutoFixFeedbackStore,
+  type AutoFixFeedbackValue,
+} from '@/core/refactor/autofix-feedback.js';
 
 /**
  * Real fixer ids supported by the AutoFixEngine (see src/core/refactor/auto-fix.ts).
@@ -35,6 +39,12 @@ export interface AutoFixToolResult {
   diff: string;
   /** True only when apply:true and at least one fixer wrote to disk. */
   written: boolean;
+  evidenceAudits?: Array<{
+    ledgerRecordId: number;
+    ledgerRecordHash: string;
+    replayEventId: number;
+    replayEventHash: string;
+  }>;
 }
 
 /**
@@ -60,7 +70,10 @@ export async function runAutoFix(
     mustExist: true,
     rejectIgnored: true,
   });
-  const engine = new AutoFixEngine(deps.projectRoot);
+  const engine = new AutoFixEngine(deps.projectRoot, {
+    db: deps.db,
+    projectId: deps.kg?.getCurrentProjectId?.(),
+  });
   const apply = args.apply ?? false;
   const fixers: Array<AutoFixerId | 'all'> =
     args.fixes && args.fixes.length > 0 ? args.fixes : ['all'];
@@ -68,6 +81,7 @@ export async function runAutoFix(
   let changed = false;
   let written = false;
   const diffs: string[] = [];
+  const evidenceAudits: NonNullable<AutoFixToolResult['evidenceAudits']> = [];
 
   for (const fixer of fixers) {
     const result = engine.run(fixer, absPath, { write: apply });
@@ -75,6 +89,7 @@ export async function runAutoFix(
       changed = true;
       if (result.diff) diffs.push(result.diff);
       if (result.written) written = true;
+      if (result.evidenceAudit) evidenceAudits.push(result.evidenceAudit);
     }
   }
 
@@ -82,6 +97,7 @@ export async function runAutoFix(
     changed,
     diff: diffs.join('\n'),
     written,
+    ...(evidenceAudits.length > 0 ? { evidenceAudits } : {}),
   };
 }
 
@@ -116,6 +132,154 @@ export function registerAutoFixTool(server: McpServer, deps: McpDependencies): v
         });
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (error) {
+        return actionableMcpError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'record_autofix_feedback',
+    {
+      title: 'Record Auto-Fix Feedback',
+      description:
+        'Record whether a specific auto-fix suggestion was accepted, rejected, or skipped. Only repo-scoped metadata is stored; source content is never persisted.',
+      inputSchema: {
+        fixer: z.enum(AUTO_FIXER_IDS).describe('Auto-fix identifier'),
+        feedback: z
+          .enum(['accepted', 'rejected', 'skipped'])
+          .describe('Human/agent outcome for the suggestion'),
+        agentName: z.string().trim().min(1).max(200).optional().describe('Optional agent profile'),
+        sourceHash: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/i)
+          .optional()
+          .describe('Optional hash of the source version, never the source content'),
+        policyVersion: z.string().trim().min(1).max(100).optional(),
+      },
+    },
+    async (args) => {
+      try {
+        if (!deps.db) throw new Error('Auto-fix feedback storage is unavailable.');
+        const store = new AutoFixFeedbackStore(deps.db, deps.kg.getCurrentProjectId());
+        const record = store.record({
+          fixer: args.fixer,
+          feedback: args.feedback as AutoFixFeedbackValue,
+          agentName: args.agentName ?? deps.agentName,
+          sourceHash: args.sourceHash,
+          policyVersion: args.policyVersion,
+        });
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, record }, null, 2) }],
+        };
+      } catch (error) {
+        return actionableMcpError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'recommend_autofix',
+    {
+      title: 'Recommend Auto-Fixers',
+      description:
+        'Recommend auto-fixers from repo-scoped accept/reject history. Insufficient or mixed evidence is reported instead of being treated as approval.',
+      inputSchema: {
+        fixers: z.array(z.enum(AUTO_FIXER_IDS)).max(AUTO_FIXER_IDS.length).optional(),
+        agentName: z.string().trim().min(1).max(200).optional().describe('Optional agent profile'),
+        minimumSamples: z.number().int().min(1).max(100).default(3),
+        decayDays: z
+          .number()
+          .positive()
+          .max(3650)
+          .optional()
+          .describe('Optional half-life for older feedback'),
+      },
+    },
+    async (args) => {
+      try {
+        if (!deps.db) throw new Error('Auto-fix feedback storage is unavailable.');
+        const store = new AutoFixFeedbackStore(deps.db, deps.kg.getCurrentProjectId());
+        const recommendations = store.recommend(args.fixers ?? AUTO_FIXER_IDS, {
+          agentName: args.agentName ?? deps.agentName,
+          minimumSamples: args.minimumSamples,
+          decayDays: args.decayDays,
+        });
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify({ success: true, recommendations }, null, 2) },
+          ],
+        };
+      } catch (error) {
+        return actionableMcpError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'set_autofix_feedback_opt_out',
+    {
+      title: 'Set Auto-Fix Feedback Preference',
+      description:
+        'Enable or disable collection of repo-scoped auto-fix outcome metadata for an agent profile.',
+      inputSchema: {
+        agentName: z
+          .string()
+          .trim()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe('Agent profile; omitted means default scope'),
+        optedOut: z.boolean().describe('When true, do not record or use feedback for this scope'),
+      },
+    },
+    async (args) => {
+      try {
+        if (!deps.db) throw new Error('Auto-fix feedback storage is unavailable.');
+        const store = new AutoFixFeedbackStore(deps.db, deps.kg.getCurrentProjectId());
+        store.setOptOut(args.agentName ?? deps.agentName, args.optedOut);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                { success: true, optedOut: store.isOptedOut(args.agentName ?? deps.agentName) },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        return actionableMcpError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    'reset_autofix_feedback',
+    {
+      title: 'Reset Auto-Fix Feedback',
+      description:
+        'Logically reset auto-fix personalization for an agent scope. Historical rows remain append-only and auditable.',
+      inputSchema: {
+        agentName: z
+          .string()
+          .trim()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe('Agent profile; omitted means default scope'),
+      },
+    },
+    async (args) => {
+      try {
+        if (!deps.db) throw new Error('Auto-fix feedback storage is unavailable.');
+        const store = new AutoFixFeedbackStore(deps.db, deps.kg.getCurrentProjectId());
+        const reset = store.reset(args.agentName ?? deps.agentName);
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, reset }, null, 2) }],
         };
       } catch (error) {
         return actionableMcpError(error);

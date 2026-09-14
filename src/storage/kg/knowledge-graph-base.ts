@@ -7,6 +7,11 @@ import type { FileStructure } from '../../parser/ast-parser.js';
 import type { KgContext } from './helpers/context.js';
 import { createGraphTraversal } from './graph-traversal.js';
 import { loadConfig } from '../../utils/config.js';
+import { getWorktreeIdentity } from '../../core/project/worktree-identity.js';
+import {
+  ensureWorktreeIdentityTable,
+  selectOrCreateWorktreeProject,
+} from '../../core/project/index-identity.js';
 
 import {
   ensureDefaultProject,
@@ -94,8 +99,21 @@ export class KnowledgeGraphBase {
     this.projectRoot = config.projectRoot;
     this.db = db ?? getDatabase();
     this.db.exec(SCHEMA_SQL);
+    ensureWorktreeIdentityTable(this.db);
     this.ensureDefaultProject();
-    this.loadCurrentProjectId();
+    // A shared database may be opened from multiple linked worktrees. Resolve
+    // the stable branch/worktree namespace before consulting the process-wide
+    // legacy current-project preference; otherwise the last CLI process could
+    // make a different checkout read its graph accidentally.
+    const identity = getWorktreeIdentity(this.projectRoot);
+    if (identity) {
+      const selection = selectOrCreateWorktreeProject(this.db, identity, this.projectRoot);
+      this.currentProjectId = selection.projectId;
+      const selectedProject = getProject(this.ctx, selection.projectId);
+      if (selectedProject?.rootPath) this.projectRoot = selectedProject.rootPath;
+    } else {
+      this.loadCurrentProjectId();
+    }
     this.deps = deps ?? {
       fs: {
         readFile: async (path: string, enc: BufferEncoding) => {
@@ -183,6 +201,40 @@ export class KnowledgeGraphBase {
     if (project?.rootPath) this.projectRoot = project.rootPath;
   }
 
+  /**
+   * Select the graph scope represented by a scan/request root.
+   *
+   * The CLI normally constructs one graph per process, but maintainers and
+   * MCP callers can reuse a graph instance for several checkout roots. A
+   * scanner must therefore update both the active root and the project id
+   * before resolving imports or writing rows. Git roots use the stable
+   * branch/worktree selector; non-Git roots reuse an exact project root when
+   * one exists and otherwise retain the current project for compatibility.
+   */
+  selectProjectRoot(projectRoot: string): void {
+    const selectedRoot = resolve(projectRoot);
+    const identity = getWorktreeIdentity(selectedRoot);
+    if (identity) {
+      const selection = selectOrCreateWorktreeProject(this.db, identity, selectedRoot);
+      this.currentProjectId = selection.projectId;
+      const selectedProject = getProject(this.ctx, selection.projectId);
+      this.projectRoot = selectedProject?.rootPath ?? selectedRoot;
+      this._traversal = null;
+      return;
+    }
+
+    const projects = this.db
+      .prepare('SELECT id, root_path FROM projects ORDER BY id')
+      .all() as Array<{
+      id: number;
+      root_path: string;
+    }>;
+    const matchingProject = projects.find((project) => resolve(project.root_path) === selectedRoot);
+    if (matchingProject) this.currentProjectId = matchingProject.id;
+    this.projectRoot = selectedRoot;
+    this._traversal = null;
+  }
+
   persistCurrentProjectId(): void {
     persistCurrentProjectId(this.ctx);
   }
@@ -249,7 +301,7 @@ export class KnowledgeGraphBase {
 
   getCurrentProject(): { id: number; name: string; rootPath: string } | null {
     const project = this.getProject(this.currentProjectId);
-    return project ? { id: project.id, name: project.name, rootPath: project.rootPath } : null;
+    return project ? { id: project.id, name: project.name, rootPath: this.projectRoot } : null;
   }
 
   deleteProject(projectId: number): { success: boolean; deletedFiles: number; error?: string } {

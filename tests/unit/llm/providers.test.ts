@@ -319,6 +319,143 @@ describe('LLM Provider Defaults & Configuration', () => {
   });
 });
 
+describe('OpenRouterProvider compatibility', () => {
+  it('uses the OpenRouter endpoint and provider-specific availability message', async () => {
+    const provider = new OpenAIProvider({
+      provider: 'openrouter',
+      model: 'openai/gpt-4o-mini',
+      apiKey: 'test-secret',
+    });
+    expect(provider.name).toBe('openrouter');
+    expect(provider.isAvailable()).toBe(true);
+    expect(validateApiUrl).toHaveBeenCalledWith('https://openrouter.ai/api/v1', 'openrouter');
+  });
+
+  it('does not expose a missing OpenRouter key as an OpenAI error', async () => {
+    const provider = new OpenAIProvider({ provider: 'openrouter', model: 'test', apiKey: '' });
+    await expect(provider.analyze('test')).rejects.toThrow('OpenRouter API key not configured');
+  });
+
+  it('sends explicit OpenRouter reasoning controls only when configured', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        makeJsonResponse({
+          choices: [{ finish_reason: 'stop', message: { content: '{"paths":[]}' } }],
+          usage: { prompt_tokens: 4, completion_tokens: 3 },
+        }),
+      ),
+    );
+    const provider = new OpenAIProvider({
+      provider: 'openrouter',
+      model: 'cohere/north-mini-code:free',
+      apiKey: 'test-secret',
+      reasoning: { effort: 'none', maxTokens: 128, exclude: true },
+    });
+
+    await provider.analyze('synthetic context');
+
+    const [, options] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(JSON.parse(options.body).reasoning).toEqual({
+      effort: 'none',
+      max_tokens: 128,
+      exclude: true,
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it('reports reasoning-only responses without promoting reasoning to final content', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: 'length',
+              message: { role: 'assistant', content: null, reasoning: 'private reasoning' },
+            },
+          ],
+          usage: { prompt_tokens: 22, completion_tokens: 24 },
+        }),
+      }),
+    );
+    const provider = new OpenAIProvider({
+      provider: 'openrouter',
+      model: 'cohere/north-mini-code:free',
+      apiKey: 'test-secret',
+    });
+
+    const result = await provider.analyze('synthetic context');
+
+    expect(result.content).toBe('');
+    expect(result.responseMode).toBe('reasoning-only');
+    expect(result.finishReason).toBe('length');
+    expect(result.reasoningTrace).toEqual(['Provider returned reasoning without a final answer.']);
+    expect(result.reasoningTrace.join(' ')).not.toContain('private reasoning');
+    vi.unstubAllGlobals();
+  });
+
+  it('reports empty responses when reasoning is null or an empty placeholder', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: { content: '   ', reasoning: null, reasoning_details: [] },
+            },
+          ],
+          usage: { prompt_tokens: 4, completion_tokens: 0 },
+        }),
+      }),
+    );
+
+    const provider = new OpenAIProvider({
+      provider: 'openrouter',
+      model: 'openai/gpt-oss-20b:free',
+      apiKey: 'test-secret',
+    });
+    const result = await provider.analyze('synthetic context');
+
+    expect(result.responseMode).toBe('empty');
+    expect(result.reasoningTrace).toEqual(['Provider returned no final answer.']);
+    vi.unstubAllGlobals();
+  });
+
+  it('recognizes structured OpenRouter reasoning details without exposing them', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: 'stop',
+              message: { content: null, reasoning_details: [{ type: 'summary', text: 'private' }] },
+            },
+          ],
+          usage: { prompt_tokens: 4, completion_tokens: 8 },
+        }),
+      }),
+    );
+
+    const provider = new OpenAIProvider({
+      provider: 'openrouter',
+      model: 'openai/gpt-oss-20b:free',
+      apiKey: 'test-secret',
+    });
+    const result = await provider.analyze('synthetic context');
+
+    expect(result.responseMode).toBe('reasoning-only');
+    expect(result.content).toBe('');
+    expect(result.reasoningTrace.join(' ')).not.toContain('private');
+    vi.unstubAllGlobals();
+  });
+});
+
 describe('LLM Provider analyze() — URL Construction & Fetch Mocking', () => {
   describe('AnthropicProvider.analyze', () => {
     it('sends request to /messages endpoint with correct body', async () => {

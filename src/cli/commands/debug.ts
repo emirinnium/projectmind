@@ -39,7 +39,7 @@ export function createDebugCommand(): Command {
       asyncHandler(async (opts: { category?: string; limit: string }) => {
         await withContext(async (ctx) => {
           const { PatternLibrary } = await import('../../parser/pattern-extractor.js');
-          const patterns = new PatternLibrary(ctx.db);
+          const patterns = new PatternLibrary(ctx.db, ctx.kg.getCurrentProjectId());
           const allPatterns = patterns.getPatterns();
 
           let filtered = allPatterns;

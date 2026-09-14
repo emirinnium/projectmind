@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   aggregateRankingScores,
   scoreRankingObservation,
-} from '../../src/core/benchmark/scoring.js';
-import { parseBenchmarkManifest } from '../../src/core/benchmark/manifest.js';
+} from '../../scripts/benchmark/scoring.mjs';
+import { parseBenchmarkManifest } from '../../scripts/benchmark/manifest.mjs';
 
 describe('benchmark scoring', () => {
   it('calculates precision, recall, reciprocal rank and nDCG', () => {
@@ -16,6 +16,24 @@ describe('benchmark scoring', () => {
     expect(score.recallAtK).toBe(1);
     expect(score.reciprocalRank).toBe(1);
     expect(score.ndcg).toBeGreaterThan(0.7);
+  });
+
+  it('does not let duplicate retrieved identities inflate ranking metrics', () => {
+    const score = scoreRankingObservation({
+      id: 'duplicate',
+      expected: ['src/auth.ts'],
+      actual: ['src/auth.ts', 'src/auth.ts', 'src/other.ts'],
+    });
+
+    expect(score).toMatchObject({
+      precisionAtK: 0.5,
+      recallAtK: 1,
+      f1: expect.closeTo(2 / 3, 10),
+      reciprocalRank: 1,
+      ndcg: 1,
+      evaluated: true,
+    });
+    expect(score.precisionAtK).toBeLessThanOrEqual(1);
   });
 
   it('excludes unknown cases from aggregate metrics without deleting them', () => {

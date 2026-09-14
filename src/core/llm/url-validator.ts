@@ -7,6 +7,7 @@
 const OFFICIAL_API_HOSTNAMES: Record<string, string[]> = {
   anthropic: ['api.anthropic.com'],
   openai: ['api.openai.com'],
+  openrouter: ['openrouter.ai'],
   gemini: ['generativelanguage.googleapis.com'],
   groq: ['api.groq.com'],
   ollama: [], // Ollama is self-hosted, so any localhost/private IP is allowed
@@ -39,7 +40,7 @@ export function validateApiUrl(url: string, provider: string): string {
   }
 
   // Check for localhost/private IPs (only allowed for Ollama)
-  const hostname = parsed.hostname.toLowerCase();
+  const hostname = parsed.hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
   if (provider === 'ollama') {
     if (!isLocalOrPrivateHost(hostname)) {
       throw new ApiUrlValidationError(

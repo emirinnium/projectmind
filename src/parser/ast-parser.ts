@@ -3,7 +3,14 @@ import { parseTypeScriptFile } from './ast/parser.js';
 import type { FileStructure, Language } from './types.js';
 
 // Types live in ./types.ts to break the ast-parser <-> ast/parser cycle.
-export type { Language, ParameterInfo, FunctionInfo, ClassInfo, FileStructure } from './types.js';
+export type {
+  Language,
+  ParameterInfo,
+  FunctionInfo,
+  ClassInfo,
+  FileStructure,
+  StaticCallInfo,
+} from './types.js';
 
 export function detectLanguage(filePath: string): Language {
   const ext = extname(filePath);

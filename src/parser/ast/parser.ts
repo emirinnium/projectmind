@@ -1,7 +1,7 @@
 import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import type { Language, FileStructure, FunctionInfo, ClassInfo } from '../types.js';
+import type { Language, FileStructure, FunctionInfo, ClassInfo, StaticCallInfo } from '../types.js';
 import { assertSourceSize, assertSourceTextSize } from '../source-limits.js';
 
 /** JSON module import extensions recognized during parsing */
@@ -33,22 +33,36 @@ function isExported(node: ts.Node): boolean {
   return modifiers.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
 }
 
-function calculateCyclomaticComplexity(node: ts.Node): number {
+/**
+ * Count control-flow decisions for one function. Nested functions are their
+ * own units and are deliberately excluded from the enclosing function's
+ * score; otherwise a callback could make an unrelated parent look complex.
+ */
+export function calculateCyclomaticComplexity(node: ts.Node): number {
   let complexity = 1;
-  function visit(n: ts.Node) {
+  function visit(n: ts.Node, isRoot = false) {
+    if (!isRoot && ts.isFunctionLike(n)) return;
     if (ts.isIfStatement(n) || ts.isConditionalExpression(n)) complexity++;
     if (ts.isCaseClause(n) && !ts.isDefaultClause(n)) complexity++;
     if (ts.isForStatement(n) || ts.isForInStatement(n) || ts.isForOfStatement(n)) complexity++;
     if (ts.isWhileStatement(n) || ts.isDoStatement(n)) complexity++;
+    // A catch clause introduces an alternate control-flow path. A throw is a
+    // terminal transfer within the current path, not a new branch, and is
+    // therefore intentionally excluded from cyclomatic complexity.
+    if (ts.isCatchClause(n)) complexity++;
     if (
       ts.isBinaryExpression(n) &&
       (n.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
-        n.operatorToken.kind === ts.SyntaxKind.BarBarToken)
+        n.operatorToken.kind === ts.SyntaxKind.BarBarToken ||
+        n.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken)
     )
       complexity++;
-    ts.forEachChild(n, visit);
+    if ((ts.isPropertyAccessExpression(n) || ts.isElementAccessExpression(n)) && n.questionDotToken)
+      complexity++;
+    if (ts.isCallExpression(n) && n.questionDotToken) complexity++;
+    ts.forEachChild(n, (child) => visit(child));
   }
-  visit(node);
+  visit(node, true);
   return complexity;
 }
 
@@ -85,6 +99,63 @@ function toFunctionInfo(node: FunctionNode, sourceFile: ts.SourceFile): Function
   };
 }
 
+function calledName(expression: ts.Expression): string | null {
+  if (ts.isIdentifier(expression)) return expression.text;
+  if (ts.isPropertyAccessExpression(expression)) return expression.name.text;
+  if (
+    ts.isElementAccessExpression(expression) &&
+    expression.argumentExpression &&
+    (ts.isStringLiteral(expression.argumentExpression) ||
+      ts.isNoSubstitutionTemplateLiteral(expression.argumentExpression))
+  ) {
+    return expression.argumentExpression.text;
+  }
+  return null;
+}
+
+/** Extract named, statically visible call candidates without guessing dynamic dispatch. */
+function collectStaticCalls(sourceFile: ts.SourceFile): StaticCallInfo[] {
+  const calls: StaticCallInfo[] = [];
+
+  function visit(node: ts.Node, activeFunction: string | null): void {
+    let currentFunction = activeFunction;
+    if (
+      ts.isFunctionDeclaration(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isFunctionExpression(node) ||
+      ts.isArrowFunction(node)
+    ) {
+      const name = node.name?.getText(sourceFile);
+      currentFunction = name && name !== 'anonymous' ? name : null;
+    }
+
+    if (currentFunction && ts.isCallExpression(node)) {
+      const target = calledName(node.expression);
+      if (target && target !== 'require' && target !== 'import') {
+        calls.push({
+          fromFunctionName: currentFunction,
+          toFunctionName: target,
+          line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+        });
+      }
+    }
+
+    ts.forEachChild(node, (child) => visit(child, currentFunction));
+  }
+
+  visit(sourceFile, null);
+  const unique = new Map<string, StaticCallInfo>();
+  for (const call of calls) {
+    unique.set(`${call.fromFunctionName}\0${call.toFunctionName}\0${call.line}`, call);
+  }
+  return [...unique.values()].sort(
+    (left, right) =>
+      left.line - right.line ||
+      left.fromFunctionName.localeCompare(right.fromFunctionName) ||
+      left.toFunctionName.localeCompare(right.toFunctionName),
+  );
+}
+
 export function parseTypeScriptFile(
   filePath: string,
   content?: string,
@@ -101,17 +172,16 @@ export function parseTypeScriptFile(
   const exports: string[] = [];
 
   const hash = createHash('sha256').update(sourceText).digest('hex');
+  const staticCalls = collectStaticCalls(sourceFile);
 
   for (const node of sourceFile.statements) {
     if (ts.isClassDeclaration(node)) {
       const name = node.name?.getText() ?? 'AnonymousClass';
-      const extended = node.heritageClauses?.some((h) => h.token === ts.SyntaxKind.ExtendsKeyword)
-        ? node.heritageClauses
-            .filter((h) => h.token === ts.SyntaxKind.ExtendsKeyword)
-            .map((h) => h.types[0]?.getText())
-            .filter(Boolean)
-            .join(', ')
-        : null;
+      const extendedTypes =
+        node.heritageClauses
+          ?.filter((h) => h.token === ts.SyntaxKind.ExtendsKeyword)
+          .flatMap((h) => h.types.map((type) => type.getText())) ?? [];
+      const extended = extendedTypes.length > 0 ? extendedTypes.join(', ') : null;
       const methodMembers = node.members.filter((m) => ts.isMethodDeclaration(m));
       const propertyMembers = node.members.filter((m) => ts.isPropertyDeclaration(m));
       const methods = methodMembers.map((m) => ({
@@ -145,8 +215,7 @@ export function parseTypeScriptFile(
         implements:
           node.heritageClauses
             ?.filter((h) => h.token === ts.SyntaxKind.ImplementsKeyword)
-            .map((h) => h.types[0]?.getText())
-            .filter(Boolean) ?? [],
+            .flatMap((h) => h.types.map((type) => type.getText())) ?? [],
         methods,
         properties,
         cognitiveLoad: (methodMembers.length * 2 + propertyMembers.length) / 10,
@@ -207,11 +276,16 @@ export function parseTypeScriptFile(
   return {
     filePath,
     language: language ?? 'typescript',
-    sizeBytes: sourceText.length,
+    // `stat.size` and the retrieval/range layers use UTF-8 bytes. Keeping the
+    // persisted size in the same unit is important for incremental scanning:
+    // `String.length` counts UTF-16 code units and would repeatedly invalidate
+    // files containing non-ASCII source text on every scan.
+    sizeBytes: Buffer.byteLength(sourceText, 'utf8'),
     sourceText,
     functions,
     classes,
     imports,
+    staticCalls,
     exports,
     hash,
     lines: sourceText.split(/\r?\n/).length,
@@ -219,8 +293,8 @@ export function parseTypeScriptFile(
 }
 
 /**
- * Recursively scan the AST for dynamic import() calls and add them to the
- * imports list. Handles imports nested in:
+ * Recursively scan the AST for dynamic import() and static CommonJS require()
+ * calls and add them to the imports list. Handles imports nested in:
  * - Variable declarations
  * - Assignment expressions
  * - Await expressions
@@ -250,6 +324,25 @@ function scanForDynamicImports(
           });
           return; // Don't recurse into the import call arguments
         }
+      }
+    }
+
+    // CommonJS packages remain first-class JS/TS projects. Record only the
+    // static string form; computed require() calls cannot be trusted as graph
+    // edges and stay outside the static dependency contract.
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'require'
+    ) {
+      const arg = node.arguments[0];
+      if (arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))) {
+        imports.push({
+          source: arg.text,
+          named: [],
+          kind: 'require',
+        });
+        return;
       }
     }
 

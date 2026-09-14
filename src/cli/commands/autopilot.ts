@@ -2,12 +2,13 @@ import { reportSuppressedError } from '../../utils/errors.js';
 import { Command } from 'commander';
 import { asyncHandler, output, loadConfig, withService } from '@/cli/utils/shared.js';
 import { existsSync, readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { currentModuleDir } from '@/cli/utils/version.js';
 import { isValidRiskLevel, VALID_RISK_LEVELS } from '../../core/predictive/risk-levels.js';
 import type { RiskLevel } from '../../core/predictive/risk-levels.js';
 import { runGates } from './autopilot-engine.js';
+import { assertProjectPath } from '../../core/security/path-security.js';
 
 const HOOK_MARKER = 'projectmind-autopilot';
 
@@ -27,6 +28,13 @@ export function buildAutopilotHookScript(
     `exec ${quotePosixShellArg(nodeExecutable)} ${quotePosixShellArg(cliEntry)} autopilot pre-commit`,
     '',
   ].join('\n');
+}
+
+/** Keep Git's configured hooksPath inside the trusted project root. */
+export function resolveGitHooksDirectory(gitHooksPath: string, projectRoot: string): string {
+  const candidate = gitHooksPath.trim();
+  if (!candidate) throw new Error('Git returned an empty hooks directory.');
+  return assertProjectPath(candidate, projectRoot, { allowDirectory: true });
 }
 
 export function createAutopilotCommand(): Command {
@@ -73,7 +81,7 @@ export function createAutopilotCommand(): Command {
               `Invalid --impact-risk-threshold value: "${rawThreshold}". ` +
                 `Must be one of: ${VALID_RISK_LEVELS.join(', ')}.`,
             );
-            process.exit(1);
+            process.exitCode = 1;
             return;
           }
           const threshold: RiskLevel = rawThreshold;
@@ -105,7 +113,9 @@ export function createAutopilotCommand(): Command {
               }
             }
 
-            if (!allPassed) process.exit(1);
+            // Set the exit code after withService has completed so its
+            // database/cache cleanup always runs on both Windows and POSIX.
+            if (!allPassed) process.exitCode = 1;
           });
         },
       ),
@@ -118,17 +128,24 @@ export function createAutopilotCommand(): Command {
     .action(
       asyncHandler(async (opts: { uninstall?: boolean }) => {
         const root = loadConfig().projectRoot;
-        let hooksDir: string;
+        let gitHooksPath: string;
         try {
-          const gitHooksPath = execFileSync('git', ['rev-parse', '--git-path', 'hooks'], {
+          gitHooksPath = execFileSync('git', ['rev-parse', '--git-path', 'hooks'], {
             cwd: root,
             encoding: 'utf8',
           }).trim();
-          hooksDir = resolve(root, gitHooksPath);
         } catch {
           throw new Error(`Not a Git repository: ${root}`);
         }
-        const hookPath = join(hooksDir, 'pre-commit');
+        let hooksDir: string;
+        try {
+          hooksDir = resolveGitHooksDirectory(gitHooksPath, root);
+        } catch (error) {
+          throw new Error(
+            `Git hooks directory is outside the project root: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        const hookPath = assertProjectPath(join(hooksDir, 'pre-commit'), root);
 
         if (opts.uninstall) {
           if (existsSync(hookPath)) {

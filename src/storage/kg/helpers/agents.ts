@@ -9,15 +9,17 @@ import {
 
 export function startAgentSession(ctx: KgContext, agentName: string): number {
   const result = ctx.db
-    .prepare('INSERT INTO agent_sessions (agent_name) VALUES (?)')
-    .run(agentName);
+    .prepare('INSERT INTO agent_sessions (agent_name, project_id) VALUES (?, ?)')
+    .run(agentName, ctx.currentProjectId);
   return Number(result.lastInsertRowid);
 }
 
 export function endAgentSession(ctx: KgContext, sessionId: number): boolean {
   const result = ctx.db
-    .prepare('UPDATE agent_sessions SET ended_at = CURRENT_TIMESTAMP WHERE id = ?')
-    .run(sessionId);
+    .prepare(
+      'UPDATE agent_sessions SET ended_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?',
+    )
+    .run(sessionId, ctx.currentProjectId);
   return Number(result.changes) > 0;
 }
 
@@ -28,6 +30,12 @@ export function storeMemory(
   key: string,
   value: string,
 ): void {
+  const session = ctx.db
+    .prepare('SELECT project_id FROM agent_sessions WHERE id = ?')
+    .get(sessionId) as { project_id?: number } | undefined;
+  if (!session || Number(session.project_id) !== ctx.currentProjectId) {
+    throw new Error(`Session ${sessionId} does not belong to the current project.`);
+  }
   ctx.db
     .prepare(`INSERT INTO agent_memory (session_id, scope, key, value) VALUES (?, ?, ?, ?)`)
     .run(sessionId, scope, key, value);
@@ -39,10 +47,12 @@ export function getMemory(ctx: KgContext, scope: string, key?: string): MemoryEn
   // this path.
   const now = new Date().toISOString();
   const sql = key
-    ? 'SELECT * FROM agent_memory WHERE scope = ? AND key = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC'
-    : 'SELECT * FROM agent_memory WHERE scope = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC';
+    ? 'SELECT m.* FROM agent_memory m JOIN agent_sessions s ON s.id = m.session_id WHERE s.project_id = ? AND m.scope = ? AND m.key = ? AND (m.expires_at IS NULL OR m.expires_at > ?) ORDER BY m.created_at DESC'
+    : 'SELECT m.* FROM agent_memory m JOIN agent_sessions s ON s.id = m.session_id WHERE s.project_id = ? AND m.scope = ? AND (m.expires_at IS NULL OR m.expires_at > ?) ORDER BY m.created_at DESC';
   const rows = (
-    key ? ctx.db.prepare(sql).all(scope, key, now) : ctx.db.prepare(sql).all(scope, now)
+    key
+      ? ctx.db.prepare(sql).all(ctx.currentProjectId, scope, key, now)
+      : ctx.db.prepare(sql).all(ctx.currentProjectId, scope, now)
   ) as Record<string, SQLOutputValue>[];
   return rows.map((r) => ({
     id: r.id as number,
@@ -161,10 +171,12 @@ export function getAgentSessions(
   limit: number = 50,
 ): AgentSession[] {
   const sql = agentName
-    ? 'SELECT * FROM agent_sessions WHERE agent_name = ? ORDER BY started_at DESC LIMIT ?'
-    : 'SELECT * FROM agent_sessions ORDER BY started_at DESC LIMIT ?';
+    ? 'SELECT * FROM agent_sessions WHERE project_id = ? AND agent_name = ? ORDER BY started_at DESC LIMIT ?'
+    : 'SELECT * FROM agent_sessions WHERE project_id = ? ORDER BY started_at DESC LIMIT ?';
   const rows = (
-    agentName ? ctx.db.prepare(sql).all(agentName, limit) : ctx.db.prepare(sql).all(limit)
+    agentName
+      ? ctx.db.prepare(sql).all(ctx.currentProjectId, agentName, limit)
+      : ctx.db.prepare(sql).all(ctx.currentProjectId, limit)
   ) as Record<string, SQLOutputValue>[];
   // Corrupt JSON in a single row must not throw through every session reader
   // (e.g. the skill-recommend CLI) — fall back to the empty-column semantics.

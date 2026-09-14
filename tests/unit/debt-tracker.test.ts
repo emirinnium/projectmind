@@ -72,6 +72,51 @@ describe('DebtTracker', () => {
     });
   });
 
+  describe('detector snapshot refresh', () => {
+    it('removes stale unresolved detector findings while preserving resolved history', async () => {
+      const db = dbManager.init();
+      db.prepare(
+        `INSERT INTO debt_items (type, description, severity, suggestion, reasoning_trace, resolved)
+         VALUES (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?)`,
+      ).run(
+        'pattern_drift',
+        'stale pattern',
+        'high',
+        'Fix',
+        '[]',
+        0,
+        'architectural_drift',
+        'stale architecture',
+        'high',
+        'Fix',
+        '[]',
+        0,
+        'change_frequency',
+        'resolved churn',
+        'low',
+        'Review',
+        '[]',
+        1,
+      );
+
+      const kg = {
+        getAllFiles: () => [],
+        getAgentSessions: () => [],
+        getCurrentProject: () => ({ rootPath: process.cwd() }),
+      };
+      const isolatedTracker = new DebtTracker(db, kg as any, { analyze: () => ({}) } as any);
+
+      await isolatedTracker.detectDebt();
+
+      const rows = db
+        .prepare('SELECT type, description, resolved FROM debt_items ORDER BY id')
+        .all() as Array<{ type: string; description: string; resolved: number }>;
+      expect(rows).toEqual([
+        { type: 'change_frequency', description: 'resolved churn', resolved: 1 },
+      ]);
+    });
+  });
+
   describe('resolveDebt', () => {
     it('does not throw for non-existent debt id', () => {
       expect(() => tracker.resolveDebt(999)).not.toThrow();

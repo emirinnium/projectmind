@@ -638,4 +638,45 @@ describe('DebtPersistence', () => {
       expect(count.cnt).toBe(0);
     });
   });
+
+  describe('clearUnresolvedType()', () => {
+    it('removes only unresolved findings for the selected detector type', () => {
+      const persistence = new DebtPersistence(db);
+      persistence.createDebtItem({
+        type: 'pattern_drift',
+        description: 'stale open pattern',
+        severity: 'low',
+        suggestion: 'Review',
+        reasoningTrace: ['heuristic'],
+        filePath: null,
+      });
+      const resolved = persistence.createDebtItem({
+        type: 'pattern_drift',
+        description: 'resolved pattern',
+        severity: 'high',
+        suggestion: 'Fix',
+        reasoningTrace: ['contract'],
+        filePath: null,
+      });
+      persistence.resolveDebt(resolved.id);
+      persistence.createDebtItem({
+        type: 'change_frequency',
+        description: 'different detector',
+        severity: 'low',
+        suggestion: 'Review history',
+        reasoningTrace: ['churn'],
+        filePath: null,
+      });
+
+      persistence.clearUnresolvedType('pattern_drift');
+
+      const rows = db
+        .prepare('SELECT type, description, resolved FROM debt_items ORDER BY id')
+        .all() as Array<{ type: string; description: string; resolved: number }>;
+      expect(rows).toEqual([
+        { type: 'pattern_drift', description: 'resolved pattern', resolved: 1 },
+        { type: 'change_frequency', description: 'different detector', resolved: 0 },
+      ]);
+    });
+  });
 });

@@ -28,7 +28,7 @@ class HealthCommand extends BaseCommand {
           // packages are expected to remain outside the local knowledge graph.
           const { getDatabase } = await import('../../storage/database.js');
           const database = getDatabase();
-          const q = <T>(sql: string): T => database.prepare(sql).get() as T;
+          const projectId = ctx.kg.getCurrentProjectId();
           const importRows = database
             .prepare(
               'SELECT i.source, i.resolved FROM imports i JOIN files f ON f.id = i.file_id WHERE f.project_id = ?',
@@ -42,11 +42,15 @@ class HealthCommand extends BaseCommand {
           const importResolutionRate =
             localImports.length > 0 ? resolvedLocalImports / localImports.length : 1;
           const externalImportCount = importRows.length - localImports.length;
-          const patternStats = q<{ n: number; hi: number }>(
-            'SELECT COUNT(*) AS n, SUM(CASE WHEN confidence >= 0.8 THEN 1 ELSE 0 END) AS hi FROM patterns',
-          ) ?? { n: 0, hi: 0 };
+          const patternStats = (database
+            .prepare(
+              'SELECT COUNT(*) AS n, SUM(CASE WHEN confidence >= 0.8 THEN 1 ELSE 0 END) AS hi FROM patterns WHERE project_id = ?',
+            )
+            .get(projectId) as { n: number; hi: number } | undefined) ?? { n: 0, hi: 0 };
           const sessionCount = (
-            database.prepare('SELECT COUNT(*) AS n FROM agent_sessions').get() as { n: number }
+            database
+              .prepare('SELECT COUNT(*) AS n FROM agent_sessions WHERE project_id = ?')
+              .get(projectId) as { n: number }
           ).n;
 
           const health = {

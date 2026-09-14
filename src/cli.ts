@@ -8,6 +8,7 @@ import { currentModuleDir, resolvePackageVersion } from './cli/utils/version.js'
 import { buildProgram } from './cli/program.js';
 import { confineOutputPathFlags } from './mcp/tools/_shared.js';
 import { loadConfig } from './utils/config.js';
+import { allowRootOutsideProject, getStartupProjectRoot } from './cli/utils/startup-security.js';
 
 const pkgVersion = resolvePackageVersion(currentModuleDir(import.meta.url));
 const cliArgs = process.argv.slice(2);
@@ -47,12 +48,18 @@ try {
 }
 
 const program = new Command();
+let startupBlocked = false;
 
 try {
-  confineOutputPathFlags(process.argv.slice(2), loadConfig().projectRoot);
+  const cliArgs = process.argv.slice(2);
+  const configuredRoot = loadConfig().projectRoot;
+  confineOutputPathFlags(cliArgs, getStartupProjectRoot(cliArgs, configuredRoot), {
+    allowRootOutsideProject: allowRootOutsideProject(cliArgs),
+  });
 } catch (error: unknown) {
   logger.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+  process.exitCode = 1;
+  startupBlocked = true;
 }
 
 program
@@ -60,29 +67,25 @@ program
   .description('Living Codebase Intelligence Layer for AI Agents')
   .version(pkgVersion);
 
-buildProgram()
-  .then(async (loaded) => {
-    // Merge every registered command from the shared builder into the root
-    // program that owns version/banner/exit handling.
-    for (const cmd of loaded.commands) {
-      program.addCommand(cmd);
-    }
+if (!startupBlocked) {
+  buildProgram()
+    .then(async (loaded) => {
+      // Merge every registered command from the shared builder into the root
+      // program that owns version/banner/exit handling.
+      for (const cmd of loaded.commands) {
+        program.addCommand(cmd);
+      }
 
-    // NOTE: exitOverride is intentionally NOT used here.
-    //
-    // With exitOverride active, commander intercepts process.exit() calls
-    // made by action handlers and re-throws them as CommanderError. Since
-    // asyncHandler calls process.exit(0) on success, every successful
-    // command would be caught as an "error" and re-exited with code 1.
-    // Without exitOverride, process.exit() calls pass through directly,
-    // giving correct exit codes for free.
+      // Keep Commander in its default mode. Commands set process.exitCode on
+      // expected failures so their context/service cleanup can finish first.
 
-    await program.parseAsync(process.argv).catch((err: unknown) => {
-      logger.error(`CLI error: ${err instanceof Error ? err.message : String(err)}`);
-      process.exit(1);
+      await program.parseAsync(process.argv).catch((err: unknown) => {
+        logger.error(`CLI error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exitCode = 1;
+      });
+    })
+    .catch((err: unknown) => {
+      logger.error(`Failed to initialize CLI: ${err instanceof Error ? err.message : String(err)}`);
+      process.exitCode = 1;
     });
-  })
-  .catch((err: unknown) => {
-    logger.error(`Failed to initialize CLI: ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(1);
-  });
+}

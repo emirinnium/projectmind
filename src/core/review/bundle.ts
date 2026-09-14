@@ -3,6 +3,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { extname } from 'node:path';
 import { assertProjectPath } from '../security/path-security.js';
 import { policyIncludesFile, type ReviewPolicy } from './policy.js';
+import type { ReviewGraphClosure } from './graph-closure.js';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
@@ -28,12 +29,14 @@ export interface ReviewBundlePlan {
   excluded: Array<{ relativePath: string; reason: string }>;
   inputHash: string;
   allowedLineRanges?: Record<string, Array<[number, number]>>;
+  graphClosure?: ReviewGraphClosure;
 }
 
 export interface ReviewBundleOptions {
   maxBytes?: number;
   maxTokens?: number;
   allowedLineRanges?: Record<string, Array<[number, number]>>;
+  graphClosure?: ReviewGraphClosure;
 }
 
 function lineEnding(content: string): ReviewBundleFile['lineEnding'] {
@@ -107,6 +110,7 @@ export function planReviewBundles(
         maxBytes,
         maxTokens,
         allowedLineRanges: options.allowedLineRanges ?? null,
+        graphClosure: options.graphClosure ?? null,
         policy: {
           version: policy.version,
           mode: policy.mode,
@@ -148,5 +152,11 @@ export function planReviewBundles(
     tokens += file.estimatedTokens;
   }
   flush();
-  return { bundles, excluded, inputHash, allowedLineRanges: options.allowedLineRanges };
+  return {
+    bundles,
+    excluded,
+    inputHash,
+    allowedLineRanges: options.allowedLineRanges,
+    graphClosure: options.graphClosure,
+  };
 }

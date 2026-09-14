@@ -4,7 +4,7 @@ import { decodeEmbedding, encodeEmbedding } from '../../../src/core/embeddings/e
 describe('embedding codec', () => {
   it('round-trips finite values through the compact BLOB format', () => {
     const values = [1, -0.25, 0, 42.5];
-    expect(decodeEmbedding(encodeEmbedding(values))).toEqual(values);
+    expect(decodeEmbedding(new Uint8Array(encodeEmbedding(values)))).toEqual(values);
   });
 
   it('reads legacy JSON text, including numeric strings', () => {

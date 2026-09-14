@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -10,7 +11,9 @@ import {
 } from '../../core/search/intent-engine.js';
 import { ImpactPredictor } from '../../core/predictive/impact-predictor.js';
 import type { CodeChange, PredictorConfig } from '../../core/predictive/types.js';
-import { ContextBudgetOptimizer } from '../../core/context/budget-optimizer.js';
+import { ContextBudgetOptimizer, createFullFilePlan } from '../../core/context/budget-optimizer.js';
+import { calculateContextRoi, compareContextPlans } from '../../core/context/roi.js';
+import { createContextTokenCounter, countContextFileTokens } from '../../core/context/tokenizer.js';
 import type { ContextItem, ContextTaskType } from '../../core/context/types.js';
 import { IntegrityGuard } from '../../core/kg/integrity-guard.js';
 import { IntentBroadcastService } from '../../core/collaboration/broadcast.js';
@@ -22,6 +25,8 @@ import {
 } from '../../core/patterns/cross-project.js';
 import type { AbstractTemplate } from '../../core/patterns/types.js';
 import { confineToProject } from './_shared.js';
+import { asUntrustedContent } from '@/mcp/security/untrusted-content.js';
+import { actionableError, actionableMcpError } from '@/utils/actionable-error.js';
 
 /**
  * WP8 capability tools (F38): intent search, predictive impact, context
@@ -66,11 +71,15 @@ function json(result: object): { content: Array<{ type: 'text'; text: string }> 
   return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
 }
 
-function noDb(tool: string): { content: Array<{ type: 'text'; text: string }> } {
-  return json({
-    success: false,
-    error: `${tool} requires the project database, which is not initialized.`,
-  });
+function noDb(tool: string): ReturnType<typeof actionableMcpError> {
+  return actionableMcpError(
+    actionableError(
+      'database.not-initialized',
+      `${tool} requires the project database, which is not initialized.`,
+      ['Run pm scan first, then retry the MCP tool.'],
+      { cause: 'stale-index', retryable: true },
+    ),
+  );
 }
 
 /** search_intent — hybrid intent-driven semantic navigation (IntentEngine). */
@@ -82,7 +91,7 @@ function registerSearchIntentTool(server: McpServer, deps: McpDependencies): voi
       description:
         'Search the codebase with a natural-language task query (hybrid semantic + structural + intent scoring).\n' +
         'WHEN to call: when you need files relevant to a TASK ("where do I add rate limiting?") rather than a literal string.\n' +
-        'For literal text matching use projectmind_run_cli with pm search instead (run_cli on clients without the projectmind_ prefix).',
+        'For literal text matching use the ProjectMind search capability exposed by your client; run_cli intentionally does not accept free-form query arguments.',
       inputSchema: {
         query: z
           .string()
@@ -122,13 +131,19 @@ function registerSearchIntentTool(server: McpServer, deps: McpDependencies): voi
           taskType: classifyTask(args.query),
           intent: engine.classifyIntent({ naturalLanguage: args.query }),
           count: results.length,
-          results,
+          results: results.map((result) => ({
+            ...result,
+            ...(result.snippet
+              ? {
+                  untrustedContent: asUntrustedContent(result.snippet, 'source', {
+                    relativePath: result.filePath.replace(/\\/g, '/'),
+                  }),
+                }
+              : {}),
+          })),
         });
       } catch (error) {
-        return json({
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        return actionableMcpError(error);
       }
     },
   );
@@ -191,10 +206,7 @@ function registerPredictImpactTool(server: McpServer, deps: McpDependencies): vo
           predictedFailures: predictions,
         });
       } catch (error) {
-        return json({
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        return actionableMcpError(error);
       }
     },
   );
@@ -221,6 +233,12 @@ function registerPlanContextBudgetTool(server: McpServer, deps: McpDependencies)
                 .positive()
                 .optional()
                 .describe('Token cost (auto-estimated when omitted)'),
+              bytes: z
+                .number()
+                .int()
+                .nonnegative()
+                .optional()
+                .describe('Measured UTF-8 source bytes (auto-read when the file exists)'),
               relevanceScore: z
                 .number()
                 .min(0)
@@ -239,6 +257,13 @@ function registerPlanContextBudgetTool(server: McpServer, deps: McpDependencies)
           .min(1)
           .describe('Candidate files'),
         budget: z.number().int().positive().describe('Token budget to respect'),
+        inputPricePer1k: z
+          .number()
+          .finite()
+          .min(0)
+          .max(1000)
+          .optional()
+          .describe('Optional provider input price in USD per 1,000 estimated tokens'),
         taskType: z
           .enum(['bug fix', 'feature', 'refactor', 'test'])
           .optional()
@@ -247,10 +272,24 @@ function registerPlanContextBudgetTool(server: McpServer, deps: McpDependencies)
           .enum(['greedy', 'dp', 'adaptive'])
           .optional()
           .describe('Selection strategy (default dp with greedy fallback)'),
+        tokenizer: z
+          .enum(['heuristic', 'transformers'])
+          .optional()
+          .describe('Token counting mode; transformers is optional and may load a local model'),
+        tokenizerModel: z
+          .string()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe('Transformers tokenizer model identifier'),
       },
     },
     async (args) => {
       try {
+        const tokenCounter = await createContextTokenCounter({
+          mode: args.tokenizer,
+          model: args.tokenizerModel,
+        });
         for (const f of args.files) {
           confineToProject(f.path, deps.projectRoot);
         }
@@ -258,23 +297,60 @@ function registerPlanContextBudgetTool(server: McpServer, deps: McpDependencies)
           strategy: args.strategy,
           taskType: args.taskType,
         });
-        const items: ContextItem[] = args.files.map((f) => ({
-          path: f.path,
-          tokens:
-            f.tokens ?? ContextBudgetOptimizer.tokenEstimator(resolve(deps.projectRoot, f.path)),
-          relevanceScore: f.relevanceScore ?? 0.5,
-          recentlyChanged: f.recentlyChanged,
-          importedByQueryFiles: f.importedByQueryFiles,
-          semanticMatch: f.semanticMatch,
-          errorHandling: f.errorHandling,
-          apiSurface: f.apiSurface,
-          couplingScore: f.couplingScore,
-          isTestFile: f.isTestFile,
-        }));
+        const items: ContextItem[] = [];
+        for (const f of args.files) {
+          const absolutePath = resolve(deps.projectRoot, f.path);
+          items.push({
+            path: f.path,
+            tokens:
+              f.tokens ??
+              (tokenCounter.mode === 'heuristic'
+                ? ContextBudgetOptimizer.tokenEstimator(absolutePath)
+                : await countContextFileTokens(absolutePath, tokenCounter)),
+            bytes: f.bytes ?? (existsSync(absolutePath) ? statSync(absolutePath).size : undefined),
+            relevanceScore: f.relevanceScore ?? 0.5,
+            recentlyChanged: f.recentlyChanged,
+            importedByQueryFiles: f.importedByQueryFiles,
+            semanticMatch: f.semanticMatch,
+            errorHandling: f.errorHandling,
+            apiSurface: f.apiSurface,
+            couplingScore: f.couplingScore,
+            isTestFile: f.isTestFile,
+          });
+        }
         const plan = optimizer.optimize(
           items,
           args.budget,
           args.taskType as ContextTaskType | undefined,
+        );
+        const roiOptions = {
+          inputPricePer1k: args.inputPricePer1k,
+          tokenMeasurement: tokenCounter.mode,
+          tokenizerModel: tokenCounter.model ?? undefined,
+        } as const;
+        const roi = calculateContextRoi(items, plan, roiOptions);
+        const fullFilePlan = createFullFilePlan(items);
+        const planComparisons = compareContextPlans(
+          items,
+          [
+            { variant: 'full-file', plan: fullFilePlan },
+            { variant: 'budgeted-file', plan },
+            {
+              variant: 'byte-range',
+              limitations: [
+                'No source ranges were supplied to this tool; use get_source_range or get_source_symbol_range to produce a bounded range first.',
+              ],
+            },
+            {
+              variant: 'canonical-example',
+              limitations: ['Canonical-example selection is not part of this budget invocation.'],
+            },
+            {
+              variant: 'graph-closure',
+              limitations: ['Graph closure was not requested by this budget invocation.'],
+            },
+          ],
+          roiOptions,
         );
         return json({
           success: true,
@@ -284,13 +360,14 @@ function registerPlanContextBudgetTool(server: McpServer, deps: McpDependencies)
             files: plan.files,
             excludedFiles: plan.excludedFiles,
             compressionStrategy: plan.compressionStrategy,
+            roi,
+            planComparisons,
           },
+          roi,
+          planComparisons,
         });
       } catch (error) {
-        return json({
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        return actionableMcpError(error);
       }
     },
   );
@@ -342,10 +419,7 @@ function registerCheckKgIntegrityTool(server: McpServer, deps: McpDependencies):
           analysis: guard.getEvidenceStatus(),
         });
       } catch (error) {
-        return json({
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        return actionableMcpError(error);
       }
     },
   );
@@ -411,10 +485,7 @@ function registerBroadcastIntentTool(server: McpServer, deps: McpDependencies): 
           broadcast,
         });
       } catch (error) {
-        return json({
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        return actionableMcpError(error);
       }
     },
   );
@@ -446,10 +517,7 @@ function registerCheckIntentConflictsTool(server: McpServer, deps: McpDependenci
         );
         return json({ success: true, ...prediction });
       } catch (error) {
-        return json({
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        return actionableMcpError(error);
       }
     },
   );
@@ -531,10 +599,7 @@ function registerFindPatternsTool(server: McpServer, deps: McpDependencies): voi
           })),
         });
       } catch (error) {
-        return json({
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        return actionableMcpError(error);
       }
     },
   );

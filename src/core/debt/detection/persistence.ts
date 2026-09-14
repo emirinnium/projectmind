@@ -305,6 +305,6 @@ export class DebtPersistence {
   }
 
   clearPatterns(): void {
-    this.getStmt('DELETE FROM patterns').run();
+    this.getStmt('DELETE FROM patterns WHERE project_id = ?').run(this.projectId);
   }
 }

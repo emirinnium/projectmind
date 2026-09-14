@@ -1,11 +1,18 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
 import { toolCacheHintMeta } from './list.js';
 import { measureInvocation } from '@/core/telemetry/invocation.js';
-import { actionableMcpError, toActionableError } from '@/utils/actionable-error.js';
+import {
+  actionableMcpError,
+  toActionableError,
+  type ActionableErrorShape,
+} from '@/utils/actionable-error.js';
+import { asUntrustedContent } from '@/mcp/security/untrusted-content.js';
+import type { McpProjectScopeRuntime } from './project-scope.js';
 export { parityAnnotations } from './parity-annotations.js';
 
 /** Root commands that must never be launched through the MCP surface. */
-export const BLOCKED_ROOT_COMMANDS = new Set(['mcp', 'init']);
+export const BLOCKED_ROOT_COMMANDS = new Set(['mcp', 'init', 'init-mcp', 'mcp-init']);
 
 /**
  * Destructive subcommands blocked through the agent-facing MCP surface
@@ -24,13 +31,23 @@ const DESTRUCTIVE_SUBCOMMANDS: Record<string, Set<string>> = {
 
 /**
  * True when the given argv vector targets a blocked root or a destructive
- * subcommand. argv[0] is the root command, argv[1] the subcommand (if any).
+ * subcommand.
+ *
+ * The MCP bridge accepts an agent-supplied argument vector, so options may be
+ * interleaved with values. Never assume a destructive token is argv[1].
  */
 export function isBlockedCliInvocation(argv: string[]): boolean {
   if (argv.length === 0) return true;
   if (BLOCKED_ROOT_COMMANDS.has(argv[0])) return true;
   const subs = DESTRUCTIVE_SUBCOMMANDS[argv[0]];
-  return !!subs && argv.length > 1 && subs.has(argv[1]);
+  if (!subs) return false;
+
+  for (const token of argv.slice(1)) {
+    if (subs.has(token)) return true;
+    // Commander also accepts boolean options in --flag=true form.
+    if (argv[0] === 'layers' && token.startsWith('--auto-fix=')) return true;
+  }
+  return false;
 }
 
 /**
@@ -96,12 +113,17 @@ export const MCP_CORE_TOOL_NAMES = [
   'suggest_refactor',
   'check_contracts',
   'auto_fix',
+  'record_autofix_feedback',
+  'recommend_autofix',
+  'set_autofix_feedback_opt_out',
+  'reset_autofix_feedback',
   'register_file_watch',
   'get_file_status',
   'sync_context',
   'unregister_file_watch',
   'agent_locks',
   'predict_merge_risk',
+  'arbitrate_agents',
   'predict_impact_risk',
   'ingest_trace',
   'structural_search',
@@ -116,6 +138,7 @@ export const MCP_CORE_TOOL_NAMES = [
   'generate_embedding',
   'get_embedding_provider',
   'analyze_taint',
+  'exploit_path',
   'record_taint',
   'store_team_memory',
   'get_team_memories',
@@ -128,6 +151,11 @@ export const MCP_CORE_TOOL_NAMES = [
   'check_intent_conflicts',
   'find_patterns',
   'semantic_search',
+  'record_search_feedback',
+  'record_session_event',
+  'get_session_insights',
+  'predict_bug_surface',
+  'ask_codebase',
   'find_symbol_references',
   'find_symbol_definition',
   'suggest_next_files',
@@ -137,7 +165,12 @@ export const MCP_CORE_TOOL_NAMES = [
   'prove_claim',
   'verify_freshness',
   'get_source_range',
+  'get_source_symbol_range',
   'get_invocation_metrics',
+  'evidence_ledger',
+  'record_evidence',
+  'agent_replay',
+  'record_replay_event',
   'review_project',
   'get_canonical_example',
   'resource_subscribe',
@@ -183,7 +216,9 @@ const REVERSIBLE_IDEMPOTENT: CompleteToolAnnotations = {
  */
 export const TOOL_ANNOTATIONS: Readonly<Record<string, CompleteToolAnnotations>> = {
   check_coherence: OPEN_WORLD_READ_ONLY,
-  get_context: READ_ONLY_LOCAL,
+  // get_context tracks access and records payload-free evidence/replay
+  // metadata when a database is available; it is therefore derived-write.
+  get_context: WRITE_DERIVED,
   store_memory: WRITE_DERIVED,
   get_memory: READ_ONLY_LOCAL,
   debt_report: WRITE_DERIVED,
@@ -208,12 +243,19 @@ export const TOOL_ANNOTATIONS: Readonly<Record<string, CompleteToolAnnotations>>
   suggest_refactor: READ_ONLY_LOCAL,
   check_contracts: READ_ONLY_LOCAL,
   auto_fix: DESTRUCTIVE_WRITE,
+  record_autofix_feedback: WRITE_DERIVED,
+  recommend_autofix: READ_ONLY_LOCAL,
+  set_autofix_feedback_opt_out: WRITE_DERIVED,
+  reset_autofix_feedback: DESTRUCTIVE_WRITE,
   register_file_watch: WRITE_DERIVED,
   get_file_status: READ_ONLY_LOCAL,
   sync_context: WRITE_DERIVED,
   unregister_file_watch: REVERSIBLE_IDEMPOTENT,
   agent_locks: WRITE_DERIVED,
   predict_merge_risk: READ_ONLY_LOCAL,
+  // Arbitration records only payload-free hashes/summary metadata by default;
+  // it never mutates source files or git state.
+  arbitrate_agents: WRITE_DERIVED,
   predict_impact_risk: READ_ONLY_LOCAL,
   ingest_trace: WRITE_DERIVED,
   structural_search: DESTRUCTIVE_WRITE,
@@ -228,6 +270,7 @@ export const TOOL_ANNOTATIONS: Readonly<Record<string, CompleteToolAnnotations>>
   generate_embedding: OPEN_WORLD_READ_ONLY,
   get_embedding_provider: READ_ONLY_LOCAL,
   analyze_taint: READ_ONLY_LOCAL,
+  exploit_path: READ_ONLY_LOCAL,
   record_taint: WRITE_DERIVED,
   store_team_memory: WRITE_EXTERNAL,
   get_team_memories: READ_ONLY_LOCAL,
@@ -240,6 +283,11 @@ export const TOOL_ANNOTATIONS: Readonly<Record<string, CompleteToolAnnotations>>
   check_intent_conflicts: READ_ONLY_LOCAL,
   find_patterns: READ_ONLY_LOCAL,
   semantic_search: OPEN_WORLD_READ_ONLY,
+  record_search_feedback: WRITE_DERIVED,
+  record_session_event: WRITE_DERIVED,
+  get_session_insights: READ_ONLY_LOCAL,
+  predict_bug_surface: READ_ONLY_LOCAL,
+  ask_codebase: OPEN_WORLD_READ_ONLY,
   find_symbol_references: READ_ONLY_LOCAL,
   find_symbol_definition: READ_ONLY_LOCAL,
   suggest_next_files: READ_ONLY_LOCAL,
@@ -254,12 +302,22 @@ export const TOOL_ANNOTATIONS: Readonly<Record<string, CompleteToolAnnotations>>
   prove_claim: READ_ONLY_LOCAL,
   verify_freshness: READ_ONLY_LOCAL,
   get_source_range: READ_ONLY_LOCAL,
+  get_source_symbol_range: READ_ONLY_LOCAL,
   get_invocation_metrics: READ_ONLY_LOCAL,
-  review_project: READ_ONLY_LOCAL,
+  evidence_ledger: READ_ONLY_LOCAL,
+  record_evidence: WRITE_DERIVED,
+  agent_replay: READ_ONLY_LOCAL,
+  record_replay_event: WRITE_DERIVED,
+  // Review persists payload-free decision metadata in the evidence ledger
+  // and replay chain; it never writes source files.
+  review_project: WRITE_DERIVED,
   get_canonical_example: READ_ONLY_LOCAL,
   resource_subscribe: REVERSIBLE_IDEMPOTENT,
   resource_unsubscribe: REVERSIBLE_IDEMPOTENT,
 };
+
+/** Project-management tools intentionally operate on the global project list. */
+const GLOBAL_PROJECT_TOOLS = new Set(['list_projects', 'create_project', 'switch_project']);
 
 /** Return a bounded payload/latency budget for every dedicated or parity tool. */
 export function getMcpToolBudget(name: string): McpToolBudget {
@@ -275,8 +333,13 @@ export function getMcpToolBudget(name: string): McpToolBudget {
     normalized.includes('context') ||
     normalized.includes('review') ||
     normalized.includes('graph') ||
+    normalized === 'scale_report' ||
+    normalized === 'kg_stats' ||
+    normalized.includes('diagram') ||
     normalized.includes('search') ||
-    normalized.includes('impact');
+    normalized.includes('impact') ||
+    normalized.includes('symbol_references') ||
+    normalized.includes('canonical_example');
   const latencyClass = external
     ? 'external'
     : heavy
@@ -323,36 +386,130 @@ function addActionableFailureDetails(value: unknown): unknown {
   const record = value as Record<string, unknown>;
   if (!Array.isArray(record.content)) return value;
   let changed = false;
+  let topLevelError: ActionableErrorShape | undefined;
   const content = record.content.map((block) => {
     if (!block || typeof block !== 'object') return block;
     const contentBlock = block as Record<string, unknown>;
     if (contentBlock.type !== 'text' || typeof contentBlock.text !== 'string') return block;
-    let payload: Record<string, unknown>;
+    let payload: Record<string, unknown> | undefined;
     try {
       const parsed: unknown = JSON.parse(contentBlock.text);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return block;
       payload = parsed as Record<string, unknown>;
     } catch (error) {
       void error;
-      return block;
     }
+
+    // Most current handlers already use the structured error shape. Keep the
+    // original fields for compatibility, but make the actionable contract
+    // available for every legacy `{ success: false, error }` payload too.
     if (
-      payload.success !== false ||
-      typeof payload.error !== 'string' ||
-      payload.errorDetails !== undefined
+      payload &&
+      typeof payload.error === 'string' &&
+      (payload.success === undefined || payload.success === false) &&
+      payload.errorDetails === undefined
     ) {
+      const problem = toActionableError(new Error(payload.error));
+      topLevelError ??= problem;
+      changed = true;
+      return {
+        ...contentBlock,
+        text: JSON.stringify({
+          ...payload,
+          errorDetails: problem,
+          nextAction: payload.nextAction ?? problem.nextActions[0],
+        }),
+      };
+    }
+
+    // A few older handlers return a plain text MCP error. Do not rewrite that
+    // text (clients may display it verbatim); attach the structured diagnostic
+    // at the result level below so the same remediation contract is available.
+    if (record.isError === true && !payload && contentBlock.text.trim()) {
+      topLevelError ??= toActionableError(new Error(contentBlock.text));
+    }
+    if (payload && record.isError === true && typeof payload.error === 'string') {
+      topLevelError ??= toActionableError(new Error(payload.error));
+    }
+    if (!payload) {
       return block;
     }
-    changed = true;
-    return {
-      ...contentBlock,
-      text: JSON.stringify({
-        ...payload,
-        errorDetails: toActionableError(new Error(payload.error)),
-      }),
-    };
+    const enriched = addUntrustedSnippetDetails(payload);
+    if (enriched !== payload) {
+      changed = true;
+      return { ...contentBlock, text: JSON.stringify(enriched) };
+    }
+    return block;
   });
-  return changed ? { ...record, content } : value;
+  if (!changed && !topLevelError) return value;
+  return {
+    ...record,
+    ...(topLevelError
+      ? {
+          isError: true,
+          errorDetails: topLevelError,
+          nextAction: topLevelError.nextActions[0],
+        }
+      : {}),
+    content,
+  };
+}
+
+/**
+ * Additive compatibility metadata for legacy source snippets. Newer tools
+ * emit this at their source, while the registry boundary covers older tools
+ * without changing their existing `snippet`/`file` fields. Only a safe
+ * repository-relative path is accepted as provenance; an absolute or escaping
+ * path is deliberately left unannotated rather than echoed into an envelope.
+ */
+function addUntrustedSnippetDetails(value: unknown, inheritedPath?: string): unknown {
+  if (Array.isArray(value)) {
+    let changed = false;
+    const result = value.map((item) => {
+      const enriched = addUntrustedSnippetDetails(item, inheritedPath);
+      changed ||= enriched !== item;
+      return enriched;
+    });
+    return changed ? result : value;
+  }
+  if (!value || typeof value !== 'object') return value;
+  const record = value as Record<string, unknown>;
+  const candidatePath = [record.relativePath, record.filePath, record.file, record.path].find(
+    (item): item is string => typeof item === 'string',
+  );
+  const sourcePath = safeRelativeSourcePath(candidatePath ?? inheritedPath);
+  let changed = false;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(record)) {
+    const enriched = addUntrustedSnippetDetails(item, sourcePath);
+    changed ||= enriched !== item;
+    result[key] = enriched;
+  }
+  if (
+    typeof record.snippet === 'string' &&
+    record.snippet.length > 0 &&
+    record.untrustedContent === undefined &&
+    sourcePath
+  ) {
+    result.untrustedContent = asUntrustedContent(record.snippet, 'source', {
+      relativePath: sourcePath,
+    });
+    changed = true;
+  }
+  return changed ? result : value;
+}
+
+function safeRelativeSourcePath(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (
+    normalized.length === 0 ||
+    normalized.startsWith('/') ||
+    /^[A-Za-z]:\//.test(normalized) ||
+    normalized.split('/').some((segment) => segment === '..')
+  )
+    return undefined;
+  return normalized;
 }
 
 /**
@@ -369,13 +526,35 @@ function addActionableFailureDetails(value: unknown): unknown {
  * Every core tool gets all four behavior hints explicitly. This matters for
  * clients that do not apply the MCP specification defaults consistently.
  */
-export function annotateToolRegistration(server: McpServer): void {
+export function annotateToolRegistration(
+  server: McpServer,
+  projectScope?: McpProjectScopeRuntime,
+): void {
   const target = server as unknown as {
     registerTool: (name: string, cfg: Record<string, unknown>, ...rest: unknown[]) => unknown;
   };
   const original = target.registerTool.bind(server);
   target.registerTool = (name, cfg, ...rest) => {
     if (!isToolEnabled(name)) return undefined;
+    if (
+      !GLOBAL_PROJECT_TOOLS.has(name) &&
+      cfg.inputSchema &&
+      typeof cfg.inputSchema === 'object' &&
+      !Array.isArray(cfg.inputSchema) &&
+      !Object.prototype.hasOwnProperty.call(cfg.inputSchema, 'projectId')
+    ) {
+      cfg.inputSchema = {
+        ...(cfg.inputSchema as Record<string, unknown>),
+        projectId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            'Optional persisted project ID for this request; does not change global selection.',
+          ),
+      };
+    }
     // Cache hints: spread toolCacheHintMeta(name) into every tool config
     // (matches the resources.ts integration pattern). Stable tool definitions
     // get a long TTL; tools reflecting live project state get a short TTL.
@@ -405,7 +584,27 @@ export function annotateToolRegistration(server: McpServer): void {
     if (typeof handler === 'function') {
       rest[0] = (async (...args: unknown[]) => {
         try {
-          const measured = await measureInvocation(name, args[0], () => handler(...args));
+          const firstArg = args[0];
+          const shouldScope = projectScope !== undefined && !GLOBAL_PROJECT_TOOLS.has(name);
+          const projectId = shouldScope
+            ? firstArg && typeof firstArg === 'object' && !Array.isArray(firstArg)
+              ? (firstArg as Record<string, unknown>).projectId
+              : undefined
+            : undefined;
+          const handlerArgs =
+            shouldScope && firstArg && typeof firstArg === 'object' && !Array.isArray(firstArg)
+              ? [
+                  {
+                    ...(firstArg as Record<string, unknown>),
+                    projectId: undefined,
+                  },
+                  ...args.slice(1),
+                ]
+              : args;
+          const invoke = async (): Promise<unknown> => handler(...handlerArgs);
+          const measured = await measureInvocation(name, firstArg, () =>
+            shouldScope ? projectScope!.run(projectId, invoke) : invoke(),
+          );
           const value = addActionableFailureDetails(measured.value);
           if (process.env.PROJECTMIND_METRICS !== '1') return value;
           if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
@@ -440,6 +639,22 @@ export function shouldRegisterParityTools(): boolean {
 
 export type McpProfile = 'core' | 'review' | 'security' | 'maintenance' | 'full';
 
+/** User-facing profile names accepted by the CLI and environment. */
+export const MCP_PROFILE_NAMES = ['core', 'review', 'security', 'maintenance', 'full'] as const;
+
+/**
+ * Normalize the historical `all` spelling to the canonical `full` profile.
+ * Keeping this in one place prevents the CLI, stdio server, and resources
+ * from advertising subtly different profile semantics.
+ */
+export function normalizeMcpProfile(value: string): McpProfile | null {
+  const requested = value.trim().toLowerCase();
+  if (requested === 'all') return 'full';
+  return (MCP_PROFILE_NAMES as readonly string[]).includes(requested)
+    ? (requested as McpProfile)
+    : null;
+}
+
 const PROFILE_TOOLS: Record<Exclude<McpProfile, 'full'>, ReadonlySet<string>> = {
   core: new Set(MCP_CORE_TOOL_NAMES),
   review: new Set([
@@ -449,12 +664,17 @@ const PROFILE_TOOLS: Record<Exclude<McpProfile, 'full'>, ReadonlySet<string>> = 
     'check_architecture',
     'check_contracts',
     'semantic_search',
+    'record_search_feedback',
+    'get_session_insights',
+    'predict_bug_surface',
+    'ask_codebase',
     'find_symbol_references',
     'find_symbol_definition',
     'suggest_next_files',
     'prove_claim',
     'verify_freshness',
     'get_source_range',
+    'get_source_symbol_range',
     'get_invocation_metrics',
     'review_project',
     'get_canonical_example',
@@ -486,6 +706,7 @@ const PROFILE_TOOLS: Record<Exclude<McpProfile, 'full'>, ReadonlySet<string>> = 
     'sync_context',
     'agent_locks',
     'predict_merge_risk',
+    'arbitrate_agents',
     'find_patterns',
     'recommend_skills',
     'run_cli',
@@ -495,18 +716,7 @@ const PROFILE_TOOLS: Record<Exclude<McpProfile, 'full'>, ReadonlySet<string>> = 
 };
 
 export function getMcpProfile(): McpProfile {
-  const requested = (process.env.PROJECTMIND_TOOLS || 'core').trim().toLowerCase();
-  if (requested === 'all') return 'full';
-  if (
-    requested === 'full' ||
-    requested === 'core' ||
-    requested === 'review' ||
-    requested === 'security' ||
-    requested === 'maintenance'
-  ) {
-    return requested;
-  }
-  return 'core';
+  return normalizeMcpProfile(process.env.PROJECTMIND_TOOLS || 'core') ?? 'core';
 }
 
 export function isToolEnabled(name: string): boolean {

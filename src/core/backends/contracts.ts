@@ -54,6 +54,35 @@ export interface VectorStore {
   nearest(namespace: string, vector: readonly number[], limit: number): readonly VectorMatch[];
 }
 
+/** Async counterpart used by network-backed adapters; local SQLite remains sync. */
+export interface AsyncVectorStore {
+  readonly descriptor: BackendDescriptor;
+  upsert(
+    namespace: string,
+    id: string,
+    vector: readonly number[],
+    metadata: VectorMatch['metadata'],
+  ): Promise<void>;
+  delete(namespace: string, id: string): Promise<boolean>;
+  nearest(
+    namespace: string,
+    vector: readonly number[],
+    limit: number,
+  ): Promise<readonly VectorMatch[]>;
+}
+
+/** Minimal async graph contract for Bolt/HTTP graph services. */
+export interface AsyncGraphStore {
+  readonly descriptor: BackendDescriptor;
+  listNodes(namespace: string, limit: number): Promise<readonly GraphNodeRecord[]>;
+  listEdges(namespace: string, limit: number): Promise<readonly GraphEdgeRecord[]>;
+  traverse(
+    namespace: string,
+    startNode: string,
+    depth: number,
+  ): Promise<readonly GraphNodeRecord[]>;
+}
+
 export interface ProjectFreshness {
   namespace: string;
   sourceHash: string;

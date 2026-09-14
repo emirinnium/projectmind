@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { ClientRegistrationResponse } from '../../src/auth/types.js';
 import { AuthError, ClientRegistry } from '../../src/auth/registry.js';
 import { TokenService, hashToken } from '../../src/auth/tokens.js';
-import { handleOauthRoute } from '../../src/auth/http.js';
+import { handleOauthRoute, normalizeHostname } from '../../src/auth/http.js';
 import { runMigrations } from '../../src/storage/migrations.js';
 import { SCHEMA_SQL } from '../../src/storage/schema.js';
 
@@ -60,6 +60,14 @@ describe('ClientRegistry — RFC 7591 dynamic client registration', () => {
     expect(() =>
       reg.register({ client_name: 'Bad', redirect_uris: ['javascript:alert(1)'] }),
     ).toThrowError(AuthError);
+  });
+
+  it('accepts IPv6 loopback redirect URIs', () => {
+    const reg = new ClientRegistry(db);
+    expect(() =>
+      reg.register({ client_name: 'IPv6', redirect_uris: ['http://[::1]:3000/cb'] }),
+    ).not.toThrow();
+    expect(normalizeHostname('[::1]')).toBe('::1');
   });
 
   it('rejects unknown fields (strict metadata validation)', () => {
@@ -301,7 +309,7 @@ describe('handleOauthRoute — HTTP surface', () => {
     expect(result.payload.error).toBe('invalid_request');
   });
 
-  it('accepts urlencoded bodies on the token endpoint', () => {
+    it('accepts urlencoded bodies on the token endpoint', () => {
     const reg = new ClientRegistry(db);
     const client = reg.register({
       client_name: 'form',
@@ -323,8 +331,30 @@ describe('handleOauthRoute — HTTP surface', () => {
     expect(result.handled).toBe(true);
     if (!result.handled) return;
     expect(result.status).toBe(200);
-    expect(result.payload.access_token).toBeTypeOf('string');
-  });
+      expect(result.payload.access_token).toBeTypeOf('string');
+    });
+
+    it('defaults an MCP token request to the MCP access scope', () => {
+      const reg = new ClientRegistry(db);
+      const client = reg.register({
+        client_name: 'default-scope',
+        redirect_uris: ['https://scope-default.example.com/cb'],
+        grant_types: ['client_credentials'],
+      });
+      const result = handleOauthRoute(
+        '/oauth/token',
+        JSON.stringify({
+          grant_type: 'client_credentials',
+          client_id: client.client_id,
+          client_secret: client.client_secret,
+        }),
+        'application/json',
+        { registry: reg, tokens: new TokenService(db), allowedScopes: ['projectmind:mcp'] },
+      );
+      expect(result.handled).toBe(true);
+      if (!result.handled) return;
+      expect(result.payload.scope).toBe('projectmind:mcp');
+    });
 
   it('returns handled:false for unknown paths', () => {
     const result = handleOauthRoute('/oauth/nope', '{}', 'application/json', ctx());

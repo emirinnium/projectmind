@@ -21,6 +21,10 @@ function createTestDbWithoutMigrations(): DatabaseSync {
 describe('Migration Rollback', () => {
   let db: DatabaseSync;
 
+  it('keeps migration versions globally unique', () => {
+    expect(new Set(migrations.map((migration) => migration.version)).size).toBe(migrations.length);
+  });
+
   beforeEach(() => {
     db = createTestDbWithoutMigrations();
   });
@@ -227,7 +231,7 @@ describe('Legacy DB upgrades', () => {
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
 
     // last_synced added as a NULLABLE column (no non-constant default —
     // SQLite forbids DEFAULT CURRENT_TIMESTAMP in ADD COLUMN)
@@ -256,6 +260,10 @@ describe('Legacy DB upgrades', () => {
 
     const importColumns = db.prepare('PRAGMA table_info(imports)').all() as Array<{ name: string }>;
     expect(importColumns.some((column) => column.name === 'named')).toBe(true);
+    const worktreeTable = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'project_worktrees'")
+      .get() as { name?: string } | undefined;
+    expect(worktreeTable?.name).toBe('project_worktrees');
   });
 
   it('migration 100 adds named import bindings to an existing v99 database', () => {
@@ -279,7 +287,7 @@ describe('Legacy DB upgrades', () => {
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const column = (
       db.prepare('PRAGMA table_info(imports)').all() as Array<{ name: string; dflt_value: string }>
     ).find((entry) => entry.name === 'named');
@@ -328,7 +336,7 @@ describe('Legacy DB upgrades', () => {
     // New-style rows (already hashed) are untouched — idempotent re-runs safe.
     setSchemaVersion(db, 10, 'hash_oauth_tokens');
     runMigrations(db);
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     expect(db.prepare('SELECT COUNT(*) AS n FROM oauth_tokens').get()).toEqual({ n: 0 });
     db.close();
   });
@@ -457,7 +465,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
 
     // Canonical column set + INTEGER timestamp types.
     const cols = tableInfo(db);
@@ -509,7 +517,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
     setSchemaVersion(db, 92, 'add_pattern_origin_and_collaboration');
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const row = db
       .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
       .get('agent-c') as Record<string, unknown>;
@@ -562,7 +570,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const cols = tableInfo(db);
     expect(cols.find((c) => c.name === 'expires_at')?.type.toUpperCase()).toBe('INTEGER');
     expect(cols.find((c) => c.name === 'broadcast_at')?.type.toUpperCase()).toBe('INTEGER');
@@ -623,7 +631,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const row = db
       .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
       .get('agent-g') as Record<string, unknown>;
@@ -659,7 +667,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const rowSec = db
       .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
       .get('agent-sec') as Record<string, unknown>;
@@ -705,7 +713,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const cols = tableInfo(db);
     expect(cols.map((c) => c.name).sort()).toEqual([...CANONICAL_COLUMNS].sort());
     expect(cols.find((c) => c.name === 'expires_at')?.type.toUpperCase()).toBe('INTEGER');
@@ -757,7 +765,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     expect(() => runMigrations(db)).not.toThrow();
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     expect(
       tableInfo(db)
         .map((c) => c.name)
@@ -797,7 +805,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db); // only v93 + v94 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     expect(
       tableInfo(db)
         .map((c) => c.name)
@@ -820,7 +828,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     expect(
       tableInfo(db)
         .map((c) => c.name)
@@ -858,7 +866,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const rows = db
       .prepare('SELECT id, agent_id, expected_changes FROM pending_intents ORDER BY agent_id')
       .all() as Array<Record<string, unknown>>;
@@ -882,7 +890,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const row = db
       .prepare('SELECT * FROM pending_intents WHERE agent_id = ?')
       .get('agent-garbage') as Record<string, unknown>;
@@ -920,7 +928,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     expect(() => runMigrations(db)).not.toThrow();
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const rows = db.prepare('SELECT agent_id FROM pending_intents').all() as Array<{
       agent_id: string | null;
     }>;
@@ -939,7 +947,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     expect(() => runMigrations(db)).not.toThrow();
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     // Final table matches schema.ts columns EXACTLY (no timestamp).
     expect(
       tableInfo(db)
@@ -969,7 +977,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     expect(
       tableInfo(db)
         .map((c) => c.name)
@@ -1014,7 +1022,7 @@ describe('Migration 93 — pending_intents unix-ms reconciliation (F40)', () => 
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const cols = tableInfo(db);
     expect(cols.map((c) => c.name)).toContain('broadcast_at');
     const row = db
@@ -1059,7 +1067,7 @@ describe('Migration 94 — debt_items change_frequency + project_id backfill', (
 
     runMigrations(db); // only v94 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
 
     // The new type is accepted and round-trips through the rebuilt table.
     db.prepare(
@@ -1095,7 +1103,7 @@ describe('Migration 94 — debt_items change_frequency + project_id backfill', (
 
     runMigrations(db); // only v94 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const filesCols = db.prepare('PRAGMA table_info(files)').all() as Array<{ name: string }>;
     expect(filesCols.some((c) => c.name === 'project_id')).toBe(true);
     const dataFlowsCols = db.prepare('PRAGMA table_info(data_flows)').all() as Array<{
@@ -1211,7 +1219,7 @@ describe('Migration 95 — FK cascades + imports resolved_path index', () => {
 
     runMigrations(db); // only v95 pending
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
 
     // Rows survive the rebuild itself.
     expect(
@@ -1275,7 +1283,7 @@ describe('Migration 95 — FK cascades + imports resolved_path index', () => {
 
     runMigrations(db);
 
-    expect(getCurrentSchemaVersion(db)).toBe(100);
+    expect(getCurrentSchemaVersion(db)).toBe(111);
     const { fileId } = seedParentAndChildren(db);
 
     db.prepare('DELETE FROM files WHERE id = ?').run(fileId);

@@ -10,8 +10,15 @@ import {
 } from '../../../src/core/review/finding-validation.js';
 import { DEFAULT_REVIEW_POLICY, parseReviewPolicy } from '../../../src/core/review/policy.js';
 import { collectReviewFindings } from '../../../src/cli/commands/pr-preview-engine.js';
+import { ruleMatchesSourceLine } from '../../../src/core/review/rules.js';
 
 describe('deterministic review pipeline', () => {
+  it('does not treat comments or strings as explicit any types', () => {
+    expect(ruleMatchesSourceLine('explicit-any', '// replace any with unknown')).toBe(false);
+    expect(ruleMatchesSourceLine('explicit-any', 'const label = "any";')).toBe(false);
+    expect(ruleMatchesSourceLine('explicit-any', 'const value: any = input;')).toBe(true);
+  });
+
   it('splits files deterministically and preserves source metadata', () => {
     const root = mkdtempSync(join(tmpdir(), 'projectmind-review-'));
     mkdirSync(join(root, 'src'));

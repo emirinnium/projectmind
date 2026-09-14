@@ -1,0 +1,98 @@
+name: ProjectMind
+description: Run a bounded ProjectMind health, security, or PR review check
+inputs:
+  command:
+    description: Fixed ProjectMind operation to run
+    required: false
+    default: health
+  version:
+    description: ProjectMind version to execute (exact published version)
+    required: false
+    default: 1.0.4
+  format:
+    description: Report format; health always uses json
+    required: false
+    default: json
+  report-path:
+    description: Workspace-relative path for the generated report
+    required: false
+    default: projectmind-report.json
+outputs:
+  report:
+    description: Absolute path of the generated report
+    value: ${{ steps.run-unix.outputs.report || steps.run-windows.outputs.report }}
+runs:
+  using: composite
+  steps:
+    - name: Run ProjectMind (Unix)
+      id: run-unix
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        PROJECTMIND_COMMAND: ${{ inputs.command }}
+        PROJECTMIND_VERSION: ${{ inputs.version }}
+        PROJECTMIND_FORMAT: ${{ inputs.format }}
+        PROJECTMIND_REPORT_PATH: ${{ inputs.report-path }}
+      run: |
+        set -euo pipefail
+        if [[ ! "$PROJECTMIND_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+          echo "ProjectMind version must be an exact semver value." >&2
+          exit 2
+        fi
+        if [[ ! "$PROJECTMIND_REPORT_PATH" =~ ^[A-Za-z0-9._/-]+$ || "$PROJECTMIND_REPORT_PATH" == /* || "$PROJECTMIND_REPORT_PATH" == *".."* ]]; then
+          echo "report-path must be a workspace-relative path without traversal." >&2
+          exit 2
+        fi
+        mkdir -p -- "$(dirname -- "$PROJECTMIND_REPORT_PATH")"
+        case "$PROJECTMIND_COMMAND" in
+          health)
+            args=(health --json)
+            ;;
+          audit)
+            [[ "$PROJECTMIND_FORMAT" == "json" ]] || { echo "audit requires format=json" >&2; exit 2; }
+            args=(audit --all --format json)
+            ;;
+          pr-preview)
+            [[ "$PROJECTMIND_FORMAT" =~ ^(json|markdown|sarif|github)$ ]] || { echo "Unsupported PR preview format." >&2; exit 2; }
+            args=(pr-preview --format "$PROJECTMIND_FORMAT")
+            ;;
+          *)
+            echo "command must be health, audit, or pr-preview" >&2
+            exit 2
+            ;;
+        esac
+        npx --yes --package "@emirhanturker/projectmind@$PROJECTMIND_VERSION" projectmind "${args[@]}" > "$PROJECTMIND_REPORT_PATH"
+        report_path="$(node -e 'const path=require("node:path"); process.stdout.write(path.resolve(process.argv[1]))' "$PROJECTMIND_REPORT_PATH")"
+        echo "report=$report_path" >> "$GITHUB_OUTPUT"
+
+    - name: Run ProjectMind (Windows)
+      id: run-windows
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        PROJECTMIND_COMMAND: ${{ inputs.command }}
+        PROJECTMIND_VERSION: ${{ inputs.version }}
+        PROJECTMIND_FORMAT: ${{ inputs.format }}
+        PROJECTMIND_REPORT_PATH: ${{ inputs.report-path }}
+      run: |
+        $versionPattern = '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'
+        if ($env:PROJECTMIND_VERSION -notmatch $versionPattern) { throw 'ProjectMind version must be an exact semver value.' }
+        if ($env:PROJECTMIND_REPORT_PATH -notmatch '^[A-Za-z0-9._/-]+$' -or $env:PROJECTMIND_REPORT_PATH.StartsWith('/') -or $env:PROJECTMIND_REPORT_PATH.Contains('..')) { throw 'report-path must be a workspace-relative path without traversal.' }
+        $reportDirectory = Split-Path -Parent $env:PROJECTMIND_REPORT_PATH
+        if ($reportDirectory) { New-Item -ItemType Directory -Force -Path $reportDirectory | Out-Null }
+        switch ($env:PROJECTMIND_COMMAND) {
+          'health' { $args = @('health', '--json') }
+          'audit' {
+            if ($env:PROJECTMIND_FORMAT -ne 'json') { throw 'audit requires format=json' }
+            $args = @('audit', '--all', '--format', 'json')
+          }
+          'pr-preview' {
+            if ($env:PROJECTMIND_FORMAT -notmatch '^(json|markdown|sarif|github)$') { throw 'Unsupported PR preview format.' }
+            $args = @('pr-preview', '--format', $env:PROJECTMIND_FORMAT)
+          }
+          default { throw 'command must be health, audit, or pr-preview' }
+        }
+        & npx --yes --package "@emirhanturker/projectmind@$env:PROJECTMIND_VERSION" projectmind @args | Set-Content -LiteralPath $env:PROJECTMIND_REPORT_PATH -Encoding utf8
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        $reportPath = [IO.Path]::GetFullPath($env:PROJECTMIND_REPORT_PATH)
+        "report=$reportPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8

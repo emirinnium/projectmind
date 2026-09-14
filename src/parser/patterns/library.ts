@@ -30,12 +30,14 @@ export interface PatternViolation {
 
 export class PatternLibrary {
   private db: DatabaseSync;
+  private readonly projectId: number;
   private patternCache: Pattern[] | null = null;
   private cacheExpiry = 0;
   private readonly CACHE_TTL_MS = 30_000;
 
-  constructor(db?: DatabaseSync) {
+  constructor(db?: DatabaseSync, projectId = 1) {
     this.db = db ?? getDatabase();
+    this.projectId = projectId;
     this.db.exec(SCHEMA_SQL);
   }
 
@@ -182,8 +184,10 @@ export class PatternLibrary {
 
   private storePattern(pattern: Omit<Pattern, 'id'> & { id: number }, codeHash: string): void {
     const existing = this.db
-      .prepare('SELECT id, usage_count, last_seen FROM patterns WHERE code_hash = ? AND name = ?')
-      .get(codeHash, pattern.name) as
+      .prepare(
+        'SELECT id, usage_count, last_seen FROM patterns WHERE code_hash = ? AND name = ? AND project_id = ?',
+      )
+      .get(codeHash, pattern.name, this.projectId) as
       { id: number; usage_count: number; last_seen: string } | undefined;
 
     if (existing) {
@@ -196,8 +200,8 @@ export class PatternLibrary {
       const embedding = pattern.embedding ? JSON.stringify(pattern.embedding) : null;
       this.db
         .prepare(
-          `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count, embedding)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO patterns (name, category, description, code_hash, confidence, first_seen, last_seen, usage_count, embedding, project_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           pattern.name,
@@ -209,6 +213,7 @@ export class PatternLibrary {
           new Date().toISOString(),
           1,
           embedding,
+          this.projectId,
         );
     }
   }
@@ -224,8 +229,10 @@ export class PatternLibrary {
     }
 
     const rows = this.db
-      .prepare('SELECT * FROM patterns ORDER BY usage_count DESC, last_seen DESC')
-      .all() as Record<string, SQLOutputValue>[];
+      .prepare(
+        'SELECT * FROM patterns WHERE project_id = ? ORDER BY usage_count DESC, last_seen DESC',
+      )
+      .all(this.projectId) as Record<string, SQLOutputValue>[];
     this.patternCache = rows.map((r) => ({
       id: r.id as number,
       name: r.name as string,
@@ -272,8 +279,10 @@ export class PatternLibrary {
 
   getCoherenceScore(): number {
     const result = this.db
-      .prepare('SELECT AVG(confidence) as avg_conf, COUNT(*) as cnt FROM patterns')
-      .get() as { avg_conf: number | null; cnt: number };
+      .prepare(
+        'SELECT AVG(confidence) as avg_conf, COUNT(*) as cnt FROM patterns WHERE project_id = ?',
+      )
+      .get(this.projectId) as { avg_conf: number | null; cnt: number };
 
     if (!result.cnt) return 1.0;
     return result.avg_conf ?? 1.0;

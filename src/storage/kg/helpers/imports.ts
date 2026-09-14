@@ -1,5 +1,5 @@
 import { runWithRetry } from '../../database.js';
-import { dirname } from 'node:path';
+import { dirname, posix } from 'node:path';
 import { FileInfo } from '../types.js';
 import type { KgContext } from './context.js';
 import type { SQLOutputValue } from 'node:sqlite';
@@ -10,6 +10,7 @@ import {
   getAllFiles,
   getImports,
   resolveImportSource,
+  getImportPathCandidates,
 } from './files.js';
 
 export function getDependents(ctx: KgContext, fileId: number): FileInfo[] {
@@ -89,6 +90,176 @@ export function getImportsWithDetails(
     ...imp,
     resolvedFile: resolveImportSource(ctx, imp.source, fromDir),
   }));
+}
+
+export interface ImportAnalysisStats {
+  totalImports: number;
+  resolvedImports: number;
+  unresolvedImports: number;
+  externalDependencies: number;
+}
+
+/**
+ * Return project-wide import counters without resolving every import again.
+ *
+ * The scan tool only needs aggregate counters, so resolving against one
+ * in-memory file index preserves the live resolver's candidate order and
+ * avoids the previous N-files × N-imports resolution/query loop. We do not
+ * trust `imports.resolved_path` alone here: older cache rows can point at a
+ * similarly named file while the import is not resolvable from its owner.
+ * Built-in and external modules intentionally remain unresolved file edges
+ * because they do not point to an indexed project file.
+ */
+export function getImportStats(ctx: KgContext): ImportAnalysisStats {
+  const files = ctx.db
+    .prepare('SELECT relative_path, path FROM files WHERE project_id = ?')
+    .all(ctx.currentProjectId) as Array<{ relative_path: string; path: string }>;
+  const relativePaths = new Set(files.map((file) => file.relative_path.replace(/\\/g, '/')));
+  const absolutePaths = new Map(
+    files.map((file) => [file.path.replace(/\\/g, '/'), file.relative_path.replace(/\\/g, '/')]),
+  );
+  const rows = ctx.db
+    .prepare(
+      `
+      SELECT i.source, owner.relative_path AS owner_relative_path
+      FROM imports i
+      JOIN files owner ON owner.id = i.file_id AND owner.project_id = ?
+      `,
+    )
+    .all(ctx.currentProjectId) as Array<{ source: string; owner_relative_path: string }>;
+
+  let resolvedImports = 0;
+  let externalDependencies = 0;
+  for (const row of rows) {
+    if (
+      !row.source.startsWith('node:') &&
+      resolveImportPathFromIndex(
+        row.source,
+        row.owner_relative_path,
+        relativePaths,
+        absolutePaths,
+      ) !== null
+    ) {
+      resolvedImports++;
+    } else if (isExternalImport(row.source)) {
+      externalDependencies++;
+    }
+  }
+
+  return {
+    totalImports: rows.length,
+    resolvedImports,
+    unresolvedImports: rows.length - resolvedImports,
+    externalDependencies,
+  };
+}
+
+/**
+ * Re-resolve persisted project-local import edges after a scan.
+ *
+ * A scanner may encounter an importer before its newly added target file. The
+ * first write then correctly records an unresolved edge, but leaving that row
+ * stale would make impact/dead-code consumers disagree with the live resolver.
+ * Resolve against one project-wide file index after the batch so scan order
+ * cannot change graph semantics. Built-ins retain their historical resolved
+ * marker while external modules remain non-project edges.
+ */
+export function refreshImportResolution(ctx: KgContext): number {
+  const fileRows = ctx.db
+    .prepare('SELECT relative_path, path FROM files WHERE project_id = ?')
+    .all(ctx.currentProjectId) as Array<{ relative_path: string; path: string }>;
+  const relativePaths = new Set(fileRows.map((file) => file.relative_path.replace(/\\/g, '/')));
+  const absolutePaths = new Map(
+    fileRows.map((file) => [file.path.replace(/\\/g, '/'), file.relative_path.replace(/\\/g, '/')]),
+  );
+  const rows = ctx.db
+    .prepare(
+      `
+      SELECT i.id, i.source, i.resolved, i.resolved_path,
+             owner.relative_path AS owner_relative_path
+      FROM imports i
+      JOIN files owner ON owner.id = i.file_id AND owner.project_id = ?
+      WHERE owner.project_id = ?
+      `,
+    )
+    .all(ctx.currentProjectId, ctx.currentProjectId) as Array<{
+    id: number;
+    source: string;
+    resolved: number;
+    resolved_path: string | null;
+    owner_relative_path: string;
+  }>;
+
+  const update = ctx.db.prepare('UPDATE imports SET resolved = ?, resolved_path = ? WHERE id = ?');
+  let updated = 0;
+  for (const row of rows) {
+    const resolvedPath = resolveImportPathFromIndex(
+      row.source,
+      row.owner_relative_path,
+      relativePaths,
+      absolutePaths,
+    );
+    const resolved = resolvedPath === null ? 0 : 1;
+    if (resolved !== row.resolved || resolvedPath !== row.resolved_path) {
+      update.run(resolved, resolvedPath, row.id);
+      updated++;
+    }
+  }
+  return updated;
+}
+
+function resolveImportPathFromIndex(
+  source: string,
+  ownerRelativePath: string,
+  relativePaths: ReadonlySet<string>,
+  absolutePaths: ReadonlyMap<string, string>,
+): string | null {
+  const originalPath = source.replace(/\\/g, '/');
+  const absoluteMatch = absolutePaths.get(originalPath);
+  if (absoluteMatch) return absoluteMatch;
+
+  if (source.startsWith('node:')) return source.slice('node:'.length);
+
+  const fromDir = dirname(ownerRelativePath).replace(/\\/g, '/');
+  let searchPath = originalPath;
+  if (fromDir && (source.startsWith('./') || source.startsWith('../'))) {
+    searchPath = posix.normalize(posix.join(fromDir, searchPath));
+  }
+
+  const searchPaths = getImportPathCandidates(searchPath);
+  for (const candidate of searchPaths) {
+    if (relativePaths.has(candidate)) return candidate;
+  }
+
+  const indexExtensions = [
+    '/index.ts',
+    '/index.tsx',
+    '/index.mts',
+    '/index.cts',
+    '/index.js',
+    '/index.jsx',
+    '/index.mjs',
+    '/index.cjs',
+  ];
+  for (const candidate of searchPaths) {
+    const indexPath = indexExtensions.find((extension) => relativePaths.has(candidate + extension));
+    if (indexPath) return candidate + indexPath;
+  }
+
+  const extensions = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'];
+  for (const candidate of searchPaths) {
+    // A period can belong to a directory name (`feature.v2/utils`) or to a
+    // valid source basename (`client.test`). Exact candidates were checked
+    // first, so probing every extension here is both safe and required for
+    // extensionless imports below dotted directories.
+    const extension = extensions.find((extension) => relativePaths.has(candidate + extension));
+    if (extension) return candidate + extension;
+  }
+  return null;
+}
+
+function isExternalImport(source: string): boolean {
+  return !source.startsWith('.') && !source.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(source);
 }
 
 export function traceImports(

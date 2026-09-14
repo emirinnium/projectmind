@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { relative, resolve } from 'node:path';
 import { assertProjectPath } from '../security/path-security.js';
+import { reportSuppressedError } from '../../utils/errors.js';
 
 export interface HistoryScoreOptions {
   nowMs?: number;
@@ -120,8 +121,9 @@ export class HistoryRanker {
           aggregate.fixCount++;
         aggregates.set(path, aggregate);
       }
-    } catch {
+    } catch (error) {
       // Missing Git history is an explicit neutral-prior condition.
+      reportSuppressedError(error, 'Git history ranking unavailable; using neutral prior');
     }
     return aggregates;
   }

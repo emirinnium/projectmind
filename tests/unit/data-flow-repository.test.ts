@@ -82,6 +82,58 @@ describe('DataFlowRepository', () => {
       expect(result.via).toBe('processData');
       expect(result.sourceFunctionName).toBe('processData');
     });
+
+    it('resolves same-named function metadata within the selected project', () => {
+      const projectTwo = Number(
+        db.prepare('INSERT INTO projects (name, root_path) VALUES (?, ?)').run('second', '/second')
+          .lastInsertRowid,
+      );
+      db.prepare(
+        'INSERT INTO files (path, relative_path, language, size_bytes, hash, project_id) VALUES (?, ?, ?, ?, ?, ?)',
+      ).run('/one.ts', 'one.ts', 'typescript', 20, 'one', 1);
+      const firstFile = Number(
+        (db.prepare('SELECT id FROM files WHERE path = ?').get('/one.ts') as { id: number }).id,
+      );
+      db.prepare(
+        'INSERT INTO files (path, relative_path, language, size_bytes, hash, project_id) VALUES (?, ?, ?, ?, ?, ?)',
+      ).run('/two.ts', 'two.ts', 'typescript', 20, 'two', projectTwo);
+      const secondFile = Number(
+        (db.prepare('SELECT id FROM files WHERE path = ?').get('/two.ts') as { id: number }).id,
+      );
+      db.prepare('INSERT INTO functions (file_id, name, signature) VALUES (?, ?, ?)').run(
+        firstFile,
+        'sharedName',
+        'sharedName()',
+      );
+      db.prepare('INSERT INTO functions (file_id, name, signature) VALUES (?, ?, ?)').run(
+        secondFile,
+        'sharedName',
+        'sharedName()',
+      );
+      const secondFunction = (
+        db
+          .prepare('SELECT fn.id FROM functions fn JOIN files f ON f.id = fn.file_id WHERE f.project_id = ?')
+          .get(projectTwo) as { id: number }
+      ).id;
+
+      const result = repo.recordFlow({
+        fromResourceQualifiedName: 'source-two',
+        fromResourceKind: 'ENV',
+        fromResourceIdentity: 'A',
+        toResourceQualifiedName: 'sink-two',
+        toResourceKind: 'PROCESS',
+        toResourceIdentity: 'B',
+        kind: 'arg',
+        sourceFunctionName: 'sharedName',
+        targetFunctionName: 'sharedName',
+        projectId: projectTwo,
+      });
+      const row = db
+        .prepare('SELECT source_function_id, target_function_id FROM data_flows WHERE id = ?')
+        .get(result.id) as { source_function_id: number; target_function_id: number };
+      expect(row.source_function_id).toBe(secondFunction);
+      expect(row.target_function_id).toBe(secondFunction);
+    });
   });
 
   describe('getFlows', () => {

@@ -26,7 +26,12 @@ export function collectGitChurn(
     const out = execFileSync(
       'git',
       ['log', `--since=${sinceDays} days ago`, '--pretty=format:@@%an', '--name-only'],
-      { cwd: projectRoot, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 },
+      {
+        cwd: projectRoot,
+        encoding: 'utf-8',
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
     );
     let currentAuthor = 'unknown';
     for (const rawLine of out.split(/\r?\n/)) {
@@ -37,7 +42,10 @@ export function collectGitChurn(
         continue;
       }
       const normalized = line.replace(/\\/g, '/');
-      if (!normalized.includes('/')) continue; // skip stray non-path lines
+      // `--name-only` emits repository-relative paths, including root-level
+      // files such as package.json. Do not discard those files merely because
+      // they contain no directory separator; the sentinel above is the only
+      // non-path line produced by this format.
       const entry = churn.get(normalized) ?? { count: 0, authors: new Set<string>() };
       entry.count += 1;
       entry.authors.add(currentAuthor);

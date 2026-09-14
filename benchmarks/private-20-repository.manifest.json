@@ -1,0 +1,429 @@
+{
+  "version": 1,
+  "name": "projectmind-private-js-ts-twenty-repository",
+  "access": "private",
+  "repositories": [
+    {
+      "id": "zod",
+      "url": "https://github.com/colinhacks/zod.git",
+      "commitSha": "62311eb2c4a93c7348a8b1c5abbde1ec77c66b67",
+      "license": "MIT",
+      "languages": ["typescript", "javascript"]
+    },
+    {
+      "id": "chalk",
+      "url": "https://github.com/chalk/chalk.git",
+      "commitSha": "661317e6f91fe7c90306c2c48ea9354562ee9146",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "p-map",
+      "url": "https://github.com/sindresorhus/p-map.git",
+      "commitSha": "22dda61ea29037ba85af25e84bc5efba77e62f44",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "execa",
+      "url": "https://github.com/sindresorhus/execa.git",
+      "commitSha": "8017b279e19347efaf2587711c2d57dbd4330740",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "esbuild",
+      "url": "https://github.com/evanw/esbuild.git",
+      "commitSha": "f6058f8364fe7ab91ca57a83e02577ed74c9cae4",
+      "license": "MIT",
+      "languages": ["typescript", "javascript"]
+    },
+    {
+      "id": "indent-string",
+      "url": "https://github.com/sindresorhus/indent-string.git",
+      "commitSha": "9234193d865eb331e02b86e13eff82221ae594c0",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "camelcase",
+      "url": "https://github.com/sindresorhus/camelcase.git",
+      "commitSha": "3146708d5ffcd91a8cbc483e4a2585a39545da48",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "decamelize",
+      "url": "https://github.com/sindresorhus/decamelize.git",
+      "commitSha": "365e2e909c93c8a5e7c9398523290ba0b35a3a93",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "strip-final-newline",
+      "url": "https://github.com/sindresorhus/strip-final-newline.git",
+      "commitSha": "a1bfe78e3a3de2f73ed3a7600932d7cc952732b4",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "p-try",
+      "url": "https://github.com/sindresorhus/p-try.git",
+      "commitSha": "b32d5d478132baa28a96419f29fdea46885dfef3",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "is-stream",
+      "url": "https://github.com/sindresorhus/is-stream.git",
+      "commitSha": "ab06c4acc9dce4dcadc9dfc6416e1be2c836862d",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "is-unicode-supported",
+      "url": "https://github.com/sindresorhus/is-unicode-supported.git",
+      "commitSha": "e0373335038856c63034c8eef6ac43ee3827a601",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "detect-indent",
+      "url": "https://github.com/sindresorhus/detect-indent.git",
+      "commitSha": "25d3cf12f54807147e56ac3d4f557c9cc7904c96",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "clean-stack",
+      "url": "https://github.com/sindresorhus/clean-stack.git",
+      "commitSha": "9bd71e0724b175e4a26feec30a7eef69251c8dd8",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "figures",
+      "url": "https://github.com/sindresorhus/figures.git",
+      "commitSha": "3da3d1713e9a09dbfcfc99eac86af8f4377597b6",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "escape-string-regexp",
+      "url": "https://github.com/sindresorhus/escape-string-regexp.git",
+      "commitSha": "cbc42403142c96923b482604e1f3d627b1956aff",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "clsx",
+      "url": "https://github.com/lukeed/clsx.git",
+      "commitSha": "925494cf31bcd97d3337aacd34e659e80cae7fe2",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "nanoid",
+      "url": "https://github.com/ai/nanoid.git",
+      "commitSha": "8588e3a0db022b3876a4724e25cce4961e2a47a4",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "uuid",
+      "url": "https://github.com/uuidjs/uuid.git",
+      "commitSha": "fd59f0277549d22cc7ec00a7b3b5c9bccb4d3c1d",
+      "license": "MIT",
+      "languages": ["typescript", "javascript"]
+    },
+    {
+      "id": "semver",
+      "url": "https://github.com/npm/node-semver.git",
+      "commitSha": "6e05b7637396ac66522cff8731f07cfe0ef49a29",
+      "license": "ISC",
+      "languages": ["javascript"]
+    }
+  ],
+  "cases": [
+    {
+      "repositoryId": "zod",
+      "case": {
+        "id": "zod-entry",
+        "query": "zod schema parse",
+        "expectedPaths": ["packages/zod/src/index.ts"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "chalk",
+      "case": {
+        "id": "chalk-entry",
+        "query": "chalk terminal color",
+        "expectedPaths": ["source/index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "p-map",
+      "case": {
+        "id": "p-map-entry",
+        "query": "concurrent promise map",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "execa",
+      "case": {
+        "id": "execa-entry",
+        "query": "execute command subprocess",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "esbuild",
+      "case": {
+        "id": "esbuild-node-entry",
+        "query": "node package build service",
+        "expectedPaths": ["lib/npm/node.ts"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "indent-string",
+      "case": {
+        "id": "indent-string-entry",
+        "query": "indent string",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "camelcase",
+      "case": {
+        "id": "camelcase-entry",
+        "query": "camel case conversion",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "decamelize",
+      "case": {
+        "id": "decamelize-entry",
+        "query": "decamelize separator",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "strip-final-newline",
+      "case": {
+        "id": "strip-final-newline-entry",
+        "query": "strip final newline",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "p-try",
+      "case": {
+        "id": "p-try-entry",
+        "query": "promise try catch",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "is-stream",
+      "case": {
+        "id": "is-stream-entry",
+        "query": "is stream detection",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "is-unicode-supported",
+      "case": {
+        "id": "is-unicode-supported-entry",
+        "query": "unicode terminal support",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "detect-indent",
+      "case": {
+        "id": "detect-indent-entry",
+        "query": "detect indentation",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "clean-stack",
+      "case": {
+        "id": "clean-stack-entry",
+        "query": "clean error stack trace",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "figures",
+      "case": {
+        "id": "figures-entry",
+        "query": "terminal unicode figures",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "escape-string-regexp",
+      "case": {
+        "id": "escape-string-regexp-entry",
+        "query": "escape string regexp",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "clsx",
+      "case": {
+        "id": "clsx-entry",
+        "query": "class names utility",
+        "expectedPaths": ["src/index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "nanoid",
+      "case": {
+        "id": "nanoid-entry",
+        "query": "nanoid random id",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "uuid",
+      "case": {
+        "id": "uuid-entry",
+        "query": "uuid generate random identifier",
+        "expectedPaths": ["src/index.ts"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    },
+    {
+      "repositoryId": "semver",
+      "case": {
+        "id": "semver-entry",
+        "query": "semantic version comparison",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": ["Selected after immutable SHA checkout inspection."]
+        }
+      }
+    }
+  ]
+}

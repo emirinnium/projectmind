@@ -1,7 +1,8 @@
 import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { relative, resolve } from 'node:path';
+import { relative } from 'node:path';
+import { assertProjectPath } from '../security/path-security.js';
 
 /** Safety cap on the number of files scanned for clone detection. */
 const DEFAULT_MAX_CLONE_FILES = 3000;
@@ -135,15 +136,32 @@ export class CloneDetector {
     const maxGroups = Math.max(1, options.maxGroups ?? 50);
 
     // Dedupe input paths: KG indexes may contain duplicate rows for the
-    // same file (multi-project history), which would fake "2x" groups.
-    const files = [...new Set(filePaths.map((p) => p.split('\\').join('/')))].slice(0, maxFiles);
+    // same file (multi-project history), which would fake "2x" groups. The
+    // input can be repository-derived, so it still goes through the central
+    // path contract before any filesystem read.
+    const files: Array<{ relativePath: string; absolutePath: string }> = [];
+    for (const inputPath of [...new Set(filePaths.map((p) => p.split('\\').join('/')))]) {
+      if (files.length >= maxFiles) break;
+      try {
+        const absolutePath = assertProjectPath(inputPath, this.projectRoot, {
+          mustExist: true,
+          rejectIgnored: true,
+        });
+        const relativePath = relative(this.projectRoot, absolutePath).replace(/\\/g, '/');
+        if (/\.[cm]?[jt]sx?$/i.test(relativePath)) files.push({ relativePath, absolutePath });
+      } catch {
+        // Invalid, ignored, missing or escaping inputs are not scan errors;
+        // they are excluded from the bounded candidate set.
+      }
+    }
     const buckets = new Map<string, CloneOccurrence[]>();
     const bucketLines = new Map<string, number>();
 
     let scannedFunctions = 0;
 
-    for (const relPath of files) {
-      const abs = resolve(this.projectRoot, relPath);
+    for (const file of files) {
+      const relPath = file.relativePath;
+      const abs = file.absolutePath;
       let content: string;
       try {
         content = readFileSync(abs, 'utf-8');

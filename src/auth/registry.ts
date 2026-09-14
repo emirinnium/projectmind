@@ -12,6 +12,7 @@ import type {
   StoredClient,
   TokenEndpointAuthMethod,
 } from './types.js';
+import { normalizeHostname } from '../utils/hostname.js';
 
 /**
  * Error carrying an RFC 7591 / RFC 6749 error code + HTTP status for the OAuth
@@ -77,7 +78,7 @@ function isValidRedirectUri(uri: string): boolean {
     if (u.protocol === 'https:') return true;
     return (
       u.protocol === 'http:' &&
-      (u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]')
+      ['localhost', '127.0.0.1', '::1'].includes(normalizeHostname(u.hostname))
     );
   } catch {
     return false;
@@ -101,6 +102,14 @@ function sameUriSet(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   const setA = new Set(a);
   return b.every((uri) => setA.has(uri));
+}
+
+/** Stable identity used by the SQLite unique index and duplicate lookup. */
+function registrationKey(input: { client_name?: string; redirect_uris?: string[] }): string {
+  return JSON.stringify({
+    clientName: input.client_name ?? '',
+    redirectUris: [...(input.redirect_uris ?? [])].sort(),
+  });
 }
 
 /**
@@ -176,17 +185,23 @@ export class ClientRegistry {
     };
 
     try {
-      this.db.exec('BEGIN');
+      // Reserve the write transaction before the identity lookup so concurrent
+      // registrations cannot both observe a missing identity.
+      this.db.exec('BEGIN IMMEDIATE');
 
       // RFC 7591 §2.2: identical metadata again → return the established client.
-      const rows = this.db
-        .prepare('SELECT client_id, secret_hash, metadata FROM oauth_clients')
-        .all() as Array<{
-        client_id: string;
-        secret_hash: string | null;
-        metadata: string;
-      }>;
-      for (const row of rows) {
+      const row = this.db
+        .prepare(
+          'SELECT client_id, secret_hash, metadata FROM oauth_clients WHERE registration_key = ?',
+        )
+        .get(registrationKey(input)) as
+        | {
+            client_id: string;
+            secret_hash: string | null;
+            metadata: string;
+          }
+        | undefined;
+      if (row) {
         const existing = JSON.parse(row.metadata) as ClientMetadata;
         if (
           (existing.client_name ?? '') === (input.client_name ?? '') &&
@@ -203,9 +218,9 @@ export class ClientRegistry {
 
       this.db
         .prepare(
-          'INSERT INTO oauth_clients (client_id, secret_hash, metadata, created_at) VALUES (?, ?, ?, ?)',
+          'INSERT INTO oauth_clients (client_id, secret_hash, metadata, registration_key, created_at) VALUES (?, ?, ?, ?, ?)',
         )
-        .run(clientId, secretHash ?? null, JSON.stringify(metadata), now);
+        .run(clientId, secretHash ?? null, JSON.stringify(metadata), registrationKey(input), now);
       this.db.exec('COMMIT');
     } catch (error) {
       try {

@@ -106,13 +106,14 @@ async function testDatabase(): Promise<void> {
   }
 
   console.log('\n=== Test: Knowledge Graph ===');
-  const fileId = await kg.upsertFile(struct!, 'parser/embeddings.ts');
+  const relativeTestPath = 'src/parser/embeddings.ts';
+  const fileId = await kg.upsertFile(struct!, relativeTestPath);
   assert(fileId > 0, `File stored with ID: ${fileId}`);
   kg.storeFileDetails(fileId, struct!);
 
   const fileInfo = kg.getFileByPath(testFile);
   assert(fileInfo !== null, 'File retrieved from KG');
-  assert(fileInfo!.relativePath === 'parser/embeddings.ts', 'Relative path stored correctly');
+  assert(fileInfo!.relativePath === relativeTestPath, 'Relative path stored correctly');
 
   console.log('\n=== Test: Pattern Extraction ===');
   const extractedPatterns = patterns.extractPatterns(struct!);
@@ -212,7 +213,7 @@ async function testDatabase(): Promise<void> {
   assert(sessionMemories.length > 0, `Session memories: ${sessionMemories.length}`);
 
   console.log('\n=== Test: Agent Touched Files ===');
-  kg.markAgentTouched('parser/embeddings.ts', 'test-agent');
+  kg.markAgentTouched(relativeTestPath, 'test-agent');
   const touchedFiles = kg.getAgentTouchedFiles();
   assert(touchedFiles.length > 0, `Touched files: ${touchedFiles.length}`);
 

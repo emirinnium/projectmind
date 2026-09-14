@@ -1,6 +1,8 @@
 import { AuthError, ClientRegistry } from './registry.js';
 import { TokenService } from './tokens.js';
 
+export { normalizeHostname } from '../utils/hostname.js';
+
 /**
  * HTTP surface for the OAuth endpoints (used by mcp-server.ts).
  *
@@ -98,7 +100,12 @@ function handleToken(params: Record<string, unknown>, ctx: OauthRouteContext): O
       typeof params.scope === 'string' && params.scope.length > 0
         ? params.scope.split(/\s+/).filter(Boolean)
         : [];
-    const granted = requested.filter((s) => ctx.allowedScopes!.includes(s));
+    // The MCP endpoint has one default scope. Without granting it when the
+    // client omits `scope`, token issuance succeeds but /mcp rejects the token.
+    const granted =
+      requested.length === 0
+        ? ctx.allowedScopes!.slice(0, 1)
+        : requested.filter((s) => ctx.allowedScopes!.includes(s));
     if (requested.length > 0 && granted.length === 0) {
       throw new AuthError('The requested scope is not authorized', 400, 'invalid_scope');
     }

@@ -1,10 +1,12 @@
 import { z } from 'zod';
 import { existsSync } from 'node:fs';
+import { relative } from 'node:path';
 import ts from 'typescript';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { createProjectLanguageService } from '@/cli/utils/language-service.js';
 import { confineToProject } from './_shared.js';
+import { asUntrustedContent, type UntrustedContent } from '@/mcp/security/untrusted-content.js';
 
 const SYMBOL_PATTERNS: ReadonlyArray<{ pattern: RegExp; kind: string }> = [
   { pattern: /(?:^|\s)export\s+const\s/, kind: 'const' },
@@ -45,8 +47,10 @@ export interface SymbolDefinitionResult {
   file: string;
   line: number;
   column: number;
+  snippet: string;
   name: string;
   kind: string;
+  untrustedContent?: UntrustedContent;
 }
 
 /** Result of a find_symbol_definition run. */
@@ -112,7 +116,7 @@ export function findSymbolDefinitionForTool(
 
     while ((match = wordRegex.exec(sourceText)) !== null) {
       const start = match.index!;
-      const { line, column } = defineDescribeSpan(sourceText, start);
+      const { line, column, snippet } = defineDescribeSpan(sourceText, start);
 
       // Check if this occurrence is a declaration (has a kind we can identify)
       // Try to find the node kind at this position
@@ -120,9 +124,10 @@ export function findSymbolDefinitionForTool(
 
       if (definition === null) {
         definition = {
-          file: args.file.replace(/\\/g, '/'),
+          file: relative(deps.projectRoot, absPath).replace(/\\/g, '/'),
           line,
           column,
+          snippet,
           name: args.symbol,
           kind,
         };
@@ -203,6 +208,13 @@ export function registerFindSymbolDefinitionTool(server: McpServer, deps: McpDep
           file: args.file,
           symbol: args.symbol,
         });
+        if (result.definition) {
+          result.definition.untrustedContent = asUntrustedContent(
+            result.definition.snippet,
+            'source',
+            { relativePath: result.definition.file },
+          );
+        }
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
         };

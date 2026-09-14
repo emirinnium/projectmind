@@ -5,7 +5,7 @@
  * File relevance is measured as:
  *   relevanceScore = 0.4 * semantic_similarity + 0.3 * structural_centrality + 0.3 * recency
  * (recently changed files get higher recency score from git log).
- * Token estimation uses char_length / 4 heuristic (approximate token-to-char ratio
+ * Token estimation uses UTF-8 byte_length / 4 heuristic (an offline approximation
  * for English/code). The knapsack maximizes Σ relevanceScore subject to Σ tokens ≤ budget.
  *
  * F30/F32: the default strategy is the memory-safe VALUE-based DP
@@ -98,9 +98,19 @@ export class ContextBudgetOptimizer {
   }
 
   optimize(items: ContextItem[], budget: number, taskType?: TaskType): ContextBudgetPlan {
-    if (budget < 0) throw new Error('Budget must be >= 0');
+    if (!Number.isSafeInteger(budget) || budget < 0) {
+      throw new Error('Budget must be a non-negative safe integer.');
+    }
     for (const item of items) {
-      if (item.tokens < 1) throw new Error('Item tokens must be >= 1');
+      if (!Number.isSafeInteger(item.tokens) || item.tokens < 1) {
+        throw new Error('Item tokens must be a positive safe integer.');
+      }
+      if (!Number.isFinite(item.relevanceScore)) {
+        throw new Error('Item relevanceScore must be finite.');
+      }
+      if (item.bytes !== undefined && (!Number.isSafeInteger(item.bytes) || item.bytes < 0)) {
+        throw new Error('Item bytes must be a non-negative safe integer when provided.');
+      }
     }
 
     const effectiveTask = taskType ?? this.taskType;
@@ -138,6 +148,7 @@ export class ContextBudgetOptimizer {
       return {
         path: it.path,
         tokens: it.tokens,
+        ...(it.bytes === undefined ? {} : { bytes: it.bytes }),
         relevanceScore: it.relevanceScore,
         // F33: per-file compression hint for files that dominate the budget.
         inclusionReason: large
@@ -170,13 +181,13 @@ export class ContextBudgetOptimizer {
   }
 
   /**
-   * Token estimator using char/4 heuristic.
+   * Token estimator using a UTF-8 byte/4 heuristic.
    * Falls back to a simple heuristic (100 tokens) if file does not exist.
    */
   static tokenEstimator(filePath: string): number {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
-      return Math.ceil(content.length / 4);
+      return Math.max(1, Math.ceil(Buffer.byteLength(content, 'utf8') / 4));
     } catch (e) {
       // File unreadable or missing — fall back to default token estimate.
       logger.warn('Failed to read file for token estimation, using default 100 tokens', {
@@ -195,4 +206,32 @@ export class ContextBudgetOptimizer {
     if (tokens > 2000) return 'summary';
     return 'full';
   }
+}
+
+/**
+ * Build the uncompressed full-file baseline used by ROI comparisons.
+ * Unlike `optimize`, this intentionally retains zero-relevance candidates so
+ * the denominator represents every supplied source file rather than only
+ * items that happen to have a positive ranking score.
+ */
+export function createFullFilePlan(items: readonly ContextItem[]): ContextBudgetPlan {
+  const selectedItems = [...items];
+  const allocatedTokens = selectedItems.reduce((sum, item) => sum + item.tokens, 0);
+  return {
+    totalTokens: allocatedTokens,
+    allocatedTokens,
+    files: selectedItems.map((item) => ({
+      path: item.path,
+      tokens: item.tokens,
+      ...(item.bytes === undefined ? {} : { bytes: item.bytes }),
+      relevanceScore: item.relevanceScore,
+      inclusionReason: 'full-file baseline',
+      compressionStrategy: 'full',
+    })),
+    excludedFiles: [],
+    compressionStrategy: 'full',
+    totalRelevance: selectedItems.reduce((sum, item) => sum + item.relevanceScore, 0),
+    selectedItems,
+    excludedItems: [],
+  };
 }

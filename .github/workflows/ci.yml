@@ -29,6 +29,7 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run typecheck:test
 
   test:
     runs-on: ubuntu-latest
@@ -44,6 +45,19 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test
+
+  benchmark-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - name: Run deterministic benchmark and isolation gates
+        run: npx vitest run tests/benchmark tests/integration/cli-project-isolation.test.ts --maxWorkers=1
 
   coverage:
     runs-on: ubuntu-latest

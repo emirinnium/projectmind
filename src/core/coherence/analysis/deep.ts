@@ -242,8 +242,13 @@ SUGGESTIONS: (one per line, or "none")`;
       confidence,
       reasoningTrace,
       suggestions,
-      llmProvider: response.reasoningTrace.length > 5 ? 'deep-tier(llm)' : 'fast-tier',
+      llmProvider:
+        response.responseMode === 'reasoning-only'
+          ? 'deep-tier(llm:no-final-content)'
+          : 'deep-tier(llm)',
       responseTimeMs: Date.now() - startTime,
+      responseMode: response.responseMode,
+      finishReason: response.finishReason,
     };
   }
 

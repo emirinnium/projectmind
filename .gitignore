@@ -80,6 +80,7 @@ Thumbs.db
 # Coverage
 coverage/
 .nyc_output/
+fuzz-artifacts/
 
 # TypeScript cache
 *.tsbuildinfo
@@ -111,3 +112,6 @@ opencode.json
 .agent/
 .devin/
 DEVIN.md
+
+# Local Qwen agent settings
+.qwen/

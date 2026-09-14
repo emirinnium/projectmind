@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { exportArchitectureDiagramForTool } from '../../../src/mcp/tools/architecture-diagram.js';
+import {
+  assignLayer,
+  exportArchitectureDiagramForTool,
+  exportEnhancedArchitectureDiagramForTool,
+  registerExportArchitectureDiagramTool,
+} from '../../../src/mcp/tools/architecture-diagram.js';
 import type { McpDependencies } from '../../../src/mcp/tools/types.js';
 import type { ScaleReport } from '../../../src/core/scale/reporting/types.js';
 import type { FileInfo } from '../../../src/storage/kg/types.js';
@@ -69,10 +74,19 @@ function makeReport(): ScaleReport {
 function makeDeps(report: ScaleReport): McpDependencies {
   return {
     scale: { getScaleReport: () => report },
+    kg: { getImports: () => [], getFileByImport: () => null },
   } as unknown as McpDependencies;
 }
 
 describe('export_architecture_diagram (exportArchitectureDiagramForTool)', () => {
+  it('assigns conventional directory names to their intended layers', () => {
+    expect(assignLayer('src/api/users.ts')).toBe('api');
+    expect(assignLayer('src/services/account.ts')).toBe('service');
+    expect(assignLayer('src/storage/database.ts')).toBe('infrastructure');
+    expect(assignLayer('src/security/auth.ts')).toBe('cross-cutting');
+    expect(assignLayer('src/core/feature.ts')).toBe('core');
+  });
+
   it('renders SVG content starting with <svg by default', () => {
     const result = exportArchitectureDiagramForTool(makeDeps(makeReport()), {});
     expect(result.format).toBe('svg');
@@ -116,6 +130,54 @@ describe('export_architecture_diagram (exportArchitectureDiagramForTool)', () =>
     expect(result.content).not.toContain('m_tests');
   });
 
+  it('renders an enhanced diagram from one scale snapshot', () => {
+    let scaleReads = 0;
+    const report = makeReport();
+    const deps = makeDeps(report);
+    deps.scale.getScaleReport = () => {
+      scaleReads++;
+      return report;
+    };
+    const result = exportEnhancedArchitectureDiagramForTool(deps, {
+      format: 'mermaid',
+      depth: 1,
+    });
+    expect(result.content).toContain('m_src');
+    expect(result.content).not.toContain('m_tests');
+    expect(result.layerDistribution.core).toBe(1);
+    expect(scaleReads).toBe(1);
+  });
+
+  it('resolves legacy relative imports from the persisted project index', () => {
+    const report = makeReport();
+    report.modules = [
+      {
+        ...report.modules[0]!,
+        path: 'src',
+        files: [makeFile('C:/p/src/a.ts', 'src/a.ts')],
+      },
+      {
+        ...report.modules[1]!,
+        path: 'shared',
+        files: [makeFile('C:/p/shared/index.ts', 'shared/index.ts')],
+      },
+    ];
+    const rows = [
+      { source: '../shared', resolved_path: null, owner_relative_path: 'src/a.ts' },
+      { source: '../src/a', resolved_path: null, owner_relative_path: 'shared/index.ts' },
+    ];
+    const deps = makeDeps(report);
+    deps.kg = {
+      ...deps.kg,
+      db: { prepare: () => ({ all: () => rows }) },
+      getCurrentProjectId: () => 1,
+    } as unknown as typeof deps.kg;
+    const result = exportEnhancedArchitectureDiagramForTool(deps, { format: 'mermaid' });
+    expect(result.circularDeps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ cycle: expect.any(Array), length: 2 })]),
+    );
+  });
+
   it('throws a helpful error for an unknown module', () => {
     expect(() =>
       exportArchitectureDiagramForTool(makeDeps(makeReport()), { module: 'nope' }),
@@ -128,5 +190,22 @@ describe('export_architecture_diagram (exportArchitectureDiagramForTool)', () =>
     expect(() => exportArchitectureDiagramForTool(makeDeps(report), {})).toThrow(
       /run scan_project first/,
     );
+  });
+
+  it('labels the raw diagram artifact as untrusted MCP data', async () => {
+    let handler: ((args: unknown) => Promise<unknown>) | undefined;
+    const server = {
+      registerTool: (_name: string, _config: unknown, registered: unknown) => {
+        handler = registered as (args: unknown) => Promise<unknown>;
+      },
+    } as unknown as import('@modelcontextprotocol/sdk/server/mcp.js').McpServer;
+    registerExportArchitectureDiagramTool(server, makeDeps(makeReport()));
+    const result = (await handler?.({ format: 'mermaid' })) as {
+      content: Array<{ _meta?: { untrustedContent?: { trust?: string; contentHash?: string } } }>;
+    };
+    expect(result.content[0]?._meta?.untrustedContent).toMatchObject({
+      trust: 'untrusted',
+      contentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
   });
 });

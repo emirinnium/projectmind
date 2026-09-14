@@ -11,6 +11,7 @@ import {
   MCP_ACCESS_SCOPE,
   OAUTH_ENABLED,
   OAUTH_TOKEN_TTL,
+  assertHttpBindingSecurity,
   getOauthRegistry,
   getOauthTokens,
   httpRateLimiter,
@@ -52,10 +53,8 @@ function createRequestHandler(transport: StreamableHTTPServerTransport): http.Re
   return (req, res) => {
     void (async () => {
       try {
-        if (
-          req.method !== 'POST' ||
-          (req.url !== '/mcp' && req.url !== '/oauth/register' && req.url !== '/oauth/token')
-        ) {
+        const requestPath = normalizeRequestPath(req.url);
+        if (req.method !== 'POST' || requestPath === null || !isKnownRoute(requestPath)) {
           jsonError(
             res,
             405,
@@ -87,7 +86,7 @@ function createRequestHandler(transport: StreamableHTTPServerTransport): http.Re
         }
 
         // OAuth 2.0 DCR (RFC 7591) + client-credentials token endpoint.
-        if (req.url === '/oauth/register' || req.url === '/oauth/token') {
+        if (requestPath === '/oauth/register' || requestPath === '/oauth/token') {
           if (!OAUTH_ENABLED) {
             jsonError(res, 404, {
               error: 'OAuth endpoints are disabled (set PROJECTMIND_OAUTH_ENABLED=1).',
@@ -97,7 +96,7 @@ function createRequestHandler(transport: StreamableHTTPServerTransport): http.Re
           // /oauth/register is itself a protected resource (RFC 7591 §2.1):
           // require the static admin token when one is configured.
           // /oauth/token is NOT protected — it is the auth step.
-          if (req.url === '/oauth/register' && HTTP_AUTH_TOKEN && !isStaticTokenValid(req)) {
+          if (requestPath === '/oauth/register' && HTTP_AUTH_TOKEN && !isStaticTokenValid(req)) {
             jsonError(
               res,
               401,
@@ -108,12 +107,17 @@ function createRequestHandler(transport: StreamableHTTPServerTransport): http.Re
             );
             return;
           }
-          const result = handleOauthRoute(req.url, bodyText, req.headers['content-type'] ?? '', {
-            registry: getOauthRegistry(),
-            tokens: getOauthTokens(),
-            authorization: req.headers.authorization,
-            allowedScopes: [MCP_ACCESS_SCOPE],
-          });
+          const result = handleOauthRoute(
+            requestPath,
+            bodyText,
+            req.headers['content-type'] ?? '',
+            {
+              registry: getOauthRegistry(),
+              tokens: getOauthTokens(),
+              authorization: req.headers.authorization,
+              allowedScopes: [MCP_ACCESS_SCOPE],
+            },
+          );
           if (!result.handled) {
             jsonError(res, 500, { error: 'OAuth route failed' });
             return;
@@ -173,6 +177,9 @@ function createRequestHandler(transport: StreamableHTTPServerTransport): http.Re
 
 /** Start the optional stateless HTTP transport and return its server handle. */
 export async function startHttpMcpTransport(server: McpServer, port: number): Promise<http.Server> {
+  const httpHost = process.env.PROJECTMIND_HTTP_HOST ?? '127.0.0.1';
+  assertHttpBindingSecurity(httpHost);
+
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -181,7 +188,6 @@ export async function startHttpMcpTransport(server: McpServer, port: number): Pr
   setAgentIdentity(server);
 
   const httpServer = http.createServer(createRequestHandler(transport));
-  const httpHost = process.env.PROJECTMIND_HTTP_HOST ?? '127.0.0.1';
   await new Promise<void>((resolve, reject) => {
     const onListening = (): void => {
       httpServer.off('error', onError);
@@ -205,9 +211,22 @@ export async function startHttpMcpTransport(server: McpServer, port: number): Pr
     );
   }
   if (!HTTP_AUTH_TOKEN && !OAUTH_ENABLED) {
-    logger.warn(
-      'PROJECTMIND_HTTP_TOKEN is NOT set — the endpoint is unauthenticated. It is bound to 127.0.0.1 only; set a token before exposing it beyond loopback.',
-    );
+    logger.warn('MCP HTTP endpoint is unauthenticated but restricted to loopback.');
   }
   return httpServer;
+}
+
+/** Return a canonical route path while accepting query strings and one slash. */
+export function normalizeRequestPath(rawUrl: string | undefined): string | null {
+  if (!rawUrl) return null;
+  try {
+    const pathname = new URL(rawUrl, 'http://projectmind.local').pathname;
+    return pathname.replace(/\/+$/, '') || '/';
+  } catch {
+    return null;
+  }
+}
+
+function isKnownRoute(pathname: string): boolean {
+  return pathname === '/mcp' || pathname === '/oauth/register' || pathname === '/oauth/token';
 }

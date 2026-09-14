@@ -140,7 +140,7 @@ describe('ContextBudgetOptimizer', () => {
     expect(plan.files[0].inclusionReason.startsWith('test file')).toBe(true);
   });
 
-  // (e) token estimator char/4 sanity.
+  // (e) token estimator UTF-8 byte/4 sanity.
   describe('tokenEstimator', () => {
     let tmpDir: string;
     beforeAll(() => {
@@ -150,10 +150,25 @@ describe('ContextBudgetOptimizer', () => {
       rmSync(tmpDir, { recursive: true, force: true });
     });
 
-    it('estimates char/4 for real files', () => {
+    it('estimates UTF-8 byte/4 for real files', () => {
       const p = join(tmpDir, 'est.txt');
       writeFileSync(p, 'x'.repeat(400), 'utf-8');
       expect(ContextBudgetOptimizer.tokenEstimator(p)).toBe(100);
+    });
+
+    it('uses UTF-8 bytes for non-ASCII files', () => {
+      const p = join(tmpDir, 'unicode.txt');
+      writeFileSync(p, 'ééé', 'utf-8');
+      expect(ContextBudgetOptimizer.tokenEstimator(p)).toBe(2);
+    });
+
+    it('assigns one token to an empty file so optimization remains valid', () => {
+      const p = join(tmpDir, 'empty.ts');
+      writeFileSync(p, '', 'utf-8');
+      expect(ContextBudgetOptimizer.tokenEstimator(p)).toBe(1);
+      expect(
+        new ContextBudgetOptimizer().optimize([{ path: p, tokens: 1, relevanceScore: 1 }], 1).files,
+      ).toHaveLength(1);
     });
 
     it('falls back to 100 for missing files', () => {
@@ -212,6 +227,18 @@ describe('ContextBudgetOptimizer', () => {
 
     expect(() => opt.optimize([{ path: 'bad.ts', tokens: 0, relevanceScore: 1 }], 10)).toThrow();
     expect(() => opt.optimize([{ path: 'a.ts', tokens: 1, relevanceScore: 1 }], -1)).toThrow();
+    expect(() => opt.optimize([{ path: 'a.ts', tokens: 1.5, relevanceScore: 1 }], 10)).toThrow(
+      'positive safe integer',
+    );
+    expect(() =>
+      opt.optimize([{ path: 'a.ts', tokens: 1, relevanceScore: Number.NaN }], 10),
+    ).toThrow('relevanceScore must be finite');
+    expect(() =>
+      opt.optimize([{ path: 'a.ts', tokens: 1, relevanceScore: 1 }], Number.POSITIVE_INFINITY),
+    ).toThrow('non-negative safe integer');
+    expect(() =>
+      opt.optimize([{ path: 'a.ts', tokens: 1, bytes: 1.5, relevanceScore: 1 }], 10),
+    ).toThrow('bytes must be a non-negative safe integer');
   });
 
   // (g) boost-ordering regression: the old [0,1] clamp quantized every

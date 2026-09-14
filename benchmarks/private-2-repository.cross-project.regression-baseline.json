@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "evaluatorName": "projectmind-cli-cross-project-isolation",
+  "repositories": ["execa", "zod"],
+  "requirePassed": true,
+  "requireCommitParity": true,
+  "maxScanErrors": 0
+}

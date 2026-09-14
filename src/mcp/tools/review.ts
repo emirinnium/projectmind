@@ -14,8 +14,11 @@ import {
   verifiedFindings,
 } from '@/core/review/finding-validation.js';
 import { loadReviewPolicy } from '@/core/review/policy.js';
-import { toActionableError } from '@/utils/actionable-error.js';
+import { actionableMcpError } from '@/utils/actionable-error.js';
 import { asUntrustedContent } from '@/mcp/security/untrusted-content.js';
+import { buildReviewGraphClosure } from '@/core/review/graph-closure.js';
+import { executeReviewBundles } from '@/core/review/bundle-workers.js';
+import { recordReviewDecision } from '@/core/review/audit.js';
 
 function text(payload: unknown): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] };
@@ -57,15 +60,37 @@ export function registerReviewProjectTool(server: McpServer, deps: McpDependenci
           maxBytes: args.maxBundleBytes,
           maxTokens: args.maxBundleTokens,
           allowedLineRanges,
+          graphClosure: buildReviewGraphClosure(changedFiles, deps.kg),
         });
-        const generated = collectReviewFindings(
-          changedFiles,
-          deps.projectRoot,
-          policy,
-        ) as ReviewFinding[];
+        const bundleExecution = await executeReviewBundles(
+          bundles.bundles,
+          ({ bundle }) =>
+            collectReviewFindings(
+              bundle.files.map((file) => file.relativePath),
+              deps.projectRoot,
+              policy,
+            ) as ReviewFinding[],
+          {
+            concurrency: policy.concurrency,
+            timeoutMs: policy.bundleTimeoutMs,
+            maxRetries: policy.bundleRetries,
+          },
+        );
+        const generated = bundleExecution.results.flatMap((result) => result.value ?? []);
         const positioned = validateFindingPositions(generated, bundles, deps.projectRoot);
         const reflected = reflectFindings(positioned, policy, deps.projectRoot);
         const publishable = verifiedFindings(reflected);
+        const complete = bundles.excluded.length === 0 && bundleExecution.complete;
+        const audit = recordReviewDecision(deps.db, deps.kg, {
+          base: args.base,
+          head: args.head,
+          policyVersion: String(policy.version),
+          changedFiles,
+          excludedFiles: bundles.excluded.length,
+          generatedFindings: generated.length,
+          verifiedFindings: publishable.length,
+          complete,
+        });
         return text({
           success: true,
           base: args.base,
@@ -73,6 +98,7 @@ export function registerReviewProjectTool(server: McpServer, deps: McpDependenci
           policy: { version: policy.version, preset: policy.preset, mode: policy.mode },
           changedFiles,
           bundles,
+          bundleExecution,
           findings: publishable.map((finding) => ({
             ...finding,
             untrustedContent: asUntrustedContent(
@@ -90,19 +116,15 @@ export function registerReviewProjectTool(server: McpServer, deps: McpDependenci
             generated: generated.length,
             verified: publishable.length,
             excludedFiles: bundles.excluded.length,
-            complete: bundles.excluded.length === 0,
+            complete,
           },
-          nextAction:
-            bundles.excluded.length === 0
-              ? 'Review verified evidence before publishing or applying remediation.'
-              : 'Resolve excluded files and rerun; this result does not claim complete coverage.',
+          ...(audit ? { evidenceAudit: audit } : {}),
+          nextAction: complete
+            ? 'Review verified evidence before publishing or applying remediation.'
+            : 'Resolve excluded files or failed/timed-out bundles and rerun; this result does not claim complete coverage.',
         });
       } catch (error) {
-        return text({
-          success: false,
-          error: toActionableError(error),
-          nextAction: 'Check Git revisions and review policy, then rerun review_project.',
-        });
+        return actionableMcpError(error);
       }
     },
   );

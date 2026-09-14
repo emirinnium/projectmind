@@ -38,10 +38,51 @@ describe('Parser - parseFile', () => {
     expect(result!.classes.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('retains every heritage type and counts modern control-flow constructs', () => {
+    const result = parseFile(
+      'heritage.ts',
+      'interface A {} interface B {} class Child extends Base implements A, B { run(x?: X) { return x?.value ?? fallback(); } }',
+    );
+    expect(result?.classes[0]?.extends).toBe('Base');
+    expect(result?.classes[0]?.implements).toEqual(['A', 'B']);
+    expect(result?.functions[0]?.cyclomaticComplexity).toBeGreaterThan(2);
+  });
+
+  it('does not count terminal throws as additional cyclomatic branches', () => {
+    const result = parseFile(
+      'errors.ts',
+      'function fail() { throw new Error("bad"); } function recover() { try { return 1; } catch { return 0; } }',
+    );
+    expect(result?.functions.find((fn) => fn.name === 'fail')?.cyclomaticComplexity).toBe(1);
+    expect(result?.functions.find((fn) => fn.name === 'recover')?.cyclomaticComplexity).toBe(2);
+  });
+
   it('parses TypeScript imports', () => {
     const result = parseFile('test.ts', "import { foo } from './bar';");
     expect(result).not.toBeNull();
     expect(result!.imports.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('records named static call candidates with source locations', () => {
+    const result = parseFile(
+      'calls.ts',
+      'function caller() {\n  callee();\n}\nfunction callee() { return 1; }',
+    );
+    expect(result?.staticCalls).toContainEqual({
+      fromFunctionName: 'caller',
+      toFunctionName: 'callee',
+      line: 2,
+    });
+  });
+
+  it('parses static CommonJS require dependencies', () => {
+    const result = parseFile('test.js', "const { foo } = require('./bar.js');");
+    expect(result).not.toBeNull();
+    expect(result!.imports).toContainEqual({
+      source: './bar.js',
+      named: [],
+      kind: 'require',
+    });
   });
 
   it('returns null for unsupported file types', () => {

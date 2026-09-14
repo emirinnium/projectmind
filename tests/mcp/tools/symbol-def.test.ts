@@ -95,10 +95,23 @@ describe('find_symbol_definition (findSymbolDefinitionForTool)', () => {
 
     expect(result.definition).not.toBeNull();
     expect(result.definition!.file).toContain('src/utils.ts');
+    expect(result.definition!.file).not.toContain(root.replace(/\\/g, '/'));
     expect(result.definition!.line).toBeGreaterThan(0);
     expect(result.definition!.column).toBeGreaterThan(0);
     expect(result.definition!.name).toBe('add');
     expect(result.definition!.kind).toBe('function');
+  });
+
+  it('returns a project-relative definition path for an absolute input path', async () => {
+    const root = await seedProject();
+    tmpRoots.push(root);
+
+    const result = findSymbolDefinitionForTool(makeDeps(root), {
+      file: join(root, 'src', 'utils.ts'),
+      symbol: 'add',
+    });
+
+    expect(result.definition?.file).toBe('src/utils.ts');
   });
 
   it('finds the definition of a class symbol', async () => {

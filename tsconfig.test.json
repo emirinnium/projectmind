@@ -3,8 +3,12 @@
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "./dist-tests",
-    "noEmit": false
+    "noEmit": false,
+    "allowJs": true,
+    "checkJs": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
-  "exclude": ["node_modules", "dist", "tests/mcp"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/benchmark/**/*.mjs"],
+  "exclude": ["node_modules", "dist"]
 }

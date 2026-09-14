@@ -35,6 +35,9 @@ export interface PrImpact {
   reviewAudit?: {
     policy: import('@/core/review/policy.js').ReviewPolicy;
     bundles: import('@/core/review/bundle.js').ReviewBundlePlan;
+    bundleExecution?: import('@/core/review/bundle-workers.js').ReviewBundleExecution<
+      ReviewFinding[]
+    >;
     findings: import('@/core/review/finding-validation.js').ValidatedFinding[];
   };
 }

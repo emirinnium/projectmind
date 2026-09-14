@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "name": "projectmind-private-js-ts-structural-five-repository",
+  "access": "private",
+  "repositories": [
+    {
+      "id": "zod",
+      "url": "https://github.com/colinhacks/zod.git",
+      "commitSha": "62311eb2c4a93c7348a8b1c5abbde1ec77c66b67",
+      "license": "MIT",
+      "languages": ["typescript", "javascript"]
+    },
+    {
+      "id": "execa",
+      "url": "https://github.com/sindresorhus/execa.git",
+      "commitSha": "8017b279e19347efaf2587711c2d57dbd4330740",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "uuid",
+      "url": "https://github.com/uuidjs/uuid.git",
+      "commitSha": "fd59f0277549d22cc7ec00a7b3b5c9bccb4d3c1d",
+      "license": "MIT",
+      "languages": ["typescript", "javascript"]
+    },
+    {
+      "id": "nanoid",
+      "url": "https://github.com/ai/nanoid.git",
+      "commitSha": "8588e3a0db022b3876a4724e25cce4961e2a47a4",
+      "license": "MIT",
+      "languages": ["javascript", "typescript"]
+    },
+    {
+      "id": "semver",
+      "url": "https://github.com/npm/node-semver.git",
+      "commitSha": "6e05b7637396ac66522cff8731f07cfe0ef49a29",
+      "license": "ISC",
+      "languages": ["javascript"]
+    }
+  ],
+  "cases": [
+    {
+      "repositoryId": "zod",
+      "case": {
+        "id": "classic-external-impact",
+        "kind": "impact",
+        "query": "zod classic external entrypoint impact",
+        "targetPath": "packages/zod/src/v4/classic/external.ts",
+        "expectedPaths": [
+          "packages/zod/src/index.ts",
+          "packages/zod/src/v4/classic/index.ts",
+          "packages/zod/src/v4/index.ts"
+        ],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": [
+            "Immutable SHA checkout inspection confirmed the three source entrypoints import the target."
+          ]
+        }
+      }
+    },
+    {
+      "repositoryId": "execa",
+      "case": {
+        "id": "create-impact",
+        "kind": "impact",
+        "query": "execa create subprocess impact",
+        "targetPath": "lib/methods/create.js",
+        "expectedPaths": ["index.js"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": [
+            "Immutable SHA checkout inspection confirmed index.js imports createExeca from the target."
+          ]
+        }
+      }
+    },
+    {
+      "repositoryId": "uuid",
+      "case": {
+        "id": "stringify-impact",
+        "kind": "impact",
+        "query": "uuid stringify implementation impact",
+        "targetPath": "src/stringify.ts",
+        "expectedPaths": [
+          "src/test/parse.test.ts",
+          "src/test/stringify.test.ts",
+          "src/test/v7.test.ts",
+          "src/v1.ts",
+          "src/v1ToV6.ts",
+          "src/v35.ts",
+          "src/v4.ts",
+          "src/v6.ts",
+          "src/v6ToV1.ts",
+          "src/v7.ts"
+        ],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": [
+            "Immutable SHA checkout inspection confirmed every listed file imports or exercises stringify."
+          ]
+        }
+      }
+    },
+    {
+      "repositoryId": "uuid",
+      "case": {
+        "id": "v35-review",
+        "kind": "review",
+        "query": "review unresolved implementation marker",
+        "changedPaths": ["src/v35.ts"],
+        "expectedPaths": ["src/v35.ts"],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": [
+            "The immutable source contains a TODO marker in src/v35.ts and the default review policy matches it."
+          ]
+        }
+      }
+    },
+    {
+      "repositoryId": "nanoid",
+      "case": {
+        "id": "entry-review-no-findings",
+        "kind": "review",
+        "query": "review clean package entrypoint",
+        "changedPaths": ["index.js"],
+        "unknown": true,
+        "expectedPaths": [],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "source-inspection",
+          "evidence": [
+            "The immutable entrypoint was inspected and no default rule match was promoted; semantic review remains unknown."
+          ]
+        }
+      }
+    },
+    {
+      "repositoryId": "semver",
+      "case": {
+        "id": "commonjs-dead-code",
+        "kind": "dead-code",
+        "query": "unreferenced production modules",
+        "unknown": true,
+        "expectedPaths": [],
+        "labeling": {
+          "status": "single-reviewer",
+          "reviewers": ["local-source-audit"],
+          "method": "unknown",
+          "evidence": [
+            "The immutable repository uses CommonJS; unresolved require edges prevent a trustworthy dead-code label."
+          ]
+        }
+      }
+    }
+  ]
+}

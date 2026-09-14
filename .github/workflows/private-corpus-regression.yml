@@ -1,0 +1,147 @@
+name: Private corpus regression
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-corpus-regression
+  cancel-in-progress: true
+
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CORPUS_ROOT: ${{ runner.temp }}/projectmind-private-corpus
+      REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-report.md
+      PRODUCT_REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-product-report.md
+      RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-result.json
+      PRODUCT_RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-product-result.json
+      CONTRACT_REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-contract-report.md
+      CONTRACT_RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-contract-result.json
+      STRUCTURAL_REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-structural-report.md
+      STRUCTURAL_RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-structural-result.json
+      CROSS_PROJECT_REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-cross-project-report.md
+      CROSS_PROJECT_RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-cross-project-result.json
+      MONOREPO_REPORT_PATH: ${{ runner.temp }}/projectmind-monorepo-report.md
+      MONOREPO_RESULT_PATH: ${{ runner.temp }}/projectmind-monorepo-result.json
+      SECURITY_REPORT_PATH: ${{ runner.temp }}/projectmind-private-corpus-security-report.md
+      SECURITY_RESULT_PATH: ${{ runner.temp }}/projectmind-private-corpus-security-result.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Checkout immutable corpus revisions
+        shell: bash
+        run: |
+          mkdir -p "$CORPUS_ROOT"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { mkdir } from 'node:fs/promises';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+
+          const root = process.env.CORPUS_ROOT;
+          const manifest = JSON.parse(
+            readFileSync('benchmarks/private-20-repository.manifest.json', 'utf8'),
+          );
+          await mkdir(root, { recursive: true });
+          for (const repository of manifest.repositories) {
+            const target = join(root, repository.id);
+            const run = (args) => {
+              const result = spawnSync('git', args, { stdio: 'inherit', windowsHide: true });
+              if (result.status !== 0) {
+                throw new Error(`git ${args.join(' ')} failed for ${repository.id}`);
+              }
+            };
+            run(['init', '--quiet', target]);
+            run(['-C', target, 'remote', 'add', 'origin', repository.url]);
+            run(['-C', target, 'fetch', '--quiet', '--depth', '1', 'origin', repository.commitSha]);
+            run(['-C', target, 'checkout', '--quiet', '--detach', 'FETCH_HEAD']);
+          }
+          NODE
+      - name: Validate corpus contract
+        run: >-
+          node scripts/benchmark/corpus-contract.mjs
+          --root "$CORPUS_ROOT"
+          --manifest benchmarks/private-20-repository.manifest.json
+          --report "$CONTRACT_REPORT_PATH"
+          > "$CONTRACT_RESULT_PATH"
+      - name: Run internal corpus evaluator
+        run: node scripts/run-private-corpus.mjs --root "$CORPUS_ROOT" --report "$REPORT_PATH" > "$RESULT_PATH"
+      - name: Run internal product-path evaluator
+        run: node scripts/run-private-product-corpus.mjs --root "$CORPUS_ROOT" --report "$PRODUCT_REPORT_PATH" > "$PRODUCT_RESULT_PATH"
+      - name: Run internal structural product evaluator
+        run: >-
+          node scripts/run-private-product-corpus.mjs
+          --manifest benchmarks/private-5-repository.structural.manifest.json
+          --root "$CORPUS_ROOT"
+          --minimum-evaluated-cases 4
+          --report "$STRUCTURAL_REPORT_PATH"
+          > "$STRUCTURAL_RESULT_PATH"
+      - name: Run real CLI cross-project isolation evaluator
+        run: >-
+          node scripts/benchmark/cross-project.mjs
+          --root "$CORPUS_ROOT"
+          --repositories zod,execa
+          --report "$CROSS_PROJECT_REPORT_PATH"
+          > "$CROSS_PROJECT_RESULT_PATH"
+      - name: Run monorepo boundary evaluator
+        run: |
+          node scripts/benchmark/monorepo.mjs --files 240 --packages 12 \
+            --report "$MONOREPO_REPORT_PATH" > "$MONOREPO_RESULT_PATH"
+      - name: Run internal security corpus evaluator
+        run: node scripts/run-private-security-corpus.mjs --root "$CORPUS_ROOT" --report "$SECURITY_REPORT_PATH" > "$SECURITY_RESULT_PATH"
+      - name: Check benchmark regression gates
+        run: |
+          node scripts/benchmark/check-regression.mjs \
+            --current "$RESULT_PATH" \
+            --baseline benchmarks/private-20-repository.regression-baseline.json \
+            --runner offline-lexical
+          node scripts/benchmark/check-regression.mjs \
+            --current "$PRODUCT_RESULT_PATH" \
+            --baseline benchmarks/private-20-repository.regression-baseline.json \
+            --runner projectmind-hybrid-search
+          node scripts/benchmark/check-regression.mjs \
+            --current "$STRUCTURAL_RESULT_PATH" \
+            --baseline benchmarks/private-5-repository.structural.regression-baseline.json \
+            --runner projectmind-hybrid-search
+          node scripts/benchmark/check-cross-project-regression.mjs \
+            --current "$CROSS_PROJECT_RESULT_PATH" \
+            --baseline benchmarks/private-2-repository.cross-project.regression-baseline.json
+          node scripts/benchmark/check-monorepo-regression.mjs \
+            --current "$MONOREPO_RESULT_PATH" \
+            --baseline benchmarks/monorepo-boundary.regression-baseline.json
+          node scripts/benchmark/check-security-regression.mjs \
+            --current "$SECURITY_RESULT_PATH" \
+            --baseline benchmarks/private-20-repository.security.regression-baseline.json
+      - name: Upload corpus report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: projectmind-private-20-corpus-report
+          path: |
+            ${{ env.REPORT_PATH }}
+            ${{ env.PRODUCT_REPORT_PATH }}
+            ${{ env.RESULT_PATH }}
+            ${{ env.PRODUCT_RESULT_PATH }}
+            ${{ env.CONTRACT_REPORT_PATH }}
+            ${{ env.CONTRACT_RESULT_PATH }}
+            ${{ env.STRUCTURAL_REPORT_PATH }}
+            ${{ env.STRUCTURAL_RESULT_PATH }}
+            ${{ env.CROSS_PROJECT_REPORT_PATH }}
+            ${{ env.CROSS_PROJECT_RESULT_PATH }}
+            ${{ env.MONOREPO_REPORT_PATH }}
+            ${{ env.MONOREPO_RESULT_PATH }}
+            ${{ env.SECURITY_REPORT_PATH }}
+            ${{ env.SECURITY_RESULT_PATH }}
+          if-no-files-found: error

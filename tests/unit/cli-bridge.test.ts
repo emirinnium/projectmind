@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { validateCliCommand, ALLOWLISTED_CLI_COMMANDS } from '../../src/mcp/tools/cli-bridge.js';
+import { getMcpProfile, normalizeMcpProfile } from '../../src/mcp/tools/guard.js';
 
 describe('validateCliCommand (run_cli sandbox — default-deny whitelist)', () => {
   it('rejects non-allowlisted root commands (git, npx, rm, echo, ...)', () => {
@@ -11,6 +12,10 @@ describe('validateCliCommand (run_cli sandbox — default-deny whitelist)', () =
     expect(validateCliCommand(['rm', '-rf', '/'])).toBe(false);
     expect(validateCliCommand(['node', 'evil.js'])).toBe(false);
     expect(validateCliCommand(['echo', 'pwned'])).toBe(false);
+    // MCP tool names are not executable CLI roots; they have dedicated typed
+    // interfaces and must not be treated as commands by the bridge.
+    expect(validateCliCommand(['export_architecture_diagram'])).toBe(false);
+    expect(validateCliCommand(['find_symbol_references'])).toBe(false);
   });
 
   it('rejects empty and mcp/init roots (guard blacklist)', () => {
@@ -68,6 +73,8 @@ describe('validateCliCommand (run_cli sandbox — default-deny whitelist)', () =
 
   it('blocks layers --auto-fix (writes fixes) but allows read-only layers flags', () => {
     expect(validateCliCommand(['layers', '--auto-fix'])).toBe(false); // guard blacklist
+    expect(validateCliCommand(['layers', '--format', 'json', '--auto-fix'])).toBe(false);
+    expect(validateCliCommand(['layers', '--format', 'json', '--auto-fix=true'])).toBe(false);
     expect(validateCliCommand(['layers', '--format', 'json'])).toBe(true);
     expect(validateCliCommand(['layers'])).toBe(true);
   });
@@ -84,5 +91,15 @@ describe('validateCliCommand (run_cli sandbox — default-deny whitelist)', () =
     for (const root of ALLOWLISTED_CLI_COMMANDS) {
       expect(validateCliCommand([root])).toBe(true);
     }
+  });
+
+  it('normalizes the legacy all profile consistently with the full profile', () => {
+    expect(normalizeMcpProfile(' ALL ')).toBe('full');
+    expect(normalizeMcpProfile('unknown')).toBeNull();
+    const previous = process.env.PROJECTMIND_TOOLS;
+    process.env.PROJECTMIND_TOOLS = 'all';
+    expect(getMcpProfile()).toBe('full');
+    if (previous === undefined) delete process.env.PROJECTMIND_TOOLS;
+    else process.env.PROJECTMIND_TOOLS = previous;
   });
 });

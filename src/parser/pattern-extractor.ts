@@ -1,6 +1,7 @@
 import { parseFile, detectLanguage, type FileStructure } from './ast-parser.js';
 import { PatternLibrary, type PatternViolation } from './patterns/library.js';
 import type { Language } from './types.js';
+import ts from 'typescript';
 
 // Re-export for backwards compatibility
 export { PatternLibrary } from './patterns/library.js';
@@ -473,10 +474,9 @@ export class PatternExtractor {
   private detectErrorHandlingPatterns(file: FileStructure): ExtendedPattern[] {
     const patterns: ExtendedPattern[] = [];
 
-    // Check for consistent error handling style
-    const hasTryCatch = file.functions.some(
-      (f) => f.name.includes('try') || f.name.includes('catch') || f.name.includes('handle'),
-    );
+    // Inspect syntax, not declaration names. A function called `handleData`
+    // is not evidence of try/catch, while a try statement inside `load` is.
+    const hasTryCatch = file.sourceText ? hasTryCatchSyntax(file.filePath, file.sourceText) : false;
     const hasAsyncResult = file.functions.some((f) => f.isAsync && f.name.includes('Result'));
     const hasEither = file.imports.some(
       (i) =>
@@ -613,4 +613,32 @@ export async function extractPatterns(filePath: string): Promise<ExtractionResul
 export async function extractPatternsFromFiles(filePaths: string[]): Promise<ExtractionResult[]> {
   const extractor = new PatternExtractor();
   return extractor.extractFromFiles(filePaths);
+}
+
+function hasTryCatchSyntax(filePath: string, source: string): boolean {
+  const lower = filePath.toLowerCase();
+  const scriptKind = lower.endsWith('.tsx')
+    ? ts.ScriptKind.TSX
+    : lower.endsWith('.jsx')
+      ? ts.ScriptKind.JSX
+      : lower.endsWith('.js') || lower.endsWith('.mjs') || lower.endsWith('.cjs')
+        ? ts.ScriptKind.JS
+        : ts.ScriptKind.TS;
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKind,
+  );
+  let found = false;
+  const visit = (node: ts.Node): void => {
+    if (ts.isTryStatement(node) && node.catchClause !== undefined) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return found;
 }

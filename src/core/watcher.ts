@@ -35,6 +35,8 @@ export interface WatcherBatchResult {
   updated: string[];
   removed: string[];
   failed: string[];
+  blocked?: string[];
+  guardianViolations?: Array<{ filePath: string; count: number; blocked: boolean }>;
 }
 
 export interface ProjectWatcherOptions {
@@ -46,6 +48,10 @@ export interface ProjectWatcherOptions {
   onBatchProcessed?: (result: WatcherBatchResult) => void;
   /** Also invalidate coherence cache for updated files. Requires engine. */
   coherence?: { invalidateFileCache(filePath: string): number } | null;
+  /** Optional save-time architecture gate; blocking is explicit opt-in. */
+  guardian?: {
+    inspect(filePath: string, code: string): { blocked: boolean; violations: readonly unknown[] };
+  };
 }
 
 export interface WatcherStats {
@@ -230,6 +236,8 @@ export class ProjectWatcher {
     const updated: string[] = [];
     const removed: string[] = [];
     const failed: string[] = [];
+    const blocked: string[] = [];
+    const guardianViolations: Array<{ filePath: string; count: number; blocked: boolean }> = [];
 
     for (const abs of batch) {
       const rel = canonicalPath(relative(this.root, abs));
@@ -252,6 +260,18 @@ export class ProjectWatcher {
           failed.push(rel);
           continue;
         }
+        const guardianDecision = this.options.guardian?.inspect(rel, content);
+        if (guardianDecision && guardianDecision.violations.length > 0) {
+          guardianViolations.push({
+            filePath: rel,
+            count: guardianDecision.violations.length,
+            blocked: guardianDecision.blocked,
+          });
+        }
+        if (guardianDecision?.blocked) {
+          blocked.push(rel);
+          continue;
+        }
         const fileId = await this.kg.upsertFile(struct, rel);
         await this.kg.storeFileDetails(fileId, struct);
         this.options.coherence?.invalidateFileCache(rel);
@@ -270,7 +290,13 @@ export class ProjectWatcher {
     if (updated.length > 0 || removed.length > 0) this.stats.lastFileUpdatedAt = Date.now();
 
     try {
-      this.options.onBatchProcessed?.({ updated, removed, failed });
+      this.options.onBatchProcessed?.({
+        updated,
+        removed,
+        failed,
+        ...(blocked.length > 0 ? { blocked } : {}),
+        ...(guardianViolations.length > 0 ? { guardianViolations } : {}),
+      });
     } catch (error) {
       // consumer callback errors must not kill the watch loop
       logger.warn('Watcher onBatchProcessed callback failed:', {

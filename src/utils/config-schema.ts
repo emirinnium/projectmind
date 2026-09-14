@@ -4,18 +4,56 @@ import { logger } from './logger.js';
 /** Default maximum cache size for LLM responses. */
 const DEFAULT_MAX_CACHE_SIZE = 10000;
 
+const LlmPricingSchema = z
+  .object({
+    inputPricePer1k: z.number().finite().min(0).max(1000),
+    outputPricePer1k: z.number().finite().min(0).max(1000).optional(),
+    currency: z.literal('USD').default('USD'),
+    source: z.string().trim().min(1).max(500).optional(),
+    effectiveAt: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => Number.isFinite(Date.parse(value)), 'must be an ISO date')
+      .optional(),
+    expiresAt: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => Number.isFinite(Date.parse(value)), 'must be an ISO date')
+      .optional(),
+  })
+  .refine(
+    (value) =>
+      value.effectiveAt === undefined ||
+      value.expiresAt === undefined ||
+      Date.parse(value.expiresAt) > Date.parse(value.effectiveAt),
+    { path: ['expiresAt'], message: 'must be later than effectiveAt' },
+  );
+
 /**
  * Zod schema for .projectmindrc.json validation
  */
 
 const LLMConfigSchema = z.object({
-  provider: z.enum(['anthropic', 'openai', 'gemini', 'groq', 'ollama']).default('anthropic'),
+  provider: z
+    .enum(['anthropic', 'openai', 'openrouter', 'gemini', 'groq', 'ollama'])
+    .default('anthropic'),
   model: z.string().min(1).default('claude-3-5-sonnet-20241022'),
   apiKey: z.string().optional(),
   endpoint: z.string().url().optional(),
   deepModel: z.string().min(1).default('claude-3-opus-20240229'),
   confidenceThreshold: z.number().min(0).max(1).default(0.7),
   maxCacheSize: z.number().int().positive().default(DEFAULT_MAX_CACHE_SIZE),
+  reasoning: z
+    .object({
+      effort: z.enum(['xhigh', 'high', 'medium', 'low', 'minimal', 'none']).optional(),
+      maxTokens: z.number().int().positive().max(100_000).optional(),
+      exclude: z.boolean().optional(),
+    })
+    .strict()
+    .optional(),
+  pricing: LlmPricingSchema.optional(),
 });
 
 const EmbeddingsConfigSchema = z.object({
@@ -188,7 +226,7 @@ export function parseConfig(configJson: unknown): ProjectMindRc & {
   };
 }
 
-export { LLMConfigSchema, EmbeddingsConfigSchema, FeaturesConfigSchema };
+export { LLMConfigSchema, LlmPricingSchema, EmbeddingsConfigSchema, FeaturesConfigSchema };
 
 export type GlobalConfig = ProjectMindRc;
 export const GlobalConfigSchema = ProjectMindRcSchema;

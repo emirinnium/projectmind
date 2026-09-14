@@ -14,6 +14,54 @@ import os from 'os';
 import { execFileSync } from 'node:child_process';
 import { computeRiskLevel } from './risk-levels.js';
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Count top-level parameters without treating destructuring commas as args. */
+function countParameters(signature: string): number {
+  const open = signature.indexOf('(');
+  if (open < 0) return 0;
+  let depth = 0;
+  let quote: '"' | "'" | '`' | null = null;
+  let escaped = false;
+  let parameters = 0;
+  let hasContent = false;
+
+  for (let index = open + 1; index < signature.length; index++) {
+    const char = signature[index]!;
+    if (quote !== null) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char;
+      hasContent = true;
+      continue;
+    }
+    if (char === '(' || char === '[' || char === '{' || char === '<') {
+      depth++;
+      hasContent = true;
+      continue;
+    }
+    if (char === ')' && depth === 0) break;
+    if (char === ')' || char === ']' || char === '}' || char === '>') {
+      depth = Math.max(0, depth - 1);
+      hasContent = true;
+      continue;
+    }
+    if (char === ',' && depth === 0) {
+      if (hasContent) parameters++;
+      hasContent = false;
+      continue;
+    }
+    if (!/\s/.test(char)) hasContent = true;
+  }
+  return parameters + (hasContent ? 1 : 0);
+}
+
 // Note on git history reliability (Question 6):
 // `git log --follow` is reliable for simple renames but has edge cases with
 // submodules (submodule paths don't follow parent repo history) and monorepos
@@ -190,13 +238,13 @@ export class ImpactPredictor {
     if (!database) return [];
     try {
       const stmt = database.prepare(`
-        SELECT from_f.name AS functionName, to_files.path AS callSite
+        SELECT to_f.name AS functionName, from_files.path AS callSite
         FROM calls c
         JOIN functions from_f ON c.from_function_id = from_f.id
         JOIN files from_files ON from_f.file_id = from_files.id
         JOIN functions to_f ON c.to_function_id = to_f.id
         LEFT JOIN files to_files ON to_f.file_id = to_files.id
-        WHERE from_files.path = ?
+        WHERE to_files.path = ?
       `);
       const rows = stmt.all(filePath) as Array<{ functionName: string; callSite: string | null }>;
       const map = new Map<string, Set<string>>();
@@ -372,8 +420,8 @@ export class ImpactPredictor {
       if (fn.oldSig !== fn.newSig) {
         const callers = callGraph.filter((c) => c.functionName === fn.name);
         const hasCallEdges = callers.length > 0;
-        const arityOld = (fn.oldSig.match(/,/g) || []).length + 1;
-        const arityNew = (fn.newSig.match(/,/g) || []).length + 1;
+        const arityOld = countParameters(fn.oldSig);
+        const arityNew = countParameters(fn.newSig);
         const argMismatch = arityOld !== arityNew;
 
         // Check test-file callers for stale mocks (regex/AST-lite)
@@ -385,17 +433,20 @@ export class ImpactPredictor {
               try {
                 const content = fs.readFileSync(site, 'utf-8');
                 const mockRegex = new RegExp(
-                  '\\b' + fn.name + '\\b.*\\(' + (fn.name.length > 2 ? '.{0,40}' : '') + '\\)',
+                  '\\b' +
+                    escapeRegExp(fn.name) +
+                    '\\b.*\\(' +
+                    (fn.name.length > 2 ? '.{0,40}' : '') +
+                    '\\)',
                 );
                 if (mockRegex.test(content)) {
-                  // Check if mock references old arity (approximate by counting commas in mock call)
-                  const mockCalls =
-                    content.match(new RegExp('\\b' + fn.name + '\\b\\([^)]*\\)', 'g')) || [];
-                  for (const mc of mockCalls) {
-                    const commas = (mc.match(/,/g) || []).length;
-                    if (commas + 1 !== arityNew) {
+                  // Parse calls instead of counting commas: object/array
+                  // literals and nested calls may contain arbitrary commas.
+                  const argumentCounts = findNamedCallArguments(content, fn.name, site);
+                  for (const argumentCount of argumentCounts) {
+                    if (argumentCount !== arityNew) {
                       staleMock = true;
-                      mockReason = `Mock at ${site} references old arity (${commas + 1} args vs new ${arityNew})`;
+                      mockReason = `Mock at ${site} references old arity (${argumentCount} args vs new ${arityNew})`;
                     }
                   }
                 }
@@ -460,4 +511,77 @@ export class ImpactPredictor {
   getOutcomeCount(): number {
     return this.outcomes.length;
   }
+}
+
+/** Count top-level arguments in a captured call expression. */
+function countCallArguments(call: string): number {
+  const open = call.indexOf('(');
+  const close = call.lastIndexOf(')');
+  if (open < 0 || close <= open + 1) return 0;
+
+  let depth = 0;
+  let quote: '"' | "'" | '`' | null = null;
+  let escaped = false;
+  let count = 1;
+  let hasContent = false;
+  for (let index = open + 1; index < close; index++) {
+    const char = call[index]!;
+    if (quote !== null) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === quote) quote = null;
+      hasContent = true;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char;
+      hasContent = true;
+      continue;
+    }
+    if (char === '(' || char === '[' || char === '{' || char === '<') {
+      depth++;
+      hasContent = true;
+      continue;
+    }
+    if (char === ')' || char === ']' || char === '}' || char === '>') {
+      depth = Math.max(0, depth - 1);
+      hasContent = true;
+      continue;
+    }
+    if (char === ',' && depth === 0) {
+      count++;
+      hasContent = false;
+      continue;
+    }
+    if (!/\s/.test(char)) hasContent = true;
+  }
+  return hasContent ? count : 0;
+}
+
+/** Find statically named calls while letting the TypeScript parser handle nesting. */
+function findNamedCallArguments(content: string, functionName: string, filePath: string): number[] {
+  const lowerPath = filePath.toLowerCase();
+  const scriptKind = lowerPath.endsWith('.tsx')
+    ? ts.ScriptKind.TSX
+    : lowerPath.endsWith('.jsx')
+      ? ts.ScriptKind.JSX
+      : lowerPath.endsWith('.js') || lowerPath.endsWith('.mjs') || lowerPath.endsWith('.cjs')
+        ? ts.ScriptKind.JS
+        : ts.ScriptKind.TS;
+  const source = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true, scriptKind);
+  const counts: number[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const expression = node.expression;
+      const called = ts.isIdentifier(expression)
+        ? expression.text
+        : ts.isPropertyAccessExpression(expression)
+          ? expression.name.text
+          : null;
+      if (called === functionName) counts.push(countCallArguments(node.getText(source)));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return counts;
 }

@@ -18,6 +18,7 @@ import http from 'node:http';
 import { ClientRegistry } from '../auth/registry.js';
 import { TokenService } from '../auth/tokens.js';
 import { getDatabase } from '../storage/database.js';
+import { normalizeHostname } from '../utils/hostname.js';
 
 /** Max request body accepted on the stateless HTTP endpoint (10 MB). */
 export const HTTP_MAX_BODY = 10 * 1024 * 1024;
@@ -63,6 +64,28 @@ export const OAUTH_TOKEN_TTL = Math.max(
 // other scopes (e.g. "registry:read") verify fine but are rejected here —
 // scope is meaningful only if the /mcp boundary enforces it.
 export const MCP_ACCESS_SCOPE = 'projectmind:mcp';
+
+/** Hostnames that are guaranteed not to expose the HTTP server remotely. */
+export function isLoopbackBindHost(host: string): boolean {
+  const normalized = normalizeHostname(host);
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
+}
+
+/**
+ * Refuse an unauthenticated server on a non-loopback interface. A warning is
+ * insufficient here: a container-friendly bind address would make every
+ * local analysis endpoint remotely reachable without credentials.
+ */
+export function assertHttpBindingSecurity(
+  host: string,
+  authenticated = Boolean(HTTP_AUTH_TOKEN || OAUTH_ENABLED),
+): void {
+  if (!isLoopbackBindHost(host) && !authenticated) {
+    throw new Error(
+      `Refusing unauthenticated MCP HTTP binding on "${host}". Set PROJECTMIND_HTTP_TOKEN or enable PROJECTMIND_OAUTH_ENABLED=1 before exposing a non-loopback interface.`,
+    );
+  }
+}
 
 // Lazy OAuth singletons — never touch the database at module load time.
 // `pm mcp` (and any consumer of the package root re-export) imports this

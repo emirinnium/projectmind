@@ -2,7 +2,16 @@ import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 import { getDatabase } from '../database.js';
 
 export type ResourceKind =
-  'FILE' | 'NETWORK' | 'DATABASE' | 'ENV' | 'STDIN' | 'STDOUT' | 'STDERR' | 'SOCKET';
+  | 'FILE'
+  | 'NETWORK'
+  | 'DATABASE'
+  | 'ENV'
+  | 'STDIN'
+  | 'STDOUT'
+  | 'STDERR'
+  | 'SOCKET'
+  | 'PROCESS'
+  | 'CODE';
 export type DataFlowKind = 'resource' | 'arg' | 'return';
 
 export interface Resource {
@@ -74,8 +83,8 @@ export class DataFlowRepository {
       params.projectId,
     );
 
-    const sourceFunctionId = this.resolveFunctionId(params.sourceFunctionName);
-    const targetFunctionId = this.resolveFunctionId(params.targetFunctionName);
+    const sourceFunctionId = this.resolveFunctionId(params.sourceFunctionName, params.projectId);
+    const targetFunctionId = this.resolveFunctionId(params.targetFunctionName, params.projectId);
 
     const result = this.db
       .prepare(
@@ -226,11 +235,18 @@ export class DataFlowRepository {
     return Number(result.changes);
   }
 
-  private resolveFunctionId(functionName?: string): number | null {
+  private resolveFunctionId(functionName: string | undefined, projectId: number): number | null {
     if (!functionName) return null;
     const fn = this.db
-      .prepare('SELECT id FROM functions WHERE name = ? LIMIT 1')
-      .get(functionName) as { id: number } | undefined;
+      .prepare(
+        `SELECT fn.id
+         FROM functions fn
+         JOIN files f ON f.id = fn.file_id
+         WHERE fn.name = ? AND f.project_id = ?
+         ORDER BY fn.id
+         LIMIT 1`,
+      )
+      .get(functionName, projectId) as { id: number } | undefined;
     return fn?.id ?? null;
   }
 }

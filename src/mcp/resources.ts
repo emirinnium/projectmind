@@ -6,6 +6,9 @@ import { getStatement } from '../storage/database.js';
 import { loadConfig } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 import { watch as fsWatch, type FSWatcher } from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
+import { relative, resolve } from 'node:path';
 import { toolCacheHintMeta } from './tools/list.js';
 import { getMcpProfile, getMcpProfileTools, TOOL_ANNOTATIONS } from './tools/guard.js';
 import { getProjectIgnorePatterns, isIgnoredRelativePath } from '../utils/ignore.js';
@@ -17,6 +20,9 @@ class ResourceSubscriptionManager {
   private subscriptions = new Map<string, Set<string>>(); // resourceId -> Set<clientId>
   private server: McpServer | null = null;
   private watchers: FSWatcher[] = [];
+  private directoryWatchers = new Map<string, FSWatcher>();
+  private watchedRoot = '';
+  private ignorePatterns: string[] = [];
   private lastNotifyAt = 0;
   private static readonly WATCH_THROTTLE_MS = 400;
 
@@ -69,39 +75,126 @@ class ResourceSubscriptionManager {
    *
    * Uses `node:fs` (no external dependency). `persistent: false` guarantees the
    * watcher never keeps the process / test runner alive. Notifications are
-   * throttled to avoid flooding clients during bulk edits. Best-effort: if
-   * recursive watching is unsupported on the platform it logs and skips.
+   * throttled to avoid flooding clients during bulk edits. Linux does not
+   * support recursive `fs.watch`, so it uses a dependency-free per-directory
+   * fallback and keeps adding watchers for newly-created directories.
    */
   startFileWatch(rootDir: string): void {
-    if (this.watchers.length > 0) return; // already watching
-    const ignorePatterns = getProjectIgnorePatterns(rootDir);
-    try {
-      const watcher = fsWatch(
-        rootDir,
-        { recursive: true, persistent: false },
-        (_event: string, filename: string | Buffer | null) => {
-          if (
-            !filename ||
-            isIgnoredRelativePath(String(filename).replace(/\\/g, '/'), ignorePatterns)
-          )
-            return;
-          const now = Date.now();
-          if (now - this.lastNotifyAt < ResourceSubscriptionManager.WATCH_THROTTLE_MS) return;
-          this.lastNotifyAt = now;
-          // Source edits change file inventory (schema) and project stats.
-          void this.notifyResourceUpdated('pm://stats');
-          void this.notifyResourceUpdated('pm://schema');
-        },
-      );
-      this.watchers.push(watcher);
-      logger.info(`Resource file-watch started for ${rootDir}`);
-    } catch (e) {
-      logger.warn(
-        'Resource file-watch unavailable (recursive watch unsupported on this platform):',
-        {
+    if (this.watchers.length > 0 || this.directoryWatchers.size > 0) return; // already watching
+    this.watchedRoot = resolve(rootDir);
+    this.ignorePatterns = getProjectIgnorePatterns(this.watchedRoot);
+
+    // Linux has no recursive fs.watch implementation. Avoid attempting the
+    // unsupported mode there; other platforms still get the native fast path.
+    if (process.platform !== 'linux') {
+      try {
+        const watcher = fsWatch(
+          this.watchedRoot,
+          { recursive: true, persistent: false },
+          (_event: string, filename: string | Buffer | null) => {
+            this.handleFileEvent(filename, this.watchedRoot);
+          },
+        );
+        this.watchers.push(watcher);
+        logger.info(`Resource file-watch started for ${this.watchedRoot}`);
+        return;
+      } catch (e) {
+        logger.warn('Recursive resource file-watch unavailable; using directory fallback:', {
           error: e instanceof Error ? e.message : String(e),
-        },
-      );
+        });
+      }
+    }
+
+    void this.watchDirectoryTree(this.watchedRoot);
+    logger.info(`Resource file-watch started with directory fallback for ${this.watchedRoot}`);
+  }
+
+  private handleFileEvent(filename: string | Buffer | null, baseDir: string): void {
+    if (!filename) return;
+    const relativePath = relative(this.watchedRoot, resolve(baseDir, filename.toString())).replace(
+      /\\/g,
+      '/',
+    );
+    if (!relativePath || relativePath.startsWith('../')) return;
+    if (isIgnoredRelativePath(relativePath, this.ignorePatterns)) return;
+
+    const now = Date.now();
+    if (now - this.lastNotifyAt < ResourceSubscriptionManager.WATCH_THROTTLE_MS) return;
+    this.lastNotifyAt = now;
+    // Source edits change file inventory (schema) and project stats.
+    void this.notifyResourceUpdated('pm://stats');
+    void this.notifyResourceUpdated('pm://schema');
+  }
+
+  private async watchDirectoryTree(dir: string): Promise<void> {
+    try {
+      this.watchDirectory(dir);
+    } catch (error) {
+      logger.warn('Failed to start resource directory watcher; skipping subtree:', {
+        dir,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    let entries: Dirent[];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch (error) {
+      logger.warn('Failed to read resource watcher directory; skipping subtree:', {
+        dir,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const child = resolve(dir, entry.name);
+      const childRelative = relative(this.watchedRoot, child).replace(/\\/g, '/') + '/';
+      if (isIgnoredRelativePath(childRelative, this.ignorePatterns)) continue;
+      await this.watchDirectoryTree(child);
+    }
+  }
+
+  private watchDirectory(dir: string): void {
+    if (this.directoryWatchers.has(dir)) return;
+    const watcher = fsWatch(
+      dir,
+      { persistent: false },
+      (event: string, filename: string | Buffer | null) => {
+        this.handleFileEvent(filename, dir);
+        if (event === 'rename' && filename) {
+          void this.reconcileDirectory(resolve(dir, filename.toString()));
+        }
+      },
+    );
+    watcher.on('error', (error) => {
+      logger.warn(`Resource directory watcher error for ${dir}:`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      watcher.close();
+      this.directoryWatchers.delete(dir);
+    });
+    this.directoryWatchers.set(dir, watcher);
+  }
+
+  private async reconcileDirectory(path: string): Promise<void> {
+    try {
+      if ((await stat(path)).isDirectory()) {
+        const relativePath = relative(this.watchedRoot, path).replace(/\\/g, '/') + '/';
+        if (!isIgnoredRelativePath(relativePath, this.ignorePatterns)) {
+          await this.watchDirectoryTree(path);
+        }
+      }
+    } catch (error) {
+      // Rename events also represent deletions; there is nothing to watch.
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn('Failed to reconcile resource watcher directory:', {
+          path,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 }

@@ -6,6 +6,8 @@ import { PatternLibrary, Pattern } from '../../../parser/pattern-extractor.js';
 import { stableHash } from '../../../utils/hash.js';
 import { readFileSync } from 'node:fs';
 import { getDefaultAliasResolver } from '../../../parser/alias-resolver.js';
+import { statSync } from 'node:fs';
+import { countDebtMarkers } from '../markers.js';
 
 export interface GenomeResult {
   genomeData: string;
@@ -42,17 +44,26 @@ export class GenomeComputer {
   }
 
   compute(): GenomeResult {
+    const projectId =
+      typeof (this.kg as unknown as { getCurrentProjectId?: () => number }).getCurrentProjectId ===
+      'function'
+        ? (this.kg as unknown as { getCurrentProjectId: () => number }).getCurrentProjectId()
+        : 1;
     // Cache pattern library results for 30 seconds to avoid repeated full scans
-    if (!this.patternCache || Date.now() > this.patternCacheExpiry) {
-      const patterns = new PatternLibrary(this.db);
+    if (
+      !this.patternCache ||
+      this.patternCacheProjectId !== projectId ||
+      Date.now() > this.patternCacheExpiry
+    ) {
+      const patterns = new PatternLibrary(this.db, projectId);
       this.patternCache = patterns.getPatterns();
+      this.patternCacheProjectId = projectId;
       this.patternCacheExpiry = Date.now() + 30_000;
     }
     const projectPatterns = this.patternCache ?? [];
-
     const violations = this.getStmt(
-      "SELECT COUNT(*) as cnt FROM debt_items WHERE resolved = 0 AND severity = 'high'",
-    ).get() as { cnt: number };
+      "SELECT COUNT(*) as cnt FROM debt_items WHERE project_id = ? AND resolved = 0 AND severity = 'high'",
+    ).get(projectId) as { cnt: number };
 
     const violationCount = violations?.cnt ?? 0;
 
@@ -120,23 +131,28 @@ export class GenomeComputer {
       circularDepPenalty = 0;
     }
 
-    // Marker count from TODO/FIXME scanning across all project files.
+    // Marker count from TODO/FIXME/HACK scanning across all project files.
     // Marker count is recorded in the genome breakdown but does not penalty
     // the coherence score (unlike violation/circular dep penalties).
     let markerCount = 0;
     try {
-      const allFiles = this.kg.getAllFiles();
+      const allFiles = this.kg.getAllFiles(projectId);
+      const livePaths = new Set(allFiles.map((file) => file.path));
+      for (const cachedPath of this.markerCache.keys()) {
+        if (!livePaths.has(cachedPath)) this.markerCache.delete(cachedPath);
+      }
       let totalMarkers = 0;
       for (const file of allFiles) {
         try {
-          const content = readFileSync(file.path, 'utf-8');
-          const lines = content.split(/\r?\n/);
-          for (const line of lines) {
-            const match = line.match(/\b(TODO|FIXME)\b[:\s]+(.*)/);
-            if (match) {
-              totalMarkers++;
-            }
+          const fingerprint = this.markerFingerprint(file.path, file.hash, file.sizeBytes);
+          const cached = this.markerCache.get(file.path);
+          if (cached?.fingerprint === fingerprint) {
+            totalMarkers += cached.count;
+            continue;
           }
+          const count = countDebtMarkers(readFileSync(file.path, 'utf-8'));
+          this.markerCache.set(file.path, { fingerprint, count });
+          totalMarkers += count;
         } catch (error) {
           reportSuppressedError(
             error,
@@ -208,7 +224,22 @@ export class GenomeComputer {
   }
 
   private patternCache: Pattern[] | null = null;
+  private patternCacheProjectId: number | null = null;
   private patternCacheExpiry = 0;
+  private markerCache = new Map<string, { fingerprint: string; count: number }>();
+
+  private markerFingerprint(path: string, hash: string, sizeBytes: number): string {
+    try {
+      const stat = statSync(path);
+      // The graph hash is authoritative after a scan, while filesystem
+      // metadata detects edits made since the last scan without rereading
+      // every source file. Include both so a graph refresh and a save-time
+      // change invalidate the same cache entry deterministically.
+      return `source:${hash}:${stat.mtimeMs}:${stat.size}`;
+    } catch {
+      return `missing:${hash}:${sizeBytes}`;
+    }
+  }
 
   /** Kept as thin alias — single crypto-backed implementation in utils/hash. */
   private hashCode(str: string): string {

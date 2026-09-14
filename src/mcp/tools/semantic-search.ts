@@ -11,6 +11,11 @@ import type { EmbeddingIndexConfiguration } from '../../core/embeddings/index-co
 import { verifyProjectFreshness } from '../../core/proof/evidence.js';
 import { searchSemantic } from '@/core/search/semantic.js';
 import {
+  featuresFromSearchResult,
+  LearnedSearchReranker,
+  type SearchRankerStatus,
+} from '@/core/search/learned-reranker.js';
+import {
   generateEmbedding,
   cosineSimilarity,
   getCurrentProvider,
@@ -79,6 +84,9 @@ export interface SemanticSearchResult {
     method: 'cosine-similarity';
     source: SemanticSearchSource;
   };
+  learning: SearchRankerStatus & {
+    reranked: boolean;
+  };
   limitations: string[];
 }
 
@@ -95,13 +103,36 @@ export async function semanticSearchForTool(
   const index = loadEmbeddingIndex(deps.db, deps.projectRoot, scope);
   const queryEmbedding = await embeddingGenerator(args.query);
   const queryProvider = getCurrentProvider();
-  const results = await searchSemantic(
+  const rawResults = await searchSemantic(
     args.query,
     async () => queryEmbedding,
     cosineSimilarity,
     index.embeddings,
     { limit: args.limit, threshold: args.threshold },
   );
+  const results: SemanticSearchHit[] = rawResults.map((result) => {
+    const metadata = index.metadata.get(result.filePath);
+    return {
+      filePath: metadata?.filePath ?? result.filePath,
+      score: result.score,
+      ...(metadata?.kind !== undefined && metadata.kind !== 'file'
+        ? {
+            kind: metadata.kind,
+            symbolName: metadata.symbolName,
+            startLine: metadata.startLine,
+            endLine: metadata.endLine,
+          }
+        : {}),
+      ...(metadata
+        ? {
+            indexEvidence: {
+              ...metadata,
+              embeddingDimension: index.embeddings.get(result.filePath)?.length ?? 0,
+            },
+          }
+        : {}),
+    };
+  });
 
   const compatibleItems = [...index.embeddings.values()].filter(
     (embedding) => embedding.length === queryEmbedding.length,
@@ -173,6 +204,60 @@ export async function semanticSearchForTool(
     );
   }
 
+  const rerankerProjectId =
+    index.projectId ??
+    (typeof deps.kg.getCurrentProjectId === 'function' ? deps.kg.getCurrentProjectId() : null);
+  const rerankCandidates = results.map((result, resultIndex) => ({
+    path:
+      scope === 'symbol'
+        ? `${result.filePath}#${result.kind ?? 'symbol'}:${result.symbolName ?? resultIndex}`
+        : result.filePath,
+    baselineScore: result.score,
+    features: featuresFromSearchResult({
+      path: result.filePath,
+      vector: result.score,
+      freshness: freshness.status === 'verified' ? 1 : 0.5,
+    }),
+  }));
+  const reranked = rerankerProjectId
+    ? new LearnedSearchReranker(deps.db, rerankerProjectId, {
+        projectRoot: deps.projectRoot,
+      }).rerank(rerankCandidates)
+    : {
+        results: rerankCandidates.map((candidate) => ({
+          ...candidate,
+          learnedScore: candidate.baselineScore,
+          score: candidate.baselineScore,
+        })),
+        status: {
+          active: false,
+          model: 'deterministic-online-pairwise-v1' as const,
+          observations: 0,
+          positiveObservations: 0,
+          negativeObservations: 0,
+          minimumObservations: 50,
+          limitation: 'No persisted project was available for learned reranking.',
+        },
+      };
+  const rerankedResults = reranked.results.map((ranked, index) => {
+    const original = results.find((result, resultIndex) => {
+      const key =
+        scope === 'symbol'
+          ? `${result.filePath}#${result.kind ?? 'symbol'}:${result.symbolName ?? resultIndex}`
+          : result.filePath;
+      return key === ranked.path;
+    });
+    if (!original) return results[index]!;
+    return {
+      ...original,
+      score: ranked.score,
+      rank: index + 1,
+    };
+  });
+  if (!reranked.status.active) {
+    limitations.push(reranked.status.limitation ?? 'Learned reranking is not active.');
+  }
+
   const configurationUnverified =
     index.configuration === null ||
     index.configuration.activeProvider !== queryProvider ||
@@ -193,26 +278,7 @@ export async function semanticSearchForTool(
         : 'source-backed';
 
   return {
-    results: results.map((result) => {
-      const metadata = index.metadata.get(result.filePath);
-      if (!metadata) return result;
-      return {
-        ...result,
-        filePath: metadata.filePath,
-        ...(metadata.kind !== 'file'
-          ? {
-              kind: metadata.kind,
-              symbolName: metadata.symbolName,
-              startLine: metadata.startLine,
-              endLine: metadata.endLine,
-            }
-          : {}),
-        indexEvidence: {
-          ...metadata,
-          embeddingDimension: index.embeddings.get(result.filePath)?.length ?? 0,
-        },
-      };
-    }),
+    results: rerankedResults,
     query: {
       provider: queryProvider,
       dimension: queryEmbedding.length,
@@ -247,6 +313,7 @@ export async function semanticSearchForTool(
       method: 'cosine-similarity',
       source: index.source,
     },
+    learning: { ...reranked.status, reranked: reranked.status.active },
     limitations,
   };
 }

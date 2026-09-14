@@ -339,6 +339,7 @@ function resolveLastModified(absolutePath: string): string | undefined {
     const out = execFileSync('git', ['log', '-1', '--format=%cI', '--', absolutePath], {
       cwd: dirname(absolutePath),
       encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
     if (out) return out;
   } catch (error) {

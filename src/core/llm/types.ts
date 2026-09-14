@@ -11,6 +11,10 @@ export interface LLMResponse {
   confidence: number;
   usage?: { inputTokens: number; outputTokens: number };
   responseTimeMs: number;
+  /** Machine-readable response shape; reasoning is never exposed as final content. */
+  responseMode?: 'content' | 'reasoning-only' | 'empty';
+  /** Provider termination reason, when the provider supplies one. */
+  finishReason?: string;
 }
 
 export interface LLMConfig {
@@ -21,6 +25,12 @@ export interface LLMConfig {
   apiUrl?: string;
   timeoutMs?: number;
   maxTokens?: number;
+  /** OpenRouter-compatible reasoning controls; omitted means provider default. */
+  reasoning?: {
+    effort?: 'xhigh' | 'high' | 'medium' | 'low' | 'minimal' | 'none';
+    maxTokens?: number;
+    exclude?: boolean;
+  };
 }
 
 export const DEFAULT_MAX_TOKENS = 4000;

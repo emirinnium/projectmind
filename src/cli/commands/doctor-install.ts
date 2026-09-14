@@ -1,10 +1,12 @@
 import { Command } from 'commander';
-import { accessSync, constants, existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { DEFAULT_PMIGNORE_CONTENT } from '@/utils/ignore.js';
 import type { ProjectMindConfig } from '@/utils/config.js';
+import { getGlobalConfigPath } from '@/utils/config.js';
+import { tryValidateConfig } from '@/utils/config-schema.js';
 import { validateProjectPath, PathSecurityError } from '@/core/security/path-security.js';
 import { writeFileAtomically } from '@/utils/atomic-write.js';
 
@@ -108,7 +110,7 @@ export function inspectInstall(config: ProjectMindConfig, fix = false): InstallD
       );
     }
   }
-  for (const optional of ['@xenova/transformers', 'onnxruntime-node']) {
+  for (const optional of ['@huggingface/transformers', 'onnxruntime-node']) {
     try {
       require.resolve(optional);
       add(
@@ -164,6 +166,72 @@ export function inspectInstall(config: ProjectMindConfig, fix = false): InstallD
       );
     }
   }
+  const globalConfigPath = getGlobalConfigPath();
+  if (!existsSync(globalConfigPath)) {
+    add(
+      'global-config',
+      'warn',
+      `No global config found at ${globalConfigPath}; built-in defaults and project overrides remain active.`,
+      'Run `projectmind config init --global` to create a sparse user-level config.',
+    );
+  } else {
+    try {
+      const globalRaw = JSON.parse(readFileSync(globalConfigPath, 'utf8')) as unknown;
+      const globalValid = tryValidateConfig(globalRaw) !== null;
+      add(
+        'global-config',
+        globalValid ? 'pass' : 'fail',
+        globalValid
+          ? `Global config is valid: ${globalConfigPath}`
+          : `Global config failed schema validation: ${globalConfigPath}`,
+        globalValid
+          ? undefined
+          : 'Run `projectmind config show --global` and correct the invalid value.',
+      );
+      if (process.platform !== 'win32') {
+        try {
+          const mode = accessMode(globalConfigPath);
+          add(
+            'global-config-permissions',
+            mode === 0o600 ? 'pass' : 'warn',
+            mode === 0o600
+              ? 'Global config permissions are restricted to the current user (600).'
+              : `Global config permissions are ${mode.toString(8)}; 600 is recommended for credentials.`,
+            mode === 0o600
+              ? undefined
+              : 'Run `chmod 600 "' + globalConfigPath + '"` on POSIX systems.',
+          );
+        } catch (error) {
+          add(
+            'global-config-permissions',
+            'warn',
+            `Global config permissions could not be inspected: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+    } catch (error) {
+      add(
+        'global-config',
+        'fail',
+        `Could not parse global config ${globalConfigPath}: ${error instanceof Error ? error.message : String(error)}`,
+        'Run `projectmind config init --global` only after moving or repairing the invalid file.',
+      );
+    }
+  }
+  const projectRaw = readOptionalConfigObject(rc);
+  const globalRaw = readOptionalConfigObject(globalConfigPath);
+  const overriddenKeys =
+    projectRaw && globalRaw ? [...projectRaw.keys()].filter((key) => globalRaw.has(key)) : [];
+  add(
+    'config-precedence',
+    overriddenKeys.length > 0 ? 'warn' : 'pass',
+    overriddenKeys.length > 0
+      ? `Project config intentionally overrides global key(s): ${overriddenKeys.slice(0, 12).join(', ')}${overriddenKeys.length > 12 ? ', …' : ''}.`
+      : 'No project/global key collision detected; precedence is defaults < global < project < environment < CLI.',
+    overriddenKeys.length > 0
+      ? 'Keep only intentional project overrides; use `projectmind config show --effective` to inspect the result.'
+      : undefined,
+  );
   const localMcpConfigs = [
     '.mcp.json',
     'opencode.json',
@@ -269,16 +337,53 @@ export function inspectInstall(config: ProjectMindConfig, fix = false): InstallD
   };
 }
 
+function accessMode(filePath: string): number {
+  // `accessSync` verifies reachability; stat mode is only meaningful on POSIX.
+  accessSync(filePath, constants.R_OK);
+  return statSync(filePath).mode & 0o777;
+}
+
+function readOptionalConfigObject(filePath: string): Map<string, unknown> | undefined {
+  if (!existsSync(filePath)) return undefined;
+  try {
+    const value = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    return flattenConfigKeys(value as Record<string, unknown>);
+  } catch {
+    return undefined;
+  }
+}
+
+function flattenConfigKeys(value: Record<string, unknown>, prefix = ''): Map<string, unknown> {
+  const result = new Map<string, unknown>();
+  for (const [key, child] of Object.entries(value)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (child && typeof child === 'object' && !Array.isArray(child)) {
+      for (const [nestedKey, nestedValue] of flattenConfigKeys(
+        child as Record<string, unknown>,
+        path,
+      ))
+        result.set(nestedKey, nestedValue);
+    } else result.set(path, child);
+  }
+  return result;
+}
+
 export function createDoctorInstallCommand(): Command {
   return new Command('install')
     .description('Diagnose Node/npm, ProjectMind config, providers and PATH')
+    .option('-r, --root <path>', 'Project directory; defaults to configured project root')
     .option('--fix', 'Create only the missing safe .pmignore file')
     .option('--format <format>', 'Output format: text|json', 'text')
-    .action(async (opts: { fix?: boolean; format?: string }) => {
+    .action(async (opts: { root?: string; fix?: boolean; format?: string }) => {
       if (opts.format !== 'text' && opts.format !== 'json')
         throw new Error('--format must be text or json.');
       const { loadConfig } = await import('@/utils/config.js');
-      const report = inspectInstall(loadConfig(), !!opts.fix);
+      const config = loadConfig(opts.root ? resolve(opts.root) : undefined);
+      const report = inspectInstall(
+        opts.root ? { ...config, projectRoot: resolve(opts.root) } : config,
+        !!opts.fix,
+      );
       if (opts.format === 'json') {
         process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
         return;

@@ -2,7 +2,12 @@ import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 import { resolveProjectRoot } from '@/core/project/roots.js';
 import { getWorktreeIdentity } from '@/core/project/worktree-identity.js';
-import { listWorktreeIdentities, recordWorktreeIdentity } from '@/core/project/index-identity.js';
+import {
+  getWorktreeNamespaceStatus,
+  listWorktreeIdentities,
+  pruneWorktreeIdentities,
+  recordWorktreeIdentity,
+} from '@/core/project/index-identity.js';
 
 export function createProjectCommand(): Command {
   const projectCmd = new Command('project').description(
@@ -36,6 +41,7 @@ export function createProjectCommand(): Command {
 
   projectCmd
     .command('create <name> <rootPath>')
+    .alias('add')
     .description('Create a new project')
     .option('-d, --description <text>', 'Project description')
     .action(
@@ -50,6 +56,7 @@ export function createProjectCommand(): Command {
 
   projectCmd
     .command('switch <id>')
+    .alias('use')
     .description('Switch to a different project')
     .option('--no-scan', 'Skip automatic scan after switching')
     .action(
@@ -109,10 +116,13 @@ export function createProjectCommand(): Command {
             output.kv('Root', project.rootPath);
             const identity = getWorktreeIdentity(project.rootPath);
             if (identity) {
+              const namespace = getWorktreeNamespaceStatus(ctx.db, project.id, identity);
               const stored = recordWorktreeIdentity(ctx.db, project.id, identity);
               output.kv('Branch', stored.branch);
               output.kv('HEAD', stored.headSha);
               output.kv('Index namespace', stored.key);
+              output.kv('Index status', namespace.status);
+              output.info(namespace.nextAction);
             }
           } else {
             output.warn('No project selected. Using default project.');
@@ -124,9 +134,21 @@ export function createProjectCommand(): Command {
   projectCmd
     .command('worktrees')
     .description('List persisted branch/worktree index namespaces')
+    .option('--prune', 'Remove stale namespaces owned by the current project')
     .action(
-      asyncHandler(async () => {
+      asyncHandler(async (opts: { prune?: boolean }) => {
         await withService(['scale'], async (ctx) => {
+          if (opts.prune) {
+            const projects = ctx.kg.listProjects();
+            let removed = 0;
+            for (const project of projects) {
+              const identity = getWorktreeIdentity(project.rootPath);
+              if (!identity) continue;
+              removed += pruneWorktreeIdentities(ctx.db, project.id, [identity.key]);
+            }
+            output.success(`Pruned ${removed} stale worktree namespace(s).`);
+          }
+
           const rows = listWorktreeIdentities(ctx.db);
           output.section(`Worktree namespaces (${rows.length})`);
           for (const row of rows) {

@@ -11,6 +11,8 @@ import {
   verifyProjectFreshness,
 } from '../../core/proof/evidence.js';
 import { assertProjectPath } from '@/core/security/path-security.js';
+import { asUntrustedContent } from '@/mcp/security/untrusted-content.js';
+import { recordContextDecision } from '@/core/context/audit.js';
 
 /** One live intent from another agent overlapping the requested context. */
 interface ConflictWarning {
@@ -82,7 +84,7 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
         'Get context for a file you are about to EDIT — use BEFORE writing code.\n' +
         'Returns: imports (resolved + unresolved), reverse dependencies (who imports this file), similar files, function/class structure, and patterns observed elsewhere in the project.\n' +
         'WHEN to call: before editing a file, when you need to understand who depends on it, or to find similar implementations to mimic.\n' +
-        'WHEN NOT to call: when you just need symbol references (use refs via projectmind_run_cli — or run_cli on clients without the prefix) or to find similar code semantically (use find_file_by_import or embedding search).\n' +
+        'WHEN NOT to call: when you just need symbol references (use projectmind_find_symbol_references — or find_symbol_references on clients without the projectmind_ prefix) or to find similar code semantically (use find_file_by_import or embedding search).\n' +
         'Requires: scan_project to have indexed the file at least once.',
       inputSchema: {
         filePath: z.string().describe('Path of the file to get context for'),
@@ -99,7 +101,9 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
         maxTokens: z
           .number()
           .optional()
-          .describe('Soft token budget (~chars/4). When set, list sections are trimmed to fit.'),
+          .describe(
+            'Soft token budget (~UTF-8 bytes/4). When set, list sections are trimmed to fit.',
+          ),
         task: z
           .string()
           .optional()
@@ -200,6 +204,20 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
             'Structure and dependency edges come from the indexed graph; this response does not run a fresh typecheck or runtime trace.',
           ],
         });
+        const evidenceAudit = recordContextDecision(deps.db, deps.kg, {
+          filePath: file.relativePath,
+          task: args.task,
+          imports: imports.length,
+          resolvedImports: resolvedImports.length,
+          dependents: dependents.length,
+          similarFiles: similarFiles.length,
+          evidenceStatus: freshness.status,
+          evidenceFiles: freshness.checkedFiles,
+          selectedPaths: freshness.details.map((detail) => detail.filePath),
+          sourceHashes: Object.fromEntries(
+            freshness.details.map((detail) => [detail.filePath, detail.sourceHash]),
+          ),
+        });
 
         return {
           content: [
@@ -247,6 +265,9 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
                       functions: functions.map((fn) => ({
                         name: fn.name,
                         signature: fn.signature,
+                        untrustedContent: asUntrustedContent(fn.signature, 'source', {
+                          relativePath: file.relativePath,
+                        }),
                         complexity: fn.complexity,
                         startLine: fn.startLine,
                         endLine: fn.endLine,
@@ -276,6 +297,7 @@ export function registerGetContextTool(server: McpServer, deps: McpDependencies)
                           }),
                         }
                       : {}),
+                    ...(evidenceAudit ? { evidenceAudit } : {}),
                   },
                   evidence,
                 ),

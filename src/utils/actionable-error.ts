@@ -24,22 +24,38 @@ export class ActionableProjectMindError extends Error {
 
 /** Keep public diagnostics useful without echoing secrets or machine paths. */
 export function sanitizeErrorText(value: string): string {
-  return value
+  const urls: string[] = [];
+  const protectedText = value.replace(/https?:\/\/[^\s"'`<>|]+/gi, (url) => {
+    const marker = `\uE000PMURL${urls.length}\uE001`;
+    urls.push(url);
+    return marker;
+  });
+  const sanitized = protectedText
     .replace(/[\r\n\0]/g, ' ')
     .replace(/((?:api[_-]?key|token|secret|password)\s*[=:]\s*)([^\s,;]+)/gi, '$1[redacted]')
     .replace(/(?:[A-Za-z]:[\\/]|\\\\|\/)(?:[^\s"'`<>|]+[\\/])*[^\s"'`<>|]*/g, '[path]')
     .slice(0, 2000);
+  return sanitized.replace(
+    /\uE000PMURL(\d+)\uE001/g,
+    (_match, index: string) => urls[Number(index)] ?? '[url]',
+  );
 }
 
 /** Convert a thrown public error into a stable MCP response payload. */
 export function actionableMcpError(error: unknown): {
   isError: true;
+  nextAction: string;
   content: Array<{ type: 'text'; text: string }>;
 } {
+  const problem = toActionableError(error);
+  const nextAction = problem.nextActions[0] ?? 'Retry after correcting the request.';
   return {
     isError: true,
+    // Additive compatibility field for clients that consumed the old
+    // top-level nextAction while the structured error remains in content.
+    nextAction,
     content: [
-      { type: 'text', text: JSON.stringify({ success: false, error: toActionableError(error) }) },
+      { type: 'text', text: JSON.stringify({ success: false, error: problem, nextAction }) },
     ],
   };
 }
@@ -99,14 +115,16 @@ export function toActionableError(error: unknown): ActionableErrorShape {
     };
   }
   if (error instanceof Error) {
+    const classification = classifyError(error.message);
     return {
       code: 'projectmind.error',
       summary: sanitizeErrorText(error.message),
-      cause: 'runtime',
-      nextActions: ['Inspect the command context and retry after correcting the reported input.'],
-      retryable: false,
+      details: classification.details,
+      cause: classification.cause,
+      nextActions: classification.nextActions,
+      retryable: classification.retryable,
       destructive: false,
-      networkRequired: false,
+      networkRequired: classification.networkRequired,
     };
   }
   return {
@@ -130,4 +148,93 @@ function isPathSecurityLike(error: Error): error is PathSecurityLike {
 
 function isAbsolutePath(value: string): boolean {
   return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value) || /^[\\/]{2}/.test(value);
+}
+
+interface ErrorClassification {
+  cause: NonNullable<ActionableErrorShape['cause']>;
+  details: string;
+  nextActions: string[];
+  retryable: boolean;
+  networkRequired: boolean;
+}
+
+/** Classify legacy Error-only handlers without weakening their compatibility. */
+function classifyError(message: string): ErrorClassification {
+  const normalized = message.toLowerCase();
+  if (/git revision|git ref|revision selector/.test(normalized)) {
+    return {
+      cause: 'validation',
+      details: 'Git range selectors are validated before any repository command is started.',
+      nextActions: [
+        'Provide valid Git revisions (for example HEAD~1 and HEAD) without whitespace or shell syntax.',
+      ],
+      retryable: true,
+      networkRequired: false,
+    };
+  }
+  if (/stale|out[- ]of[- ]date|refresh.*index|rescan/.test(normalized)) {
+    return {
+      cause: 'stale-index',
+      details: 'The operation depends on graph or source state that is no longer current.',
+      nextActions: ['Run pm scan --incremental, then retry the command.'],
+      retryable: true,
+      networkRequired: false,
+    };
+  }
+  if (
+    /timed out|timeout|econn|fetch failed|api .*\b(?:4|5)\d\d\b|network|socket/.test(normalized)
+  ) {
+    return {
+      cause: 'network',
+      details: 'The operation depends on an external service or network connection.',
+      nextActions: ['Check network access and provider credentials, then retry.'],
+      retryable: true,
+      networkRequired: true,
+    };
+  }
+  if (/resource busy|locked|\bebusy\b|\beperm\b/.test(normalized)) {
+    return {
+      cause: 'filesystem',
+      details: 'Another process may still hold the target file or its SQLite sidecars open.',
+      nextActions: [
+        'Close other ProjectMind/MCP processes using this project, then retry the operation.',
+      ],
+      retryable: true,
+      networkRequired: false,
+    };
+  }
+  if (/not found|enoent|cannot read|permission denied|is not a file|directory/.test(normalized)) {
+    return {
+      cause: 'filesystem',
+      details: 'A required local file or directory could not be read.',
+      nextActions: ['Check that the path exists, is readable, and is inside the project root.'],
+      retryable: true,
+      networkRequired: false,
+    };
+  }
+  if (/invalid|must be|required|expected|schema|argument|option|between .* and/.test(normalized)) {
+    return {
+      cause: 'validation',
+      details: 'The request did not satisfy the command or tool input contract.',
+      nextActions: ['Correct the reported input and retry.'],
+      retryable: true,
+      networkRequired: false,
+    };
+  }
+  if (/unsupported|unavailable|not implemented|cannot .* provider/.test(normalized)) {
+    return {
+      cause: 'unsupported',
+      details: 'The requested operation is not available in the current configuration.',
+      nextActions: ['Use a supported operation or enable the required optional provider.'],
+      retryable: false,
+      networkRequired: false,
+    };
+  }
+  return {
+    cause: 'runtime',
+    details: 'The operation failed after its input and path checks completed.',
+    nextActions: ['Inspect the command context and retry after correcting the reported input.'],
+    retryable: false,
+    networkRequired: false,
+  };
 }

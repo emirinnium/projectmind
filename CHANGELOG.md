@@ -7,6 +7,143 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Analysis follow-up hardening:** reduced repeated graph/index work, added
+  bounded async source preparation, fixed structural-search glob filtering,
+  and kept all selected source paths behind the central security contract.
+- **Automation output:** `pm debt --json` now emits a stable machine-readable
+  debt report; the generated temporary database test fixture is isolated under
+  the OS temp directory and no longer leaves files in the repository.
+- **Repository hygiene:** removed the unused broken `.github/action/action.yml`
+  entry that referenced a nonexistent `dist/action.js`; added the tested,
+  bounded cross-platform action at `.github/actions/projectmind/action.yml`.
+- **Incremental scan correctness:** changed files now refresh bounded reverse
+  dependents so persisted function/call edges do not remain stale; scan
+  profiles expose the dependency refresh count and depth. Root-level Git files
+  are included in churn signals.
+- **Agent intelligence:** added privacy-preserving search feedback/reranking,
+  project/agent-scoped session insights, predictive bug-surface ranking, and
+  evidence-first `pm ask` / `ask_codebase` with explicit refusal and freshness
+  limits.
+- **Smart context:** `suggest_next_files` can now produce a token-budgeted
+  context plan and ROI comparison. Full-file baselines retain zero-relevance
+  candidates; unavailable range/canonical/closure plans remain explicit.
+- **OpenRouter reasoning controls:** schema-validated `llm.reasoning` options
+  are forwarded only when explicitly configured; reasoning-only and
+  length-truncated responses remain separate from final content.
+- **Taint project-scope correctness:** `exploit_path` project mode now fails
+  closed for unindexed entries and follows only the requested entry's forward
+  resolved static ES-import closure, excluding unrelated indexed files. Windows
+  path identity comparisons are case-insensitive and separator-safe.
+- **Context ROI accounting:** heuristic token counts now expose the accurate
+  `tokenAccounting: "estimated-utf8-byte-div-4"` field while retaining the
+  `tokenMeasurement: "estimated-char-div-4"` compatibility label for 1.0.x
+  consumers.
+- **Context budget empty-file handling:** the offline file estimator now assigns
+  a minimum one-token weight to empty files, preventing valid empty source files
+  from causing the optimizer's minimum-token validation to fail.
+- **Context budget input validation:** the core optimizer now rejects non-finite,
+  fractional or negative budget/token/byte inputs before selection, keeping
+  direct API callers under the same deterministic contract as the CLI.
+
+- **Optional remote backend adapters:** added async Qdrant REST vector and
+  read-only Memgraph Bolt graph adapters behind validated backend contracts.
+  They hash ProjectMind namespaces, bound vectors/results/depth, parameterize
+  remote values, enforce endpoint/credential boundaries, and keep drivers and
+  network services out of the default offline installation.
+- **Cross-platform Git diagnostics:** Git-backed churn, flag, insight, and
+  autopilot probes now suppress expected non-repository stderr while preserving
+  their existing fallback behavior; worktree namespace status also compares
+  canonical Windows paths case-insensitively.
+- **Branch/worktree graph isolation:** KnowledgeGraph now selects a stable
+  ProjectMind project namespace for the active Git branch and linked worktree
+  during startup. A new commit on the same branch remains in that namespace and
+  is reported as a stale/current transition; a different branch or worktree
+  cannot reuse the other checkout's file graph. Existing non-Git and legacy
+  databases retain their previous current-project behavior.
+- Added the `arbitrate_agents` MCP tool for deterministic multi-agent planning:
+  it combines advisory locks, bidirectional merge/blast-radius evidence,
+  indexed dependency ordering, conflict groups and file-sharding suggestions;
+  its optional ledger record is payload-free and never writes source or Git
+  state.
+- Fixed debt snapshot refresh so unresolved detector findings cannot survive a
+  later corrected run. Fast-tier complexity/size heuristics remain visible as
+  low-severity advisory evidence, while explicit architectural contract errors
+  are the only pattern-drift findings promoted to high severity.
+- Fixed `mcp-init --verify` project-root detection for JSON/JSONC clients so
+  escaped Windows paths, relative `.` pins, `cwd`, and environment entries are
+  compared structurally instead of as serialized JSON text.
+- Fixed `mcp-init --verify --handshake` for large MCP registries: the verifier
+  now sends the required initialized notification, preserves multi-chunk JSON
+  responses until a complete frame arrives, bounds incomplete-frame memory, and
+  terminates the Windows child process tree after the check. Windows launches
+  npm's `npx-cli.js` through Node directly, without a `cmd /c` shell wrapper.
+- Fixed npx package-argument forwarding in the handshake verifier by using an
+  explicit package separator before `mcp --profile core`; this prevents npm
+  from consuming the profile option on Windows and POSIX environments.
+- Removed the production-package `prepare` lifecycle build. Published tarballs
+  already contain `dist`, so global installs no longer rebuild the package or
+  trigger lifecycle-script warnings; source checkouts use `npm run build`
+  explicitly.
+- Changed Transformers.js and ONNX runtimes to optional peer providers so the
+  default core/global install does not pull the native warning/advisory chain;
+  explicit provider installation and deterministic simple-provider fallback
+  remain supported without `--legacy-peer-deps`.
+- Added validated SQLite database snapshots with `pm ledger backup` and
+  explicit-confirmation `pm ledger restore --force`; integrity/schema checks,
+  staged replacement, WAL/SHM cleanup and rollback protection are covered by
+  hermetic tests.
+- Fixed `pm mcp schema` so it is a finite alias for `pm mcp schemas` instead of
+  accidentally entering the long-running MCP server path.
+- Hardened benchmark ranking against duplicate result identities and added
+  deterministic ROI variant comparisons, replay timeline summaries, and
+  migration-version collision detection.
+- Added a local-checkout benchmark corpus runner with immutable Git HEAD
+  verification and explicit unknown/limitation reporting; missing or mismatched
+  repositories never receive fabricated scores. Added an opt-in process-isolated
+  MCP benchmark worker using shell-free argv and bounded child timeouts.
+- Context, review, and Auto-Fix decisions now emit payload-free Evidence Ledger
+  and Agent Time Machine receipts. Replay can safely reconstruct recorded context
+  metadata and matching source ranges without treating current files as trusted
+  or replaying code.
+- `pm init` now has an explicit `--root` bootstrap path and creates missing
+  local `.pmignore`, sparse `.projectmindrc.json`, and `.mcp.json` files
+  idempotently; global/project configuration precedence is documented and
+  tested.
+- Added `pm config path|init|show|set` for safe layered configuration
+  management, including sparse global config creation, schema-backed updates,
+  atomic writes, redacted display, and doctor conflict/permission reporting.
+- Review decisions now persist payload-free ledger and replay metadata with
+  graph/policy hashes.
+
+- Added the first Evidence Ledger slice: project-scoped, payload-free,
+  hash-chained records with append-only SQLite protection, `pm ledger list`,
+  `pm ledger verify`, `pm ledger export`, independent export verification,
+  MCP `evidence_ledger`, and scan decision audit records.
+- Added the first Context ROI slice: `pm budget`/`context-budget` and MCP
+  `plan_context_budget` now expose task-aware estimated token savings and
+  original-score relevance coverage with explicit non-billing limitations;
+  optional input price estimates are reported separately and rounded
+  deterministically.
+- Added the first calibrated-risk slice: `pm risk`/`pm risk --pr` and MCP
+  `predict_impact_risk` now expose deterministic structural evidence, a
+  beta-smoothed probability, calibration metadata, and an uncertainty interval;
+  fewer than 10 outcomes are explicitly reported as `insufficient-data`.
+- Added the first taint-to-exploit slice: `pm exploit-path` and MCP
+  `exploit_path` expose deterministic AST source-to-sink steps with sanitized
+  identities, line/column evidence, and explicit no-execution/no-PoC limits.
+- Added the first Agent Time Machine slice: payload-free append-only replay
+  metadata, `pm replay`/`replay record`, and MCP replay record/query surfaces
+  with source/graph drift classification.
+- Added an opt-in live Architecture Guardian boundary to `pm watch`; contract
+  violations are reported before graph refresh and `--guardian-block` can stop
+  acceptance of an invalid update without modifying the user's file.
+- Added evidence-gated Auto-Fix personalization: `pm autofix record/recommend`
+  and MCP feedback tools store project/agent-scoped append-only outcomes with
+  policy version, optional decay, Wilson uncertainty, logical reset, and
+  explicit opt-out controls. Small or mixed samples never become automatic
+  approval.
+- Project-scoped scan profiles and agent sessions/memory now prevent
+  cross-project reporting and session leakage in shared SQLite stores.
 - Made `mcp-init` reuse an existing OpenCode `.jsonc` or Kilo `.json` config
   instead of creating a second client config, and made repeated initialization
   idempotent with user settings preserved.

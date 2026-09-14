@@ -51,9 +51,15 @@ export interface ScanProfile {
   totalFiles: number;
   scannedFiles: number;
   errorFiles: number;
+  skippedFiles: number;
+  skippedPaths: string[];
   durationMs: number;
   filesPerSecond: number;
   memoryUsedMB: number;
   errors: string[];
+  /** Files reprocessed because their indexed dependency changed. */
+  dependencyFiles?: number;
+  /** Reverse-dependency propagation depth used by this scan. */
+  dependencyDepth?: number;
   createdAt?: string;
 }

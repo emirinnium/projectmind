@@ -16,6 +16,8 @@ import type { KGGraphLike } from './graph-adapter.js';
 import { cosineSimilarity, safeScore } from './scoring.js';
 import { HistoryRanker } from './history-ranking.js';
 import { assertProjectPath } from '../security/path-security.js';
+import { DEFAULT_HYBRID_RANKING_WEIGHTS, type HybridRankingWeights } from './hybrid-ranking.js';
+import { stableHash } from '../../utils/hash.js';
 
 export { createKgGraphAdapter } from './graph-adapter.js';
 export type { KGGraphLike, KgAdapterSource } from './graph-adapter.js';
@@ -33,11 +35,13 @@ export class IntentEngine {
   private readonly historyRanker?: HistoryRanker;
   private readonly embeddingDimension: number;
   public weights = { semantic: 0.4, structural: 0.3, intent: 0.3 };
+  public readonly rankingWeights: HybridRankingWeights;
 
   constructor(options?: {
     vecIndex?: VecIndex;
     db?: DatabaseSync;
     weights?: Partial<typeof IntentEngine.prototype.weights>;
+    rankingWeights?: Partial<HybridRankingWeights>;
     /** Absolute project root; relative file paths are resolved against it
      *  before reading, so servers whose CWD differs from the project root
      *  (e.g. MCP) do not silently score 0 / return empty snippets. */
@@ -53,6 +57,10 @@ export class IntentEngine {
     if (options?.weights) {
       this.weights = { ...this.weights, ...options.weights };
     }
+    this.rankingWeights = {
+      ...DEFAULT_HYBRID_RANKING_WEIGHTS,
+      ...(options?.rankingWeights ?? {}),
+    };
     if (options?.projectRoot) {
       this.projectRoot = options.projectRoot;
       this.historyRanker = new HistoryRanker(options.projectRoot);
@@ -314,6 +322,25 @@ export class IntentEngine {
     };
   }
 
+  /**
+   * Return a conservative freshness signal for a graph-backed candidate.
+   * Missing hashes or an unavailable graph stay neutral; a readable hash
+   * mismatch is explicitly penalized instead of being treated as current.
+   */
+  getFreshnessScore(filePath: string, kgGraph: KGGraphLike | undefined): number | undefined {
+    if (!this.projectRoot || !kgGraph) return undefined;
+    const indexedHash = kgGraph.getFileByPath(filePath)?.hash;
+    if (!indexedHash) return undefined;
+    const resolved = this.resolveFilePath(filePath);
+    if (!resolved) return 0;
+    try {
+      const content = readFileSync(resolved, 'utf8').replace(/^\uFEFF/, '');
+      return stableHash(content) === indexedHash ? 1 : 0;
+    } catch {
+      return 0;
+    }
+  }
+
   // F4: fix KG adapter — findSimilarFiles returns FileInfo[] WITHOUT score; derive from rank
   deriveSemanticFromSimilar(
     similarResults: Array<{ path: string; score?: number }>,
@@ -355,6 +382,8 @@ export class IntentEngine {
         resolveFilePath: (filePath) => this.resolveFilePath(filePath),
         getMarkers: (intentType, content) => this.getMarkers(intentType, content),
         getHistoryScore: (filePath) => this.historyRanker?.score(filePath),
+        getFreshnessScore: (filePath, graph) => this.getFreshnessScore(filePath, graph),
+        rankingWeights: this.rankingWeights,
       },
       query,
       kgGraph,

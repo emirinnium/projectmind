@@ -34,29 +34,33 @@ export class MemoryRepository {
 
   startSession(agentName: string): number {
     const result = this.db
-      .prepare('INSERT INTO agent_sessions (agent_name) VALUES (?)')
-      .run(agentName);
+      .prepare('INSERT INTO agent_sessions (agent_name, project_id) VALUES (?, ?)')
+      .run(agentName, this.projectId);
     return Number(result.lastInsertRowid);
   }
 
   endSession(sessionId: number): void {
     this.db
-      .prepare('UPDATE agent_sessions SET ended_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .run(sessionId);
+      .prepare(
+        'UPDATE agent_sessions SET ended_at = CURRENT_TIMESTAMP WHERE id = ? AND project_id = ?',
+      )
+      .run(sessionId, this.projectId);
   }
 
   getSessions(agentName?: string, limit: number = 50): AgentSession[] {
     if (agentName) {
       const rows = this.db
         .prepare(
-          'SELECT * FROM agent_sessions WHERE agent_name = ? ORDER BY started_at DESC LIMIT ?',
+          'SELECT * FROM agent_sessions WHERE project_id = ? AND agent_name = ? ORDER BY started_at DESC LIMIT ?',
         )
-        .all(agentName, limit) as Record<string, SQLOutputValue>[];
+        .all(this.projectId, agentName, limit) as Record<string, SQLOutputValue>[];
       return rows.map((r) => this.mapSession(r));
     } else {
       const rows = this.db
-        .prepare('SELECT * FROM agent_sessions ORDER BY started_at DESC LIMIT ?')
-        .all(limit) as Record<string, SQLOutputValue>[];
+        .prepare(
+          'SELECT * FROM agent_sessions WHERE project_id = ? ORDER BY started_at DESC LIMIT ?',
+        )
+        .all(this.projectId, limit) as Record<string, SQLOutputValue>[];
       return rows.map((r) => this.mapSession(r));
     }
   }
@@ -68,6 +72,12 @@ export class MemoryRepository {
     value: string,
     expiresAt?: string,
   ): void {
+    const session = this.db
+      .prepare('SELECT project_id FROM agent_sessions WHERE id = ?')
+      .get(sessionId) as { project_id?: number } | undefined;
+    if (!session || Number(session.project_id) !== this.projectId) {
+      throw new Error(`Session ${sessionId} does not belong to the configured project.`);
+    }
     this.db
       .prepare(
         'INSERT INTO agent_memory (session_id, scope, key, value, expires_at) VALUES (?, ?, ?, ?, ?)',
@@ -91,16 +101,16 @@ export class MemoryRepository {
     if (key) {
       const rows = this.db
         .prepare(
-          'SELECT * FROM agent_memory WHERE scope = ? AND key = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC',
+          'SELECT m.* FROM agent_memory m JOIN agent_sessions s ON s.id = m.session_id WHERE s.project_id = ? AND m.scope = ? AND m.key = ? AND (m.expires_at IS NULL OR m.expires_at > ?) ORDER BY m.created_at DESC',
         )
-        .all(scope, key, now) as Record<string, SQLOutputValue>[];
+        .all(this.projectId, scope, key, now) as Record<string, SQLOutputValue>[];
       return rows.map((r) => this.mapMemory(r));
     } else {
       const rows = this.db
         .prepare(
-          'SELECT * FROM agent_memory WHERE scope = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC',
+          'SELECT m.* FROM agent_memory m JOIN agent_sessions s ON s.id = m.session_id WHERE s.project_id = ? AND m.scope = ? AND (m.expires_at IS NULL OR m.expires_at > ?) ORDER BY m.created_at DESC',
         )
-        .all(scope, now) as Record<string, SQLOutputValue>[];
+        .all(this.projectId, scope, now) as Record<string, SQLOutputValue>[];
       return rows.map((r) => this.mapMemory(r));
     }
   }

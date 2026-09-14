@@ -84,12 +84,17 @@ export function summarizeInvocationMetrics(tool?: string): Record<
   string,
   {
     count: number;
+    coldCount: number;
+    warmCount: number;
     p50Ms: number;
     p95Ms: number;
     p99Ms: number;
+    avgInputBytes: number;
+    avgInputTokens: number;
     avgOutputBytes: number;
     avgOutputTokens: number;
     errors: number;
+    errorRate: number;
   }
 > {
   const selected = tool ? [[tool, history.get(tool) ?? []] as const] : [...history.entries()];
@@ -105,9 +110,24 @@ export function summarizeInvocationMetrics(tool?: string): Record<
         name,
         {
           count: entries.length,
+          coldCount: entries.filter((entry) => entry.cold).length,
+          warmCount: entries.filter((entry) => !entry.cold).length,
           p50Ms: percentile(durations, 0.5),
           p95Ms: percentile(durations, 0.95),
           p99Ms: percentile(durations, 0.99),
+          avgInputBytes:
+            entries.length === 0
+              ? 0
+              : Math.round(
+                  entries.reduce((sum, entry) => sum + entry.inputBytes, 0) / entries.length,
+                ),
+          avgInputTokens:
+            entries.length === 0
+              ? 0
+              : Math.round(
+                  entries.reduce((sum, entry) => sum + entry.estimatedInputTokens, 0) /
+                    entries.length,
+                ),
           avgOutputBytes:
             entries.length === 0
               ? 0
@@ -122,6 +142,8 @@ export function summarizeInvocationMetrics(tool?: string): Record<
                     entries.length,
                 ),
           errors: entries.filter((entry) => !entry.ok).length,
+          errorRate:
+            entries.length === 0 ? 0 : entries.filter((entry) => !entry.ok).length / entries.length,
         },
       ];
     }),

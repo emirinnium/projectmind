@@ -11,6 +11,7 @@ export async function buildProgram(): Promise<Command> {
 
   const modules: Array<{ path: string; name: string }> = [
     { path: './commands/init.js', name: 'createInitCommand' },
+    { path: './commands/config.js', name: 'createConfigCommand' },
     { path: './commands/scan.js', name: 'createScanCommand' },
     { path: './commands/check.js', name: 'createCheckCommand' },
     { path: './commands/report.js', name: 'createReportCommand' },
@@ -27,7 +28,9 @@ export async function buildProgram(): Promise<Command> {
     { path: './commands/doctor.js', name: 'createDoctorCommand' },
     { path: './commands/agent.js', name: 'createAgentCommand' },
     { path: './commands/search.js', name: 'createSearchCommand' },
+    { path: './commands/ask.js', name: 'createAskCommand' },
     { path: './commands/impact.js', name: 'createImpactCommand' },
+    { path: './commands/risk.js', name: 'createRiskCommand' },
     { path: './commands/debt-prioritize.js', name: 'createDebtPrioritizeCommand' },
     { path: './commands/audit.js', name: 'createAuditCommand' },
     { path: './commands/license.js', name: 'createLicenseCommand' },
@@ -55,6 +58,7 @@ export async function buildProgram(): Promise<Command> {
     { path: './commands/secrets-life.js', name: 'createSecretsLifeCommand' },
     { path: './commands/sbom.js', name: 'createSbomCommand' },
     { path: './commands/refactor.js', name: 'createRefactorCommand' },
+    { path: './commands/autofix.js', name: 'createAutofixCommand' },
     { path: './commands/testgen.js', name: 'createTestgenCommand' },
     { path: './commands/docgen.js', name: 'createDocgenCommand' },
     { path: './commands/migrate.js', name: 'createMigrateCommand' },
@@ -67,12 +71,14 @@ export async function buildProgram(): Promise<Command> {
     { path: './commands/structural-search.js', name: 'createStructuralSearchCommand' },
     { path: './commands/embed.js', name: 'createEmbedCommand' },
     { path: './commands/taint.js', name: 'createTaintCommand' },
+    { path: './commands/exploit-path.js', name: 'createExploitPathCommand' },
+    { path: './commands/replay.js', name: 'createReplayCommand' },
     { path: './commands/parser-capabilities.js', name: 'createParserCapabilitiesCommand' },
     { path: './commands/init-mcp.js', name: 'createInitMcpCommand' },
     { path: './commands/proof.js', name: 'createProofCommand' },
-    { path: './commands/benchmark.js', name: 'createBenchmarkCommand' },
     { path: './commands/range.js', name: 'createRangeCommand' },
     { path: './commands/canonical-example.js', name: 'createCanonicalExampleCommand' },
+    { path: './commands/ledger.js', name: 'createLedgerCommand' },
     { path: './commands/watch.js', name: 'createWatchCommand' },
   ];
 

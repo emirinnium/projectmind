@@ -17,12 +17,14 @@ import {
 import { generateMarkdownPrPreview } from './pr-preview-markdown.js';
 import { generateSarifPrPreview } from './pr-preview-sarif.js';
 import { planReviewBundles, type ReviewBundlePlan } from '@/core/review/bundle.js';
+import { executeReviewBundles } from '@/core/review/bundle-workers.js';
 import { loadReviewPolicy } from '@/core/review/policy.js';
 import {
   reflectFindings,
   validateFindingPositions,
   verifiedFindings,
 } from '@/core/review/finding-validation.js';
+import { recordReviewDecision } from '@/core/review/audit.js';
 
 export { validateGitRevision, type PrImpact } from './pr-preview-engine.js';
 export { generateSarifPrPreview } from './pr-preview-sarif.js';
@@ -134,6 +136,17 @@ export function createPrPreviewCommand(): Command {
                   process.stdout.write(`${content}\n`);
                 }
               } else output.success('No changes detected.');
+              recordReviewDecision(_ctx.db, _ctx.kg, {
+                base: opts.base,
+                head: opts.head,
+                policyVersion: String(policy.version),
+                changedFiles,
+                excludedFiles: 0,
+                generatedFindings: 0,
+                verifiedFindings: 0,
+                complete: true,
+                coherenceRisk: 'low',
+              });
               return;
             }
 
@@ -175,11 +188,6 @@ export function createPrPreviewCommand(): Command {
 
             const testSelection = opts.tests ? selectTests(changedFiles, scale) : [];
             const breakingChanges = detectBreakingChanges(changedFiles, scale);
-            const generatedFindings = collectReviewFindings(
-              changedFiles,
-              config.projectRoot,
-              policy,
-            );
             const changedLineRanges = await getChangedLineRanges(
               opts.base,
               opts.head,
@@ -216,6 +224,23 @@ export function createPrPreviewCommand(): Command {
                 allowedLineRanges: changedLineRanges,
               },
             );
+            const bundleExecution = await executeReviewBundles(
+              bundlePlan.bundles,
+              ({ bundle }) =>
+                collectReviewFindings(
+                  bundle.files.map((file) => file.relativePath),
+                  config.projectRoot,
+                  policy,
+                ),
+              {
+                concurrency: policy.concurrency,
+                timeoutMs: policy.bundleTimeoutMs,
+                maxRetries: policy.bundleRetries,
+              },
+            );
+            const generatedFindings = bundleExecution.results.flatMap(
+              (result) => result.value ?? [],
+            );
             const reflectedFindings = reflectFindings(
               validateFindingPositions(generatedFindings, bundlePlan, config.projectRoot),
               policy,
@@ -250,9 +275,22 @@ export function createPrPreviewCommand(): Command {
               reviewAudit: {
                 policy,
                 bundles: bundlePlan,
+                bundleExecution,
                 findings: reflectedFindings,
               },
             };
+
+            recordReviewDecision(_ctx.db, _ctx.kg, {
+              base: opts.base,
+              head: opts.head,
+              policyVersion: String(policy.version),
+              changedFiles,
+              excludedFiles: bundlePlan.excluded.length,
+              generatedFindings: generatedFindings.length,
+              verifiedFindings: findings.length,
+              complete: bundlePlan.excluded.length === 0 && bundleExecution.complete,
+              coherenceRisk,
+            });
 
             if (opts.history) {
               const history = persistReviewHistory(

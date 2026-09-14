@@ -3,18 +3,6 @@
   "databasePath": ".projectmind/pm-knowledge.db",
   "embeddingsDir": ".projectmind/embeddings",
   "maxDepth": 10,
-  "ignorePatterns": [
-    "node_modules/**",
-    "dist/**",
-    ".git/**",
-    "*.min.js",
-    "*.map",
-    "package-lock.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-    "coverage/**",
-    ".nyc_output/**"
-  ],
   "llm": {
     "provider": "anthropic",
     "model": "claude-3-5-sonnet-20241022",

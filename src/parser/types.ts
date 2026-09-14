@@ -13,6 +13,12 @@ export interface ParameterInfo {
   type: string;
 }
 
+export interface StaticCallInfo {
+  fromFunctionName: string;
+  toFunctionName: string;
+  line: number;
+}
+
 export interface FunctionInfo {
   name: string;
   signature: string;
@@ -59,6 +65,8 @@ export interface FileStructure {
   functions: FunctionInfo[];
   classes: ClassInfo[];
   imports: { source: string; named: string[]; kind: string }[];
+  /** AST-observed calls whose target may be resolved by the graph layer. */
+  staticCalls?: StaticCallInfo[];
   exports: string[];
   hash: string;
   lines: number;

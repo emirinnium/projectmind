@@ -2,15 +2,25 @@ import { Command } from 'commander';
 import { withService, asyncHandler, output } from '@/cli/utils/shared.js';
 
 export function createFindCircularDepsCommand(): Command {
-  const cmd = new Command('find-circular-deps').description(
-    'Find all circular dependencies in the project',
-  );
+  const cmd = new Command('find-circular-deps')
+    .description('Find all circular dependencies in the project')
+    .option('-j, --json', 'Output machine-readable JSON');
 
   cmd.action(
-    asyncHandler(async () => {
+    asyncHandler(async (opts: { json?: boolean }) => {
       await withService(['scale'], async (_ctx, services) => {
         const kg = services.scale!.getKnowledgeGraph();
         const cycles = kg.findCircularDependencies();
+
+        if (opts.json) {
+          output.json({
+            protocolVersion: 1,
+            cycles,
+            count: cycles.length,
+            healthy: cycles.length === 0,
+          });
+          return;
+        }
 
         output.section('Circular Dependencies');
 

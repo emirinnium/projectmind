@@ -3,8 +3,8 @@
   "version": "1.0.4",
   "description": "Evidence-first codebase intelligence for JavaScript and TypeScript agents — persistent memory, graph-aware context, and real-time coherence",
   "bin": {
-    "projectmind": "./cli.mjs",
-    "pm": "./cli.mjs"
+    "projectmind": "cli.mjs",
+    "pm": "cli.mjs"
   },
   "type": "module",
   "main": "dist/index.js",
@@ -29,9 +29,11 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:vitest": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "fuzz:nightly": "npm run build && node --max-old-space-size=512 scripts/fuzz-smoke.mjs",
     "test:watch": "vitest watch",
     "start:mcp": "npm run build && node --no-deprecation dist/mcp-server.js",
     "pm:scan": "node --no-deprecation dist/cli.js scan",
@@ -45,8 +47,7 @@
     "pm:resolve": "node dist/cli.js resolve",
     "pm:report": "node dist/cli.js report",
     "pm:ci": "npm run build && npm run pm:scan && npm run pm:genome && npm run pm:debt",
-    "circular-deps": "node dist/cli.js find-circular-deps",
-    "prepare": "npm run build"
+    "circular-deps": "node dist/cli.js find-circular-deps"
   },
   "keywords": [
     "ai",
@@ -77,7 +78,6 @@
     "fast-glob": "^3.3.3",
     "sqlite-vec": "^0.1.9",
     "typescript": "^5.4.0",
-    "ws": "^8.18.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -87,19 +87,24 @@
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-import": "^2.32.0",
     "prettier": "^3.9.6",
-    "ts-node": "^10.9.2",
     "tsc-alias": "^1.9.2",
-    "tsconfig-paths": "^4.2.0",
     "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=22.13.0"
   },
-  "optionalDependencies": {
-    "@xenova/transformers": "^2.17.2",
+  "peerDependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "onnxruntime-node": "^1.27.0"
+  },
+  "peerDependenciesMeta": {
+    "@huggingface/transformers": {
+      "optional": true
+    },
+    "onnxruntime-node": {
+      "optional": true
+    }
   },
   "overrides": {
     "adm-zip": "^0.6.0",
@@ -108,5 +113,10 @@
     "protobufjs": "^8.7.2",
     "sharp": "^0.35.4",
     "qs": "^6.15.4"
-  }
+  },
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "types": "./dist/index.d.ts"
 }

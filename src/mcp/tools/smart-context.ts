@@ -2,6 +2,10 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { assembleUserContext, UserContextResult } from '@/core/context/user-context-assembler.js';
+import { ContextBudgetOptimizer, createFullFilePlan } from '@/core/context/budget-optimizer.js';
+import { calculateContextRoi, compareContextPlans } from '@/core/context/roi.js';
+import { classifyTask } from '@/core/search/intent-engine.js';
+import type { ContextItem } from '@/core/context/types.js';
 
 /**
  * suggest_next_files — task-aware "what should I read next?" ranking.
@@ -33,6 +37,18 @@ export interface SuggestNextFilesArgs {
   task?: string;
   /** Maximum number of suggestions to return (engine default: 8). */
   limit?: number;
+  /** Optional token budget for a real context-plan comparison over suggestions. */
+  tokenBudget?: number;
+}
+
+export interface SmartContextPlan {
+  budget: number;
+  taskType: ReturnType<typeof classifyTask> | null;
+  candidates: ContextItem[];
+  plan: ReturnType<ContextBudgetOptimizer['optimize']>;
+  roi: ReturnType<typeof calculateContextRoi>;
+  comparisons: ReturnType<typeof compareContextPlans>;
+  limitations: string[];
 }
 
 /**
@@ -92,15 +108,73 @@ function resolveTarget(
 export function suggestNextFilesForTool(
   deps: McpDependencies,
   args: SuggestNextFilesArgs,
-): UserContextResult {
+): UserContextResult & { contextPlan?: SmartContextPlan } {
   const target = resolveTarget(deps, args);
-  return assembleUserContext(deps.kg, {
+  const result = assembleUserContext(deps.kg, {
     fileId: target.fileId,
     relativePath: target.relativePath,
     cognitiveLoad: target.cognitiveLoad,
     task: args.task,
     limit: args.limit,
   });
+  if (args.tokenBudget === undefined) return result;
+  if (
+    !Number.isSafeInteger(args.tokenBudget) ||
+    args.tokenBudget < 1 ||
+    args.tokenBudget > 10_000_000
+  ) {
+    throw new Error('suggest_next_files tokenBudget must be an integer between 1 and 10000000.');
+  }
+  const candidates: ContextItem[] = result.items.map((item) => {
+    const file = deps.kg.getFileByPath(item.path);
+    const bytes = file?.sizeBytes;
+    return {
+      path: item.path,
+      tokens: Math.max(1, Math.ceil((bytes ?? 400) / 4)),
+      ...(bytes === undefined ? {} : { bytes }),
+      relevanceScore: item.score,
+      importedByQueryFiles: item.reasons.some((reason) => reason.includes('dependent')),
+      semanticMatch: item.reasons.includes('semantically-similar'),
+      isTestFile: item.reasons.includes('test-file'),
+    };
+  });
+  const taskType = args.task ? classifyTask(args.task) : undefined;
+  const optimizer = new ContextBudgetOptimizer({ taskType });
+  const plan = optimizer.optimize(candidates, args.tokenBudget, taskType);
+  const roi = calculateContextRoi(candidates, plan);
+  const comparisons = compareContextPlans(candidates, [
+    { variant: 'full-file', plan: createFullFilePlan(candidates) },
+    { variant: 'budgeted-file', plan },
+    {
+      variant: 'byte-range',
+      limitations: ['No byte ranges were supplied by the suggestion caller.'],
+    },
+    {
+      variant: 'canonical-example',
+      limitations: ['Canonical examples were not supplied by the suggestion caller.'],
+    },
+    {
+      variant: 'graph-closure',
+      limitations: [
+        'The suggestion set is already graph-ranked; no separate closure plan was supplied.',
+      ],
+    },
+  ]);
+  return {
+    ...result,
+    contextPlan: {
+      budget: args.tokenBudget,
+      taskType: taskType ?? null,
+      candidates,
+      plan,
+      roi,
+      comparisons,
+      limitations: [
+        'The plan compares the bounded suggestions returned by this call, not every indexed file.',
+        'Byte-range, canonical-example, and separate graph-closure variants remain unavailable until their actual plans are supplied.',
+      ],
+    },
+  };
 }
 
 export function registerSuggestNextFilesTool(server: McpServer, deps: McpDependencies): void {
@@ -136,6 +210,13 @@ export function registerSuggestNextFilesTool(server: McpServer, deps: McpDepende
           .max(50)
           .optional()
           .describe('Maximum number of suggestions (default 8)'),
+        tokenBudget: z
+          .number()
+          .int()
+          .min(1)
+          .max(10_000_000)
+          .optional()
+          .describe('Optional token budget; adds a bounded context plan and ROI comparison'),
       },
     },
     async (args) => {
@@ -145,6 +226,7 @@ export function registerSuggestNextFilesTool(server: McpServer, deps: McpDepende
           fileId: args.fileId,
           task: args.task,
           limit: args.limit,
+          tokenBudget: args.tokenBudget,
         });
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],

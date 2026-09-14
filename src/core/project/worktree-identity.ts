@@ -11,12 +11,24 @@ export interface WorktreeIdentity {
   key: string;
 }
 
+/**
+ * Canonicalize a path for identity comparisons without changing the path that
+ * is shown to a user or passed to the filesystem. Git can emit mixed
+ * separators on Windows, while an existing database may contain the older
+ * representation.
+ */
+export function canonicalIdentityPath(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '') || '/';
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
 function git(root: string, args: string[]): string {
   return execFileSync('git', args, {
     cwd: root,
     encoding: 'utf8',
     timeout: 5000,
     windowsHide: true,
+    stdio: ['ignore', 'pipe', 'ignore'],
   }).trim();
 }
 
@@ -24,12 +36,16 @@ function git(root: string, args: string[]): string {
 export function getWorktreeIdentity(projectRoot: string): WorktreeIdentity | null {
   try {
     const root = resolve(projectRoot);
-    const repositoryRoot = git(root, ['rev-parse', '--show-toplevel']);
-    const commonGitDir = git(root, ['rev-parse', '--git-common-dir']);
-    const worktreePath = git(root, ['rev-parse', '--show-toplevel']);
+    // Git returns `.git` for the primary worktree but an absolute common-dir
+    // path for linked worktrees. Canonicalize both forms before deriving the
+    // namespace key so equivalent Windows/POSIX representations cannot split
+    // one repository into two identities.
+    const repositoryRoot = resolve(root, git(root, ['rev-parse', '--show-toplevel']));
+    const commonGitDir = resolve(root, git(root, ['rev-parse', '--git-common-dir']));
+    const worktreePath = resolve(root, git(root, ['rev-parse', '--show-toplevel']));
     const branch = git(root, ['symbolic-ref', '--quiet', '--short', 'HEAD']) || '(detached HEAD)';
     const headSha = git(root, ['rev-parse', 'HEAD']);
-    const key = `${repositoryRoot.replace(/\\/g, '/')}::${worktreePath.replace(/\\/g, '/')}::${headSha}`;
+    const key = `${canonicalIdentityPath(repositoryRoot)}::${canonicalIdentityPath(worktreePath)}::${headSha.toLowerCase()}`;
     return { repositoryRoot, commonGitDir, worktreePath, branch, headSha, key };
   } catch (error) {
     logger.debug('Git worktree identity unavailable.', {

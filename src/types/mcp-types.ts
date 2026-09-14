@@ -87,6 +87,8 @@ export interface ScanProfileDTO {
   totalFiles: number;
   scannedFiles: number;
   errorFiles: number;
+  skippedFiles: number;
+  skippedPaths: string[];
   durationMs: number;
   filesPerSecond: number;
   memoryUsedMB: number;

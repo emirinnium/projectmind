@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { DatabaseManager, initDatabase, closeDatabase } from '../../src/storage/database.js';
 
 describe('DatabaseManager', () => {
@@ -201,12 +204,14 @@ describe('DatabaseManager', () => {
     });
 
     it('initDatabase() sets busy_timeout to 5000ms', () => {
-      const db = initDatabase('tests/tmp-busy-timeout.db');
+      const tempRoot = mkdtempSync(join(tmpdir(), 'projectmind-busy-timeout-'));
+      const db = initDatabase(join(tempRoot, 'busy-timeout.db'));
       try {
         const row = db.prepare('PRAGMA busy_timeout').get() as { timeout: number };
         expect(row.timeout).toBe(5000);
       } finally {
         closeDatabase();
+        rmSync(tempRoot, { recursive: true, force: true });
       }
     });
   });

@@ -136,4 +136,23 @@ describe('suggest_next_files (suggestNextFilesForTool)', () => {
   it('throws when neither relativePath nor fileId is provided', () => {
     expect(() => suggestNextFilesForTool(deps, {})).toThrow(/relativePath or fileId/i);
   });
+
+  it('adds an evidence-labelled budget plan when a token budget is requested', () => {
+    const result = suggestNextFilesForTool(deps, {
+      relativePath: 'src/x.ts',
+      task: 'add rate limiting',
+      limit: 3,
+      tokenBudget: 5,
+    });
+    expect(result.contextPlan).toMatchObject({ budget: 5, candidates: expect.any(Array) });
+    expect(result.contextPlan?.plan.allocatedTokens).toBeLessThanOrEqual(5);
+    expect(result.contextPlan?.comparisons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ variant: 'full-file', available: true }),
+        expect.objectContaining({ variant: 'budgeted-file', available: true }),
+        expect.objectContaining({ variant: 'byte-range', available: false }),
+      ]),
+    );
+    expect(result.contextPlan?.limitations.join(' ')).toMatch(/bounded suggestions/i);
+  });
 });

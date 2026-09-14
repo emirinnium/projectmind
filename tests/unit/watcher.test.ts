@@ -129,4 +129,45 @@ describe('ProjectWatcher — cross-platform recursive watching', () => {
       watcher.stop();
     }
   });
+
+  it('blocks a guardian violation without accepting the file into the graph', async () => {
+    const dir = makeTempDir();
+    const filePath = join(dir, 'guarded.ts');
+    writeFileSync(filePath, 'export const safe = true;\n');
+    const upserted: string[] = [];
+    const batches: Array<{ blocked?: string[] }> = [];
+    const kg: WatcherKg = {
+      upsertFile: async (_struct, rel) => {
+        upserted.push(rel);
+        return 1;
+      },
+      storeFileDetails: async () => undefined,
+    };
+    const watcher = new ProjectWatcher(kg, {
+      root: dir,
+      debounceMs: 50,
+      guardian: {
+        inspect: (_path, code) => ({
+          blocked: code.includes('eval('),
+          violations: code.includes('eval(') ? ['no-eval'] : [],
+        }),
+      },
+      onBatchProcessed: (batch) => batches.push(batch),
+    });
+    watcher.start();
+    try {
+      appendFileSync(filePath, 'eval(input);\n');
+      const deadline = Date.now() + 3000;
+      while (
+        batches.every((batch) => !batch.blocked?.includes('guarded.ts')) &&
+        Date.now() < deadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(batches.some((batch) => batch.blocked?.includes('guarded.ts'))).toBe(true);
+      expect(upserted).not.toContain('guarded.ts');
+    } finally {
+      watcher.stop();
+    }
+  });
 });

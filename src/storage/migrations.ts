@@ -5,6 +5,7 @@ import { collaborationMigrations } from './migrations/collaboration-migrations.j
 import { debtMigrations } from './migrations/debt-migrations.js';
 import { reviewMigrations } from './migrations/review-migrations.js';
 import { graphMigrations } from './migrations/graph-migrations.js';
+import { intelligenceMigrations } from './migrations/intelligence-migrations.js';
 import type { Migration } from './migrations/types.js';
 
 const SCHEMA_VERSION_TABLE = `
@@ -15,14 +16,27 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 `;
 
-/** All migrations in version order */
-export const migrations: Migration[] = [
+/** All migrations in version order. Migration versions are global. */
+const sortedMigrations: Migration[] = [
   ...coreMigrations,
   ...collaborationMigrations,
   ...debtMigrations,
   ...reviewMigrations,
   ...graphMigrations,
+  ...intelligenceMigrations,
 ].sort((a, b) => a.version - b.version);
+
+const duplicateMigrationVersions = sortedMigrations.filter(
+  (migration, index) =>
+    sortedMigrations.findIndex((candidate) => candidate.version === migration.version) !== index,
+);
+if (duplicateMigrationVersions.length > 0) {
+  throw new Error(
+    `Duplicate database migration version(s): ${[...new Set(duplicateMigrationVersions.map((migration) => migration.version))].join(', ')}.`,
+  );
+}
+
+export const migrations: Migration[] = sortedMigrations;
 
 export function getCurrentSchemaVersion(db: DatabaseSync): number {
   try {

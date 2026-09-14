@@ -43,6 +43,9 @@ export function resolvePackageManagerCommand(
   ecosystem: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
+  if (!['npm', 'pnpm', 'yarn'].includes(ecosystem)) {
+    throw new Error(`Unsupported package ecosystem: ${ecosystem}`);
+  }
   return platform === 'win32' ? `${ecosystem}.cmd` : ecosystem;
 }
 

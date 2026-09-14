@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { initDatabase, closeDatabase } from '../../src/storage/database.js';
 import { ScaleManager } from '../../src/core/scale/manager.js';
 import { computeFingerprint } from '../../src/core/scale/reporting/utils.js';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -98,5 +98,24 @@ describe('ScaleManager', () => {
       expect(profile.errorFiles).toBe(0);
       expect(profile.durationMs).toBeGreaterThanOrEqual(0);
     });
+  });
+
+  it('does not read fingerprint paths outside the project or from .pmignore', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pm-scale-fingerprint-boundary-'));
+    try {
+      mkdirSync(join(root, 'ignored'), { recursive: true });
+      writeFileSync(join(root, '.pmignore'), 'ignored/\n', 'utf8');
+      writeFileSync(join(root, 'safe.ts'), 'export const safe = true;\n', 'utf8');
+
+      const safe = computeFingerprint(['safe.ts'], root);
+      const escaped = computeFingerprint(['../outside.ts'], root);
+      const ignored = computeFingerprint(['ignored/secret.ts'], root);
+
+      expect(safe.namingConvention).not.toBe('unknown');
+      expect(escaped.namingConvention).toBe('unknown');
+      expect(ignored.namingConvention).toBe('unknown');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

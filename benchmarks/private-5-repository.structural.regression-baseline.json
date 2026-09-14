@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "manifestName": "projectmind-private-js-ts-structural-five-repository",
+  "policy": {
+    "maxMetricDrop": 0.01,
+    "requireInputHash": true,
+    "requireEvaluatedCaseParity": true,
+    "maxScanErrors": 0
+  },
+  "baselines": {
+    "projectmind-hybrid-search": {
+      "inputHash": "f9dac522a3c9582b467cff837c180de10a8a12f15104e6cec3d673da08af2baa",
+      "evaluatedCases": 4,
+      "aggregate": {
+        "precisionAtK": 1,
+        "recallAtK": 1,
+        "f1": 1,
+        "mrr": 1,
+        "ndcg": 1
+      }
+    }
+  }
+}

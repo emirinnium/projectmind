@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "manifestName": "projectmind-private-js-ts-twenty-repository",
+  "inputHash": "66d7c04a84b437873c319f7d670c3903307f7667c4933a6e623c34d7483f343c",
+  "verifiedRepositories": 20,
+  "filesScanned": 766,
+  "filesSkipped": 644,
+  "candidateFindings": 204,
+  "bySeverity": {
+    "critical": 0,
+    "high": 97,
+    "medium": 107
+  }
+}

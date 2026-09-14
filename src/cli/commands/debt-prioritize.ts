@@ -6,8 +6,9 @@ export function createDebtPrioritizeCommand(): Command {
     .description('Show debt items sorted by severity and frequency')
     .option('-n, --limit <n>', 'Max items', '20')
     .option('--severity <level>', 'Filter: high|medium|low')
+    .option('-j, --json', 'Output machine-readable JSON')
     .action(
-      asyncHandler(async (opts: { limit: string; severity: string }) => {
+      asyncHandler(async (opts: { limit: string; severity: string; json?: boolean }) => {
         const limit = Number.parseInt(opts.limit, 10);
         if (!Number.isInteger(limit) || limit < 1) {
           throw new Error(`--limit must be a positive integer: ${opts.limit}`);
@@ -18,10 +19,8 @@ export function createDebtPrioritizeCommand(): Command {
         await withService(['debt'], async (_ctx, services) => {
           const debt = services.debt!;
 
-          output.section('Debt Prioritization');
-
           const report = debt.getReport();
-          let items = report.items;
+          let items = [...report.items];
 
           if (opts.severity) {
             items = items.filter((i) => i.severity === opts.severity);
@@ -35,6 +34,19 @@ export function createDebtPrioritizeCommand(): Command {
           );
 
           items = items.slice(0, limit);
+
+          if (opts.json) {
+            output.json({
+              protocolVersion: 1,
+              filters: { limit, severity: opts.severity ?? null },
+              items,
+              summary: report.bySeverity,
+              totalItems: report.totalItems,
+            });
+            return;
+          }
+
+          output.section('Debt Prioritization');
 
           if (items.length === 0) {
             output.info('No debt items match the filters');

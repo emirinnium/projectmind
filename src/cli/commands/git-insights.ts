@@ -36,7 +36,12 @@ export function createGitInsightsCommand(): Command {
 
         const git = (args: string[], maxBuffer = 32 * 1024 * 1024): string | null => {
           try {
-            return execFileSync('git', args, { cwd: root, encoding: 'utf-8', maxBuffer }).trim();
+            return execFileSync('git', args, {
+              cwd: root,
+              encoding: 'utf-8',
+              maxBuffer,
+              stdio: ['ignore', 'pipe', 'ignore'],
+            }).trim();
           } catch {
             return null;
           }

@@ -15,7 +15,7 @@ export function resolvePackageVersion(moduleDir: string): string {
       const pkgPath = join(dir, 'package.json');
       const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { name?: string; version?: string };
       if (pkg.name === '@emirhanturker/projectmind') {
-        return pkg.version ?? '0.0.0';
+        return pkg.version ?? 'unknown';
       }
     } catch (error) {
       reportSuppressedError(error, 'Intentional fallback src/utils/version.ts:19');
@@ -23,7 +23,7 @@ export function resolvePackageVersion(moduleDir: string): string {
     }
     dir = dirname(dir);
   }
-  return '0.0.0';
+  return 'unknown';
 }
 
 /** Convenience for ESM modules: derive dir from import.meta.url. */

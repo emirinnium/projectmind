@@ -3,7 +3,7 @@ import { loadConfig } from '@/utils/config.js';
 import { initDatabase, closeDatabase } from '@/storage/database.js';
 import { KnowledgeGraph } from '@/storage/kg/graph.js';
 import { existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { globalCacheRegistry } from '@/core/cache/index.js';
 
 export type ContextFn<T> = (ctx: CLIContext, service: T) => Promise<void>;
@@ -15,9 +15,9 @@ export interface CLIContext {
 }
 
 export async function createContext(overrideRoot?: string): Promise<CLIContext> {
-  const config = loadConfig();
+  const config = loadConfig(overrideRoot ?? process.cwd());
 
-  const projectRoot = overrideRoot || config.projectRoot;
+  const projectRoot = overrideRoot ? resolve(overrideRoot) : config.projectRoot;
   const databasePath = overrideRoot ? '.projectmind/pm-knowledge.db' : config.databasePath;
 
   const dbPath = join(projectRoot, databasePath);

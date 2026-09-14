@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { assertProjectPath } from '../security/path-security.js';
 import { writeFileAtomically } from '../../utils/atomic-write.js';
+import { relative } from 'node:path';
+import { runPostEditGate, type PostEditGateReport } from './post-edit-gate.js';
 
 export interface SurgicalEditPlan {
   filePath: string;
@@ -22,6 +24,7 @@ export interface SurgicalEditResult {
   diff: string;
   rollbackPath?: string;
   reason?: string;
+  gate?: PostEditGateReport;
 }
 
 function hash(value: string): string {
@@ -120,9 +123,35 @@ export function applySurgicalEdit(
       reason: 'replacement-does-not-parse',
     };
   }
+  const gate = runPostEditGate({
+    projectRoot,
+    filePath: relative(projectRoot, absolutePath),
+    before,
+    after,
+  });
+  if (!gate.passed) {
+    return {
+      applied: false,
+      filePath: absolutePath,
+      beforeHash,
+      diff: '',
+      reason: `post-edit-gate-failed: ${gate.checks
+        .filter((check) => check.status === 'fail')
+        .map((check) => check.id)
+        .join(', ')}`,
+      gate,
+    };
+  }
   const diff = simpleDiff(plan.expectedText, plan.replacement);
   if (!options.apply) {
-    return { applied: false, filePath: absolutePath, beforeHash, diff, reason: 'preview-only' };
+    return {
+      applied: false,
+      filePath: absolutePath,
+      beforeHash,
+      diff,
+      reason: 'preview-only',
+      gate,
+    };
   }
 
   const afterHash = hash(after);
@@ -132,7 +161,7 @@ export function applySurgicalEdit(
     writeFileAtomically(rollbackPath, before);
   }
   writeFileAtomically(absolutePath, after);
-  return { applied: true, filePath: absolutePath, beforeHash, afterHash, diff, rollbackPath };
+  return { applied: true, filePath: absolutePath, beforeHash, afterHash, diff, rollbackPath, gate };
 }
 
 function nodeKindMatches(node: ts.Node, requested: string): boolean {

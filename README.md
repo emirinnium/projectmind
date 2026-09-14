@@ -49,18 +49,50 @@ pm proof claim "claim" --files src/index.ts # Keep claim evidence explicit
 pm pr-preview --format sarif    # Export CI/code-scanning review findings
 pm review --policy .projectmind/review-policy.json # Deterministic policy + reflected findings
 pm range src/index.ts --start 0 --end 512 --format json # Byte-bounded source retrieval
-pm benchmark prepare            # Create a metadata-first golden fixture manifest
-pm benchmark search -q "auth token" # Measure deterministic lexical retrieval
-pm benchmark review --base main --head HEAD # Measure review coverage/evidence
 pm doctor install               # Diagnose Node/npm/config/provider installation
+pm doctor install --root <path> # Diagnose another project root without changing cwd
 pm mcp-init codex --verify      # Verify MCP entry without changing config
+pm mcp-init opencode --verify --handshake  # Verify config plus a live stdio handshake
 pm health --json               # Machine-readable health summary
 pm audit --all                 # Production-code security audit
 pm audit --all --include-tests # Include test/spec fixtures explicitly
 ```
 
+The core install does not require native embedding runtimes. If transformer
+embeddings or local UniXcoder/CodeBERT models are needed, install those
+optional peer providers explicitly in the same scope as ProjectMind:
+
+```bash
+npm install @huggingface/transformers onnxruntime-node
+```
+
+Without them, ProjectMind remains fully usable with its deterministic `simple`
+embedding provider; `pm doctor install` reports the provider state.
+
+For optional deep LLM analysis through OpenRouter, set
+`llm.provider` to `"openrouter"`, choose an OpenRouter model ID, and provide
+`OPENROUTER_API_KEY`. ProjectMind only accepts OpenRouter's official HTTPS
+endpoint (`https://openrouter.ai/api/v1`) and never reads OpenCode credentials
+automatically.
+
 Run `pm --help` for the complete command tree. JSON output is available on
 commands that support automation and CI workflows.
+
+### GitHub Action
+
+The repository ships a bounded cross-platform composite action for CI:
+
+```yaml
+- uses: emirinnium/projectmind/.github/actions/projectmind@master
+  with:
+    command: audit
+    version: 1.0.4
+    report-path: projectmind-audit.json
+```
+
+`command` is allowlisted (`health`, `audit`, or `pr-preview`), the version is
+pinned, and the report path is workspace-relative. It does not execute
+arbitrary shell input or require a global installation.
 
 ## Evidence-first analysis
 
@@ -97,6 +129,11 @@ core|review|security|maintenance|full` to control discovery breadth.
 
 ## Deterministic review and retrieval
 
+For parallel agent work, the `arbitrate_agents` MCP tool combines advisory
+locks, graph-aware collision risk, dependency order, conflict groups, and
+isolated-file shard suggestions before edits begin. It never changes source or
+git state; its default ledger entry stores hashes and bounded summary metadata.
+
 Review output is generated from a versioned `.projectmind/review-policy.json`
 when present. Changed files are sorted and split into source-hashed bundles;
 line positions and rule evidence are independently reflected before SARIF or
@@ -108,6 +145,38 @@ reduce context payload without treating truncation as complete coverage. See
 adapter boundaries are documented in [`docs/BACKENDS.md`](docs/BACKENDS.md);
 SQLite remains the default and no remote service is required.
 
+Evidence and agent memory surfaces are explicit and reproducible:
+
+```bash
+# Record a payload-free decision and verify the local hash chain
+pm ledger record --event-type review --tool review_project --input-json '{"base":"HEAD^","head":"HEAD"}' --result-json '{"findings":0}' --format json
+pm ledger verify --format json
+# Export the hashes for independent CI/audit verification
+pm ledger export --format json > ledger-export.json
+pm ledger verify --export ledger-export.json --format json
+# Create a validated SQLite snapshot; restore requires explicit confirmation
+pm ledger backup --output .projectmind/pm-knowledge.db.backup --format json
+pm ledger restore --input .projectmind/pm-knowledge.db.backup --force --format json
+
+# See how much context was selected and what was excluded
+pm budget --task "fix authentication" --budget 6000 --input-price-per-1k 0.15 --format json
+
+# Personalize safe mechanical fixes only after evidence accumulates
+pm autofix recommend --minimum-samples 3
+pm autofix record var-to-const --feedback accepted --agent my-agent
+```
+
+For repeatable local cost estimates, an optional `llm.pricing` record in the
+global or project config can include `inputPricePer1k`, `source`,
+`effectiveAt`, and `expiresAt`. Direct `--input-price-per-1k` overrides it;
+expired or future-dated records are excluded from cost arithmetic.
+
+Auto-Fix recommendations are conservative: skipped outcomes do not count as
+acceptance, mixed or small samples remain inconclusive, and `pm autofix
+opt-out`/`reset` provide project-scoped privacy and control. `pm risk calibrate
+<file>` scores a labeled JSON corpus with Brier score; it does not invent a
+calibration claim when no historical labels are supplied.
+
 ## Project boundary and configuration
 
 - `.pmignore` is the single source of truth for files ProjectMind must not read.
@@ -115,6 +184,38 @@ SQLite remains the default and no remote service is required.
   embeddings, limits, and feature flags; it is not an ignore file.
 - ProjectMind automatically excludes generated, dependency, cache, and VCS
   directories in addition to `.pmignore` rules.
+
+When the database is shared by linked checkouts, ProjectMind automatically
+selects a stable graph namespace for the current Git branch and worktree. A
+new commit on the same branch keeps its namespace and is marked stale until a
+fresh scan; another branch or worktree gets a separate project namespace. Use
+`pm project current` to inspect the active namespace and `pm project worktrees`
+to list or prune stale namespaces. Non-Git folders continue to use the normal
+project selection behavior.
+
+Run `pm init` in a project to create missing `.pmignore`, a sparse
+`.projectmindrc.json`, and the project-local `.mcp.json` without overwriting
+existing files. Use `pm init --root <path>` when initializing a directory other
+than the current one. Runtime configuration precedence is:
+`defaults < global config < project config < environment < CLI overrides`.
+The global config is stored at `%APPDATA%/projectmind/config.json` on Windows,
+`$XDG_CONFIG_HOME/projectmind/config.json` when configured, or
+`~/.config/projectmind/config.json` on Linux/macOS; project settings override
+matching global settings. Keep credentials in environment variables or the
+global config, not in a tracked project file.
+
+Manage the layers without hand-editing paths:
+
+```bash
+pm config init --global       # create a sparse user-level config once
+pm config show --effective    # inspect the merged config (secrets redacted)
+pm config set --global llm.model '"your-model"'
+pm config path --project
+```
+
+`pm config set` accepts only schema-backed keys and validates the value before
+writing. Existing files are never overwritten by `config init`; use the
+project file for intentional, reviewable overrides.
 
 ## Development
 

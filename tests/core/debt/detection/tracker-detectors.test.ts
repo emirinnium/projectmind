@@ -6,7 +6,6 @@ describe('technical debt detector evidence', () => {
   it('keeps each finding trace specific to its detector', () => {
     const sourceCode = 'export const value = 1;\n';
     const churn: GitChurnEntry = {
-      path: 'src/example.ts',
       count: 12,
       authors: new Set(['a', 'b']),
     };
@@ -18,7 +17,7 @@ describe('technical debt detector evidence', () => {
         cognitiveLoad: 0.5,
       },
       sourceCode,
-      new Map([[churn.path, churn]]),
+      new Map([['src/example.ts', churn]]),
     );
 
     const types = findings.map((finding) => finding.type);

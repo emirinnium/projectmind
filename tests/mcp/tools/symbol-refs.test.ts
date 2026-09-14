@@ -73,6 +73,7 @@ describe('find_symbol_references (findSymbolReferencesForTool)', () => {
       line: 1,
       isWriteAccess: false,
     });
+    expect(decl!.file).not.toContain(root.replace(/\\/g, '/'));
     expect(decl!.snippet).toContain('counter');
 
     // The read `return counter;` is on line 4 and is NOT a write access.
@@ -83,6 +84,20 @@ describe('find_symbol_references (findSymbolReferencesForTool)', () => {
       isWriteAccess: false,
     });
     expect(read!.snippet).toContain('counter');
+  });
+
+  it('returns project-relative paths when the caller supplies an absolute file path', async () => {
+    const root = await seedProject();
+    tmpRoots.push(root);
+
+    const result = findSymbolReferencesForTool(makeDeps(root), {
+      file: join(root, 'src', 'counter.ts'),
+      symbol: 'counter',
+      max: 1,
+    });
+
+    expect(result.references[0]?.file).toBe('src/counter.ts');
+    expect(result.references[0]?.file).not.toContain(root.replace(/\\/g, '/'));
   });
 
   it('respects the max cap on returned references', async () => {

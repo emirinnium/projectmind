@@ -7,7 +7,11 @@ vi.mock('node:child_process', () => ({
   spawnSync: spawnSyncMock,
 }));
 
-import { buildAutopilotHookScript, quotePosixShellArg } from '../../src/cli/commands/autopilot.js';
+import {
+  buildAutopilotHookScript,
+  quotePosixShellArg,
+  resolveGitHooksDirectory,
+} from '../../src/cli/commands/autopilot.js';
 import {
   resolvePackageManagerCommand,
   runNpmAudit,
@@ -30,6 +34,13 @@ describe('shell execution hardening', () => {
     expect(script).not.toContain('node "');
   });
 
+  it('confines Git hooksPath to the trusted project root', () => {
+    expect(resolveGitHooksDirectory('.git/hooks', 'C:\\repo')).toBe('C:\\repo\\.git\\hooks');
+    expect(() => resolveGitHooksDirectory('../outside/hooks', 'C:\\repo')).toThrow(
+      /outside-project|outside the project root/,
+    );
+  });
+
   it.each([
     ['win32', 'npm.cmd'],
     ['linux', 'npm'],
@@ -38,6 +49,12 @@ describe('shell execution hardening', () => {
     expect(resolvePackageManagerCommand('npm', platform)).toBe(command);
     expect(resolvePackageManagerCommand('pnpm', platform)).toBe(
       platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    );
+  });
+
+  it('rejects arbitrary executable names before spawning a package manager', () => {
+    expect(() => resolvePackageManagerCommand('evil; touch compromised')).toThrow(
+      /Unsupported package ecosystem/,
     );
   });
 

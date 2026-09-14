@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 import ts from 'typescript';
+import { logger } from '@/utils/logger.js';
 
 /**
  * Shared TypeScript language-service bootstrap for editor-grade commands
@@ -70,7 +71,11 @@ export function readSourceNormalized(
   const abs = join(projectRoot, filePath);
   try {
     return { abs, text: readFileSync(abs, 'utf-8') };
-  } catch {
+  } catch (error) {
+    logger.debug('Unable to read normalized source file for language service.', {
+      filePath: filePath.replace(/\\/g, '/'),
+      error: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }

@@ -40,6 +40,7 @@ import {
 } from '../sync.js';
 import { registerAgentLocksTool } from '../locks.js';
 import { registerPredictMergeRiskTool } from '../merge-risk.js';
+import { registerArbitrateAgentsTool } from '../arbiter.js';
 import { registerPredictImpactRiskTool } from '../impact.js';
 import { registerIngestTraceTool } from '../trace.js';
 import { registerStructuralSearchTool } from '../structural-search.js';
@@ -60,10 +61,18 @@ import { registerSuggestNextFilesTool } from '../smart-context.js';
 import { registerRecommendSkillsTool } from '../skill-recommend.js';
 import { registerReviewProjectTool } from '../review.js';
 import { registerSourceRangeTool } from '../source-range.js';
+import { registerSourceSymbolRangeTool } from '../symbol-range.js';
 import { registerInvocationMetricsTool } from '../metrics.js';
 import { registerCanonicalExampleTool } from '../canonical-example.js';
-import { annotateToolRegistration, shouldRegisterParityTools } from '../guard.js';
+import { registerEvidenceLedgerTool } from '../evidence-ledger.js';
+import { registerReplayTool } from '../replay.js';
+import { registerSearchFeedbackTool } from '../search-feedback.js';
+import { registerSessionIntelligenceTools } from '../session-intelligence.js';
+import { registerBugSurfaceTool } from '../bug-surface.js';
+import { registerAskCodebaseTool } from '../ask.js';
+import { annotateToolRegistration, getMcpProfile, shouldRegisterParityTools } from '../guard.js';
 import { logger } from '../../../utils/logger.js';
+import { createMcpProjectScopeRuntime } from '../project-scope.js';
 
 /**
  * Register all MCP tools - single entry point for tool registration.
@@ -74,7 +83,11 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   // tools AND spreads toolCacheHintMeta(name) `_meta` cache hints
   // (ttlMs/cacheScope) into every tool config — the documented cache-hint
   // feature (src/mcp/tools/list.ts) now applies to tools, not just resources.
-  annotateToolRegistration(server);
+  const projectScope = createMcpProjectScopeRuntime(deps);
+  annotateToolRegistration(server, projectScope);
+  // Existing registration functions keep their stable dependency shape; the
+  // proxy resolves request-local project scopes through AsyncLocalStorage.
+  deps = projectScope.deps;
   // Core tools
   registerCheckCoherenceTool(server, deps);
   registerGetContextTool(server, deps);
@@ -130,6 +143,8 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
 
   // Multi-agent coordination (merge-collision prediction before edits)
   registerPredictMergeRiskTool(server, deps);
+  // Multi-agent coordination (deterministic arbitration before parallel edits)
+  registerArbitrateAgentsTool(server, deps);
 
   // Predictive impact alerting with risk levels (low/medium/high/critical)
   registerPredictImpactRiskTool(server, deps);
@@ -151,6 +166,9 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
 
   // Taint analysis tools
   registerTaintTools(server, deps);
+
+  // Payload-free agent context/decision replay and source/graph drift status.
+  registerReplayTool(server, deps);
 
   // Team memory tools
   registerTeamMemoryTools(server, deps);
@@ -176,12 +194,10 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   // Skill recommendations from the skills registry for a task description.
   registerRecommendSkillsTool(server, deps);
 
-  // CLI bridge — exposes the full CLI surface to agents that need a
-  // capability without a dedicated tool (doctor, health, report, layers,
-  // audit, license, sbom, churn, api-surface, dedup, heatmap, ownership,
-  // adr, testgen, docgen, migrate, skill-recommend, context-budget,
-  // contract-test generate/run, trace convert/show/clear, refactor-roi,
-  // deps-fresh, flags, secrets-life, onboard, embed ...).
+  // CLI bridge — exposes a deliberately small, read-oriented subset of the
+  // CLI for capabilities without a dedicated typed tool. It is default-deny;
+  // destructive and positional workflows stay in the trusted local CLI or
+  // their dedicated MCP interfaces.
   registerCliBridgeTool(server, deps);
 
   // Auto-generated 1:1 CLI-parity tools (pm_<command>[_<sub>]).
@@ -194,7 +210,7 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
     );
   } else {
     logger.info(
-      '[mcp] PROJECTMIND_TOOLS=core (default) — CLI-parity tools skipped. Set PROJECTMIND_TOOLS=all for full surface. run_cli bridge still available.',
+      `[mcp] PROJECTMIND_TOOLS=${getMcpProfile()} — CLI-parity tools skipped. Set PROJECTMIND_TOOLS=all for full surface. run_cli bridge still available.`,
     );
   }
 
@@ -207,7 +223,13 @@ export async function registerAllTools(server: McpServer, deps: McpDependencies)
   registerProveClaimTool(server, deps);
   registerVerifyFreshnessTool(server, deps);
   registerSourceRangeTool(server, deps);
+  registerSourceSymbolRangeTool(server, deps);
   registerInvocationMetricsTool(server, deps);
   registerReviewProjectTool(server, deps);
   registerCanonicalExampleTool(server, deps);
+  registerEvidenceLedgerTool(server, deps);
+  registerSearchFeedbackTool(server, deps);
+  registerSessionIntelligenceTools(server, deps);
+  registerBugSurfaceTool(server, deps);
+  registerAskCodebaseTool(server, deps);
 }

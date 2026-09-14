@@ -1,9 +1,52 @@
 import { z } from 'zod';
 import { readFile } from 'node:fs/promises';
+import type { DatabaseSync } from 'node:sqlite';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpDependencies } from './types.js';
 import { confineToProject } from './_shared.js';
 import { logger } from '../../utils/logger.js';
+import { asUntrustedContent } from '@/mcp/security/untrusted-content.js';
+import { findDebtMarkers } from '../../core/debt/markers.js';
+
+function architectureSourceEvidence(
+  relativePath: string,
+  payload: Record<string, unknown>,
+): ReturnType<typeof asUntrustedContent> {
+  return asUntrustedContent(JSON.stringify(payload, null, 2), 'source', { relativePath });
+}
+
+interface SimilarFunctionRow {
+  name: string;
+  signature: string | null;
+  relativePath: string;
+}
+
+function findSimilarFunctionRows(
+  db: DatabaseSync,
+  projectId: number,
+  fileId: number,
+  names: string[],
+): SimilarFunctionRow[] {
+  const rows: SimilarFunctionRow[] = [];
+  // Keep each IN clause below SQLite's portable parameter limit. The query
+  // avoids calling getFunctions once per file (the previous O(files ×
+  // functions) path) while preserving the same name/signature semantics.
+  for (let i = 0; i < names.length; i += 900) {
+    const chunk = names.slice(i, i + 900);
+    const placeholders = chunk.map(() => '?').join(',');
+    rows.push(
+      ...(db
+        .prepare(
+          `SELECT fn.name, fn.signature, f.relative_path AS relativePath
+           FROM functions fn
+           JOIN files f ON f.id = fn.file_id
+           WHERE f.project_id = ? AND fn.file_id <> ? AND fn.name IN (${placeholders})`,
+        )
+        .all(projectId, fileId, ...chunk) as unknown as SimilarFunctionRow[]),
+    );
+  }
+  return rows;
+}
 
 export function registerCheckArchitectureTool(server: McpServer, deps: McpDependencies): void {
   server.registerTool(
@@ -20,7 +63,7 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
           .min(1)
           .max(10000)
           .default(500)
-          .describe('Maximum number of TODO/FIXME markers to report'),
+          .describe('Maximum number of TODO/FIXME/HACK markers to report'),
       },
     },
     async (args) => {
@@ -102,25 +145,21 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
       // Strict mode checks
       let markerCount = 0;
       if (args.strict) {
-        // Real TODO/FIXME scan over the source content. The read is confined
+        // Real TODO/FIXME/HACK scan over the source content. The read is confined
         // to the project root (K5); an unreadable or escaping path degrades
         // gracefully to "no markers reported" instead of failing the check.
         try {
           const absPath = confineToProject(file.path, deps.projectRoot);
           const content = await readFile(absPath, 'utf-8');
-          const lines = content.split(/\r?\n/);
+          const debtMarkers = findDebtMarkers(content);
           const markerLimit = args.maxMarkers ?? 500;
-          for (let i = 0; i < lines.length && markerCount < markerLimit; i++) {
-            const match = lines[i].match(/\b(TODO|FIXME)\b[:\s]+(.*)/);
-            if (match) {
-              markerCount++;
-              const note = (match[2] ?? '').trim();
-              warnings.push(
-                `${match[1]} marker at line ${i + 1}${note ? `: ${note.slice(0, 120)}` : ''}`,
-              );
-            }
+          for (const marker of debtMarkers.slice(0, markerLimit)) {
+            markerCount++;
+            warnings.push(
+              `${marker.kind} marker at line ${marker.line}${marker.note ? `: ${marker.note.slice(0, 120)}` : ''}`,
+            );
           }
-          if (markerCount >= markerLimit) {
+          if (debtMarkers.length > markerCount) {
             warnings.push(
               `Marker count reached limit of ${markerLimit}; further markers were not reported.`,
             );
@@ -153,6 +192,24 @@ export function registerCheckArchitectureTool(server: McpServer, deps: McpDepend
                   agentTouched: file.agentTouched,
                   markerCount: markerCount,
                 },
+                sourceEvidence: architectureSourceEvidence(file.relativePath, {
+                  imports: imports.map((item) => ({
+                    source: item.source,
+                    resolvedPath: item.resolvedFile?.relativePath,
+                  })),
+                  functions: functions.map((fn) => ({
+                    name: fn.name,
+                    signature: fn.signature,
+                    startLine: fn.startLine,
+                    endLine: fn.endLine,
+                  })),
+                  classes: classes.map((cls) => ({
+                    name: cls.name,
+                    methodsCount: cls.methodsCount,
+                    propertiesCount: cls.propertiesCount,
+                  })),
+                  markerCount,
+                }),
               },
               null,
               2,
@@ -286,6 +343,19 @@ export function registerAnalyzeImpactTool(server: McpServer, deps: McpDependenci
                     ? ['Update all import statements in dependent files']
                     : []),
                 ],
+                sourceEvidence: architectureSourceEvidence(file.relativePath, {
+                  changedFile: file.relativePath,
+                  imports: imports.map((item) => ({
+                    source: item.source,
+                    resolvedPath: item.resolvedFile?.relativePath,
+                  })),
+                  impactedTests,
+                  impact: {
+                    high: highImpact.map((item) => item.file.relativePath),
+                    medium: mediumImpact.map((item) => item.file.relativePath),
+                    low: lowImpact.map((item) => item.file.relativePath),
+                  },
+                }),
               },
               null,
               2,
@@ -380,26 +450,52 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
 
         // Check across project for similar function signatures
         if (args.focus === 'all' || args.focus === 'duplication') {
-          const allFiles = deps.kg.getAllFiles();
           const currentFileFuncs = functions.map((f) => ({
             name: f.name,
             signature: f.signature?.replace(/\s+/g, ' ').trim() ?? '',
             file: file.relativePath,
           }));
 
-          for (const otherFile of allFiles) {
-            if (otherFile.id === file.id) continue;
-            const otherFuncs = deps.kg.getFunctions(otherFile.id);
-            for (const otherFn of otherFuncs) {
+          const currentNames = [...new Set(currentFileFuncs.map((fn) => fn.name))].filter(Boolean);
+          if (deps.db && currentNames.length > 0) {
+            const similarRows = findSimilarFunctionRows(
+              deps.db,
+              deps.kg.getCurrentProjectId(),
+              file.id,
+              currentNames,
+            );
+            for (const otherFn of similarRows) {
               const otherSig = otherFn.signature?.replace(/\s+/g, ' ').trim() ?? '';
-              for (const currentFn of currentFileFuncs) {
-                if (currentFn.name === otherFn.name && currentFn.signature !== otherSig) {
-                  suggestions.push({
-                    type: 'duplication',
-                    priority: 'low',
-                    message: `Function "${currentFn.name}" has similar signature in ${otherFile.relativePath}`,
-                    details: `Current: ${currentFn.signature} (${file.relativePath})\nOther: ${otherSig} (${otherFile.relativePath})`,
-                  });
+              const currentFns = currentFileFuncs.filter(
+                (currentFn) => currentFn.name === otherFn.name && currentFn.signature !== otherSig,
+              );
+              for (const currentFn of currentFns) {
+                suggestions.push({
+                  type: 'duplication',
+                  priority: 'low',
+                  message: `Function "${currentFn.name}" has similar signature in ${otherFn.relativePath}`,
+                  details: `Current: ${currentFn.signature} (${file.relativePath})\nOther: ${otherSig} (${otherFn.relativePath})`,
+                });
+              }
+            }
+          } else {
+            // Keep the injectable/no-database path useful for embedders and
+            // lightweight tests. The normal MCP runtime always supplies db.
+            const allFiles = deps.kg.getAllFiles();
+            for (const otherFile of allFiles) {
+              if (otherFile.id === file.id) continue;
+              const otherFuncs = deps.kg.getFunctions(otherFile.id);
+              for (const otherFn of otherFuncs) {
+                const otherSig = otherFn.signature?.replace(/\s+/g, ' ').trim() ?? '';
+                for (const currentFn of currentFileFuncs) {
+                  if (currentFn.name === otherFn.name && currentFn.signature !== otherSig) {
+                    suggestions.push({
+                      type: 'duplication',
+                      priority: 'low',
+                      message: `Function "${currentFn.name}" has similar signature in ${otherFile.relativePath}`,
+                      details: `Current: ${currentFn.signature} (${file.relativePath})\nOther: ${otherSig} (${otherFile.relativePath})`,
+                    });
+                  }
                 }
               }
             }
@@ -502,6 +598,21 @@ export function registerSuggestRefactorTool(server: McpServer, deps: McpDependen
                   return priorityOrder[a.priority] - priorityOrder[b.priority];
                 }),
                 totalSuggestions: suggestions.length,
+                sourceEvidence: architectureSourceEvidence(file.relativePath, {
+                  analyzedFile: file.relativePath,
+                  functions: functions.slice(0, 100).map((fn) => ({
+                    name: fn.name,
+                    signature: fn.signature,
+                    complexity: fn.complexity,
+                  })),
+                  classes: classes.slice(0, 100).map((cls) => ({
+                    name: cls.name,
+                    methodsCount: cls.methodsCount,
+                    propertiesCount: cls.propertiesCount,
+                  })),
+                  imports: imports.slice(0, 100).map((item) => item.source),
+                  truncated: functions.length > 100 || classes.length > 100 || imports.length > 100,
+                }),
               },
               null,
               2,

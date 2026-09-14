@@ -14,6 +14,7 @@ import {
   mergeProjectMindInstructions,
   writeMcpConfig,
   verifyMcpConfig,
+  type AgentKind,
 } from '../../src/cli/commands/init-mcp-config.js';
 import { resolveAgentConfigPath } from '../../src/cli/commands/init-mcp.js';
 
@@ -28,7 +29,7 @@ afterAll(() => {
 });
 
 describe('buildProjectMindSkillMd', () => {
-  const md = buildProjectMindSkillMd();
+  const md = buildProjectMindSkillMd('projectmind');
 
   it('has valid Claude Code skill frontmatter', () => {
     const lines = md.split('\n');
@@ -200,6 +201,30 @@ describe('MCP initialization config merging', () => {
     expect(parsed.mcp.servers.projectmind.cwd).toBe(FIXTURE_DIR);
     expect(parsed.mcp.servers.projectmind.disabled).toBe(false);
     expect(parsed.mcp.servers.projectmind.environment.PROJECTMIND_ROOT).toBe(FIXTURE_DIR);
+  });
+
+  it('verifies every supported MCP transport shape used by the agent profiles', () => {
+    const matrix: Array<{ kind: AgentKind; file: string }> = [
+      { kind: 'json-mcp', file: 'matrix-json-mcp.json' },
+      { kind: 'portable', file: 'matrix-portable.json' },
+      { kind: 'opencode', file: 'matrix-opencode.json' },
+      { kind: 'kilo', file: 'matrix-kilo.jsonc' },
+      { kind: 'codex', file: 'matrix-codex.toml' },
+    ];
+    const matrixRoot = join(FIXTURE_DIR, 'matrix');
+    mkdirSync(matrixRoot, { recursive: true });
+    for (const item of matrix) {
+      const path = join(matrixRoot, item.file);
+      expect(writeMcpConfig(path, FIXTURE_DIR, item.kind, false)).toBe(true);
+      const verification = verifyMcpConfig(path, FIXTURE_DIR, item.kind);
+      expect(verification.ok, item.kind).toBe(true);
+      expect(verification.projectmindEntry).toBe(true);
+      expect(verification.duplicateProjectMindEntries).toBe(0);
+      expect(
+        verification.checks.find((check) => check.name === 'project-root')?.status,
+        item.kind,
+      ).toBe('pass');
+    }
   });
 
   it('verifies the exact structural entry and detects duplicate raw keys', () => {

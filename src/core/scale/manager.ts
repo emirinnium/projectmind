@@ -30,12 +30,20 @@ export class ScaleManager {
     rootPath?: string,
     full?: boolean,
     signal?: AbortSignal,
-  ): Promise<{ scanned: number; errors: number; totalFiles: number }> {
+  ): Promise<{
+    scanned: number;
+    errors: number;
+    totalFiles: number;
+    skippedFiles: number;
+    skippedPaths: string[];
+  }> {
     const profile = await this.scanner.scanProjectWithProfile(rootPath, full, signal);
     return {
       scanned: profile.scannedFiles,
       errors: profile.errorFiles,
       totalFiles: profile.totalFiles,
+      skippedFiles: profile.skippedFiles,
+      skippedPaths: profile.skippedPaths,
     };
   }
 
